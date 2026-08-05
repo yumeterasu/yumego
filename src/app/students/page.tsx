@@ -1,0 +1,138 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSelectedClass } from "@/hooks/useSelectedClass";
+import type { Student } from "@/lib/sheets";
+
+export default function StudentsPage() {
+  const router = useRouter();
+  const { selectedClass, loaded } = useSelectedClass();
+
+  const [students, setStudents] = useState<Student[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [nameKanji, setNameKanji] = useState("");
+  const [nameFurigana, setNameFurigana] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loaded) return;
+    if (!selectedClass) {
+      router.replace("/select-class");
+      return;
+    }
+    loadStudents(selectedClass);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, selectedClass]);
+
+  async function loadStudents(className: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/students?class=${encodeURIComponent(className)}`
+      );
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setStudents(data.students ?? []);
+    } catch {
+      setError("生徒一覧の取得に失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedClass || !nameKanji.trim()) return;
+
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nameKanji: nameKanji.trim(),
+          nameFurigana: nameFurigana.trim(),
+          className: selectedClass,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setNameKanji("");
+      setNameFurigana("");
+      await loadStudents(selectedClass);
+    } catch {
+      setError("生徒の追加に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!loaded || !selectedClass) return null;
+
+  return (
+    <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
+        <Link href="/attendance" className="text-sm text-blue-600 underline">
+          出席へ戻る
+        </Link>
+      </div>
+
+      <form onSubmit={handleAdd} className="flex flex-col gap-3 border rounded-xl p-4">
+        <label className="flex flex-col gap-1 text-sm">
+          名前（漢字）
+          <input
+            value={nameKanji}
+            onChange={(e) => setNameKanji(e.target.value)}
+            className="border rounded px-3 py-2"
+            placeholder="山田 太郎"
+            required
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          ふりがな（任意）
+          <input
+            value={nameFurigana}
+            onChange={(e) => setNameFurigana(e.target.value)}
+            className="border rounded px-3 py-2"
+            placeholder="やまだ たろう"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={saving || !nameKanji.trim()}
+          className="rounded-full bg-black text-white py-2 disabled:opacity-40"
+        >
+          {saving ? "追加中..." : "生徒を追加"}
+        </button>
+        {error && <p className="text-red-600 text-sm">{error}</p>}
+      </form>
+
+      <div>
+        <h2 className="font-semibold mb-2">
+          現在の生徒一覧 {!loading && `(${students.length}名)`}
+        </h2>
+        {loading ? (
+          <p className="text-gray-500 text-sm">読み込み中...</p>
+        ) : students.length === 0 ? (
+          <p className="text-gray-500 text-sm">まだ生徒が登録されていません</p>
+        ) : (
+          <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
+            {students.map((s) => (
+              <li key={s.studentId} className="px-4 py-2">
+                <div className="font-medium">{s.nameKanji}</div>
+                {s.nameFurigana && (
+                  <div className="text-xs text-gray-500">{s.nameFurigana}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </main>
+  );
+}
