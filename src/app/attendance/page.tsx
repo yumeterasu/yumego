@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import type { Student } from "@/lib/sheets";
+import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
 
 function todayDateString() {
   const d = new Date();
@@ -25,9 +26,26 @@ export default function AttendancePage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [queuedOffline, setQueuedOffline] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
 
   const date = useMemo(() => todayDateString(), []);
+
+  const refreshPendingCount = useCallback(() => {
+    setPendingCount(getQueue().length);
+  }, []);
+
+  const syncPending = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await flushQueue();
+    } finally {
+      refreshPendingCount();
+      setSyncing(false);
+    }
+  }, [refreshPendingCount]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -39,9 +57,19 @@ export default function AttendancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, selectedClass]);
 
+  // Try to flush any queued submissions on load and whenever the device
+  // comes back online.
+  useEffect(() => {
+    refreshPendingCount();
+    syncPending();
+    window.addEventListener("online", syncPending);
+    return () => window.removeEventListener("online", syncPending);
+  }, [refreshPendingCount, syncPending]);
+
   async function load(className: string) {
     setLoading(true);
     setError(null);
+    const cacheKey = `yumego.studentsCache.${className}`;
     try {
       const res = await fetch(
         `/api/students?class=${encodeURIComponent(className)}`
@@ -49,10 +77,18 @@ export default function AttendancePage() {
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
       setStudents(data.students ?? []);
+      localStorage.setItem(cacheKey, JSON.stringify(data.students ?? []));
       setPresentIds(new Set());
       setSubmitted(false);
+      setQueuedOffline(false);
     } catch {
-      setError("生徒一覧の取得に失敗しました");
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setStudents(JSON.parse(cached));
+        setError("オフラインです。前回保存した生徒一覧を表示しています");
+      } else {
+        setError("生徒一覧の取得に失敗しました");
+      }
     } finally {
       setLoading(false);
     }
@@ -75,22 +111,31 @@ export default function AttendancePage() {
     if (!selectedClass) return;
     setSubmitting(true);
     setError(null);
-    try {
-      const records = students.map((s) => ({
-        studentId: s.studentId,
-        present: presentIds.has(s.studentId),
-      }));
 
+    const records = students.map((s) => ({
+      studentId: s.studentId,
+      present: presentIds.has(s.studentId),
+    }));
+    const payload = { date, className: selectedClass, records };
+
+    try {
       const res = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, className: selectedClass, records }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("failed");
       setSubmitted(true);
+      setQueuedOffline(false);
       setShowConfirmModal(false);
     } catch {
-      setError("出席の送信に失敗しました");
+      // Network failure (offline) or the request never reached the server —
+      // save it locally and retry automatically once the connection returns.
+      enqueue(payload);
+      refreshPendingCount();
+      setSubmitted(true);
+      setQueuedOffline(true);
+      setShowConfirmModal(false);
     } finally {
       setSubmitting(false);
     }
@@ -126,6 +171,21 @@ export default function AttendancePage() {
           ⚙ 設定
         </button>
       </div>
+
+      {pendingCount > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-3">
+          <p className="text-sm text-yellow-800">
+            ⚠ オフライン保存中の出席が <b>{pendingCount}件</b> あります
+          </p>
+          <button
+            onClick={syncPending}
+            disabled={syncing}
+            className="shrink-0 text-sm font-semibold text-yellow-900 border border-yellow-400 rounded-full px-3 py-1 disabled:opacity-40"
+          >
+            {syncing ? "送信中..." : "今すぐ送信"}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-gray-500 text-sm">読み込み中...</p>
@@ -188,9 +248,14 @@ export default function AttendancePage() {
             </button>
           </div>
 
-          {submitted && (
+          {submitted && !queuedOffline && (
             <p className="text-green-700 font-semibold">
               ✓ 出席を記録しました
+            </p>
+          )}
+          {submitted && queuedOffline && (
+            <p className="text-yellow-800 font-semibold">
+              📶 オフラインのため端末に保存しました。オンラインになったら自動で送信します
             </p>
           )}
         </>
