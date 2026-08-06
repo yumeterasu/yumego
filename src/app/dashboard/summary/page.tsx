@@ -208,7 +208,7 @@ export default function SummaryPage() {
                   出席日数
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
-                  その他
+                  備考
                 </th>
               </tr>
             </thead>

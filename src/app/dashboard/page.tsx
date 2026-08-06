@@ -40,6 +40,8 @@ export default function DashboardPage() {
 
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -62,14 +64,42 @@ export default function DashboardPage() {
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
       const attendanceData = await attendanceRes.json();
-      setStudents(studentsData.students ?? []);
+      const loadedStudents: Student[] = studentsData.students ?? [];
+      setStudents(loadedStudents);
       setRecords(attendanceData.records ?? []);
+      setRemarks(
+        Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
+      );
     } catch {
       setError("データの取得に失敗しました");
     } finally {
       setLoading(false);
     }
   }, [selectedClass, yearMonth]);
+
+  async function handleRemarkBlur(studentId: string, value: string) {
+    const original = students.find((s) => s.studentId === studentId)?.remark ?? "";
+    if (value === original) return;
+
+    setSavingRemarkId(studentId);
+    setError(null);
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, remark: value }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setStudents((prev) =>
+        prev.map((s) => (s.studentId === studentId ? { ...s, remark: value } : s))
+      );
+    } catch {
+      setError("備考の保存に失敗しました");
+      setRemarks((prev) => ({ ...prev, [studentId]: original }));
+    } finally {
+      setSavingRemarkId(null);
+    }
+  }
 
   useEffect(() => {
     if (!loaded) return;
@@ -249,8 +279,11 @@ export default function DashboardPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-10">
                   出
                 </th>
-                <th className="border border-gray-300 px-2 py-2 bg-red-50 text-red-700 w-10">
+                <th className="border border-gray-300 px-2 py-2 bg-red-50 text-red-700 w-10 whitespace-nowrap">
                   欠
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
+                  備考
                 </th>
               </tr>
             </thead>
@@ -315,6 +348,21 @@ export default function DashboardPage() {
                     </td>
                     <td className="text-center border border-gray-300 font-semibold text-red-600">
                       {absentCount}
+                    </td>
+                    <td className="border border-gray-300 p-0">
+                      <input
+                        value={remarks[s.studentId] ?? ""}
+                        onChange={(e) =>
+                          setRemarks((prev) => ({
+                            ...prev,
+                            [s.studentId]: e.target.value,
+                          }))
+                        }
+                        onBlur={(e) => handleRemarkBlur(s.studentId, e.target.value)}
+                        disabled={savingRemarkId === s.studentId}
+                        placeholder={savingRemarkId === s.studentId ? "保存中..." : ""}
+                        className="w-full h-full px-2 py-1 text-sm outline-none focus:bg-blue-50 disabled:bg-gray-50"
+                      />
                     </td>
                   </tr>
                 );
