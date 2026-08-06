@@ -243,7 +243,7 @@ export default function DashboardPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-10">
                   出
                 </th>
-                <th className="border border-gray-300 px-2 py-2 bg-gray-100 text-gray-600 w-10">
+                <th className="border border-gray-300 px-2 py-2 bg-red-50 text-red-700 w-10">
                   欠
                 </th>
               </tr>
@@ -299,7 +299,7 @@ export default function DashboardPage() {
                           ) : present ? (
                             <span className="text-green-600 font-bold">出</span>
                           ) : (
-                            <span className="text-gray-400 font-bold">欠</span>
+                            <span className="text-red-600 font-bold">欠</span>
                           )}
                         </td>
                       );
@@ -307,7 +307,7 @@ export default function DashboardPage() {
                     <td className="text-center border border-gray-300 font-semibold text-green-700">
                       {presentCount}
                     </td>
-                    <td className="text-center border border-gray-300 font-semibold text-gray-500">
+                    <td className="text-center border border-gray-300 font-semibold text-red-600">
                       {absentCount}
                     </td>
                   </tr>
@@ -345,7 +345,7 @@ export default function DashboardPage() {
               </button>
               <button
                 onClick={() => applyEdit(false)}
-                className="rounded-full bg-gray-50 border border-gray-300 text-gray-700 font-semibold py-3"
+                className="rounded-full bg-red-50 border border-red-400 text-red-700 font-semibold py-3"
               >
                 欠席
               </button>
