@@ -160,11 +160,11 @@ export default function DashboardPage() {
           このクラスにはまだ生徒が登録されていません
         </p>
       ) : (
-        <div className="overflow-x-auto border rounded-xl">
+        <div className="overflow-x-auto border border-gray-300 rounded-xl">
           <table className="text-sm border-collapse min-w-max">
             <thead>
               <tr>
-                <th className="sticky left-0 bg-gray-100 border-b border-r px-3 py-2 text-left whitespace-nowrap z-10">
+                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-2 text-left whitespace-nowrap z-10">
                   名前
                 </th>
                 {dayNumbers.map((day) => {
@@ -173,7 +173,7 @@ export default function DashboardPage() {
                   return (
                     <th
                       key={day}
-                      className={`border-b px-2 py-1 text-center w-9 ${
+                      className={`border border-gray-300 px-2 py-1 text-center w-9 ${
                         isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
                       }`}
                     >
@@ -184,10 +184,10 @@ export default function DashboardPage() {
                     </th>
                   );
                 })}
-                <th className="border-b border-l px-2 py-2 bg-green-50 text-green-800 w-10">
+                <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-10">
                   出
                 </th>
-                <th className="border-b px-2 py-2 bg-gray-100 text-gray-600 w-10">
+                <th className="border border-gray-300 px-2 py-2 bg-gray-100 text-gray-600 w-10">
                   欠
                 </th>
               </tr>
@@ -204,7 +204,7 @@ export default function DashboardPage() {
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
-                    <td className="sticky left-0 bg-white border-r px-3 py-2 whitespace-nowrap">
+                    <td className="sticky left-0 bg-white border border-gray-300 px-3 py-2 whitespace-nowrap">
                       {s.nameKanji}
                       {s.nameEnglish && (
                         <span className="block text-[10px] text-gray-400">
@@ -219,7 +219,7 @@ export default function DashboardPage() {
                       return (
                         <td
                           key={day}
-                          className={`text-center py-2 ${
+                          className={`text-center border border-gray-300 py-2 ${
                             isWeekend ? "bg-orange-50/60" : ""
                           }`}
                         >
@@ -233,10 +233,10 @@ export default function DashboardPage() {
                         </td>
                       );
                     })}
-                    <td className="text-center border-l font-semibold text-green-700">
+                    <td className="text-center border border-gray-300 font-semibold text-green-700">
                       {presentCount}
                     </td>
-                    <td className="text-center font-semibold text-gray-500">
+                    <td className="text-center border border-gray-300 font-semibold text-gray-500">
                       {absentCount}
                     </td>
                   </tr>
