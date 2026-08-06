@@ -126,6 +126,41 @@ export async function getAttendanceForMonth(
 }
 
 /**
+ * Read every attendance record for a class within a Japanese school year
+ * (April of `fiscalYearStartYear` through March of the following year).
+ */
+export async function getAttendanceForFiscalYear(
+  className: string,
+  fiscalYearStartYear: number
+): Promise<{ date: string; studentId: string; present: boolean }[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:E",
+  });
+
+  const rows = res.data.values ?? [];
+  const startDate = `${fiscalYearStartYear}-04-01`;
+  const endDate = `${fiscalYearStartYear + 1}-03-31`;
+
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      className: (row[1] ?? "").toString(),
+      studentId: (row[2] ?? "").toString(),
+      present: (row[3] ?? "").toString().toUpperCase() === "TRUE",
+    }))
+    .filter(
+      (r) =>
+        r.className === className &&
+        r.studentId &&
+        r.date >= startDate &&
+        r.date <= endDate
+    )
+    .map((r) => ({ date: r.date, studentId: r.studentId, present: r.present }));
+}
+
+/**
  * Write attendance rows, updating any existing row for the same
  * date+student in place instead of appending a duplicate. This is what
  * lets both the daily check-in flow and the dashboard's per-cell edits
