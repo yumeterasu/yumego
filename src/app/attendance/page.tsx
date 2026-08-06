@@ -158,7 +158,14 @@ export default function AttendancePage() {
   const absentCount = absentStudents.length;
 
   return (
-    <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
+    <main className="min-h-screen p-6 max-w-lg md:max-w-4xl lg:max-w-6xl mx-auto flex flex-col gap-6">
+      <Link
+        href="/dashboard"
+        className="self-start text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1"
+      >
+        ← 出席簿に戻る
+      </Link>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
@@ -216,7 +223,7 @@ export default function AttendancePage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
             {students.map((s) => {
               const isPresent = presentIds.has(s.studentId);
               return (
@@ -264,14 +271,9 @@ export default function AttendancePage() {
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      <div className="flex gap-4 mt-4">
-        <Link href="/dashboard" className="text-xs text-gray-400 underline">
-          出席簿を見る
-        </Link>
-        <Link href="/students" className="text-xs text-gray-400 underline">
-          生徒一覧の管理
-        </Link>
-      </div>
+      <Link href="/students" className="text-xs text-gray-400 underline mt-4">
+        生徒一覧の管理
+      </Link>
 
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
