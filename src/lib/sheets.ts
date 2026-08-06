@@ -44,6 +44,7 @@ export type Student = {
   nameEnglish: string;
   className: string;
   active: boolean;
+  remark: string;
 };
 
 export type AttendanceRecord = {
@@ -59,7 +60,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:E",
+    range: "Students!A2:F",
   });
 
   const rows = res.data.values ?? [];
@@ -71,16 +72,19 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
       nameEnglish: row[2] ?? "",
       className: row[3] ?? "",
       active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
+      remark: row[5] ?? "",
     }))
     .filter((s) => s.studentId && s.className === className && s.active);
 }
 
 /** Append a new student row to the Students sheet. */
-export async function addStudent(student: Omit<Student, "active">): Promise<void> {
+export async function addStudent(
+  student: Omit<Student, "active" | "remark">
+): Promise<void> {
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:E",
+    range: "Students!A:F",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -90,9 +94,33 @@ export async function addStudent(student: Omit<Student, "active">): Promise<void
           student.nameEnglish,
           student.className,
           "TRUE",
+          "",
         ],
       ],
     },
+  });
+}
+
+/** Update a single student's remark (その他) note in place. */
+export async function updateStudentRemark(
+  studentId: string,
+  remark: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === studentId);
+  if (rowOffset === -1) return;
+
+  const rowNum = rowOffset + 2; // 1-based, +1 for header
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Students!F${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[remark]] },
   });
 }
 

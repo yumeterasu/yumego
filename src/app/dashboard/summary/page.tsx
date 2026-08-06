@@ -40,6 +40,8 @@ export default function SummaryPage() {
   const [fiscalYearStart, setFiscalYearStart] = useState(defaultFiscalYearStart);
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [remarks, setRemarks] = useState<Record<string, string>>({});
+  const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,14 +59,42 @@ export default function SummaryPage() {
       if (!studentsRes.ok || !summaryRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
       const summaryData = await summaryRes.json();
-      setStudents(studentsData.students ?? []);
+      const loadedStudents: Student[] = studentsData.students ?? [];
+      setStudents(loadedStudents);
       setRecords(summaryData.records ?? []);
+      setRemarks(
+        Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
+      );
     } catch {
       setError("データの取得に失敗しました");
     } finally {
       setLoading(false);
     }
   }, [selectedClass, fiscalYearStart]);
+
+  async function handleRemarkBlur(studentId: string, value: string) {
+    const original = students.find((s) => s.studentId === studentId)?.remark ?? "";
+    if (value === original) return; // nothing changed, skip the request
+
+    setSavingRemarkId(studentId);
+    setError(null);
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, remark: value }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setStudents((prev) =>
+        prev.map((s) => (s.studentId === studentId ? { ...s, remark: value } : s))
+      );
+    } catch {
+      setError("備考の保存に失敗しました");
+      setRemarks((prev) => ({ ...prev, [studentId]: original })); // revert
+    } finally {
+      setSavingRemarkId(null);
+    }
+  }
 
   useEffect(() => {
     if (!loaded) return;
@@ -177,6 +207,9 @@ export default function SummaryPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-16">
                   出席日数
                 </th>
+                <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40">
+                  その他
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -201,6 +234,21 @@ export default function SummaryPage() {
                     ))}
                     <td className="text-center border border-gray-300 font-semibold text-green-700">
                       {total}
+                    </td>
+                    <td className="border border-gray-300 p-0">
+                      <input
+                        value={remarks[s.studentId] ?? ""}
+                        onChange={(e) =>
+                          setRemarks((prev) => ({
+                            ...prev,
+                            [s.studentId]: e.target.value,
+                          }))
+                        }
+                        onBlur={(e) => handleRemarkBlur(s.studentId, e.target.value)}
+                        disabled={savingRemarkId === s.studentId}
+                        placeholder={savingRemarkId === s.studentId ? "保存中..." : ""}
+                        className="w-full h-full px-2 py-2 text-sm outline-none focus:bg-blue-50 disabled:bg-gray-50"
+                      />
                     </td>
                   </tr>
                 );

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addStudent, getStudentsByClass } from "@/lib/sheets";
+import {
+  addStudent,
+  getStudentsByClass,
+  updateStudentRemark,
+} from "@/lib/sheets";
 import { randomUUID } from "crypto";
 
 // GET /api/students?class=プロンポン　年長
@@ -50,6 +54,30 @@ export async function POST(req: NextRequest) {
     console.error(err);
     return NextResponse.json(
       { error: "Failed to add student" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/students  { studentId, remark }
+export async function PATCH(req: NextRequest) {
+  const body = await req.json();
+  const { studentId, remark } = body ?? {};
+
+  if (!studentId || typeof remark !== "string") {
+    return NextResponse.json(
+      { error: "Missing studentId or remark" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    await updateStudentRemark(studentId, remark);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json(
+      { error: "Failed to update remark" },
       { status: 500 }
     );
   }
