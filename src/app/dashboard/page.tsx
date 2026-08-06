@@ -226,7 +226,7 @@ export default function DashboardPage() {
           <table className="text-sm border-collapse min-w-max">
             <thead>
               <tr>
-                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-2 text-left whitespace-nowrap z-10">
+                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
                   名前
                 </th>
                 {dayNumbers.map((day) => {
@@ -267,7 +267,7 @@ export default function DashboardPage() {
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
-                    <td className="sticky left-0 bg-white border border-gray-300 px-3 py-2 whitespace-nowrap">
+                    <td className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap leading-tight">
                       {s.nameKanji}
                       {s.nameEnglish && (
                         <span className="block text-[10px] text-gray-400">
@@ -290,7 +290,7 @@ export default function DashboardPage() {
                           onClick={
                             isFuture ? undefined : () => openEditor(s.studentId, label, date)
                           }
-                          className={`text-center border border-gray-300 py-2 select-none ${
+                          className={`text-center border border-gray-300 py-1 select-none ${
                             isWeekend ? "bg-orange-50/60" : ""
                           } ${
                             isFuture

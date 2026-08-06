@@ -123,10 +123,10 @@ export default function StudentsPage() {
         ) : (
           <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
             {students.map((s) => (
-              <li key={s.studentId} className="px-4 py-2">
-                <div className="font-medium">{s.nameKanji}</div>
+              <li key={s.studentId} className="px-4 py-1.5 leading-tight">
+                <span className="font-medium">{s.nameKanji}</span>
                 {s.nameEnglish && (
-                  <div className="text-xs text-gray-500">{s.nameEnglish}</div>
+                  <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
                 )}
               </li>
             ))}

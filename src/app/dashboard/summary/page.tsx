@@ -193,7 +193,7 @@ export default function SummaryPage() {
           <table className="text-sm border-collapse min-w-max">
             <thead>
               <tr>
-                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-2 text-left whitespace-nowrap z-10">
+                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
                   名前
                 </th>
                 {FISCAL_MONTHS.map((fm) => (
@@ -219,7 +219,7 @@ export default function SummaryPage() {
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
-                    <td className="sticky left-0 bg-white border border-gray-300 px-3 py-2 whitespace-nowrap">
+                    <td className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap leading-tight">
                       {s.nameKanji}
                       {s.nameEnglish && (
                         <span className="block text-[10px] text-gray-400">
@@ -228,7 +228,7 @@ export default function SummaryPage() {
                       )}
                     </td>
                     {monthCounts.map((count, idx) => (
-                      <td key={idx} className="text-center border border-gray-300 py-2">
+                      <td key={idx} className="text-center border border-gray-300 py-1">
                         {count > 0 ? count : ""}
                       </td>
                     ))}
@@ -247,7 +247,7 @@ export default function SummaryPage() {
                         onBlur={(e) => handleRemarkBlur(s.studentId, e.target.value)}
                         disabled={savingRemarkId === s.studentId}
                         placeholder={savingRemarkId === s.studentId ? "保存中..." : ""}
-                        className="w-full h-full px-2 py-2 text-sm outline-none focus:bg-blue-50 disabled:bg-gray-50"
+                        className="w-full h-full px-2 py-1 text-sm outline-none focus:bg-blue-50 disabled:bg-gray-50"
                       />
                     </td>
                   </tr>
