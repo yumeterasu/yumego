@@ -19,6 +19,11 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
+function todayDateString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { selectedClass, loaded, clearSelectedClass } = useSelectedClass();
@@ -31,7 +36,9 @@ export default function DashboardPage() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
+  const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
 
   const load = useCallback(async () => {
@@ -81,6 +88,40 @@ export default function DashboardPage() {
       setMonth(1);
     } else {
       setMonth((m) => m + 1);
+    }
+  }
+
+  async function handleCellClick(studentId: string, day: number, current: boolean | undefined) {
+    if (!selectedClass) return;
+    const date = `${year}-${pad2(month)}-${pad2(day)}`;
+    if (date > today) return; // can't edit the future
+
+    const next = current === undefined ? true : !current;
+    const key = `${studentId}|${date}`;
+
+    // optimistic update
+    const previous = records;
+    setRecords((prev) => {
+      const others = prev.filter(
+        (r) => !(r.studentId === studentId && r.date === date)
+      );
+      return [...others, { date, studentId, present: next }];
+    });
+    setSavingKey(key);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/attendance", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, className: selectedClass, studentId, present: next }),
+      });
+      if (!res.ok) throw new Error("failed");
+    } catch {
+      setRecords(previous); // revert
+      setError("修正の保存に失敗しました。もう一度お試しください");
+    } finally {
+      setSavingKey(null);
     }
   }
 
@@ -151,6 +192,10 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      <p className="text-xs text-gray-400 text-center">
+        過去の日付のマスをタップすると出席状況を修正できます
+      </p>
+
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
@@ -216,14 +261,30 @@ export default function DashboardPage() {
                       const dow = new Date(year, month - 1, day).getDay();
                       const isWeekend = dow === 0 || dow === 6;
                       const present = dayMap.get(day);
+                      const date = `${year}-${pad2(month)}-${pad2(day)}`;
+                      const isFuture = date > today;
+                      const key = `${s.studentId}|${date}`;
+                      const isSaving = savingKey === key;
+
                       return (
                         <td
                           key={day}
-                          className={`text-center border border-gray-300 py-2 ${
+                          onClick={
+                            isFuture
+                              ? undefined
+                              : () => handleCellClick(s.studentId, day, present)
+                          }
+                          className={`text-center border border-gray-300 py-2 select-none ${
                             isWeekend ? "bg-orange-50/60" : ""
+                          } ${
+                            isFuture
+                              ? ""
+                              : "cursor-pointer hover:bg-blue-50 active:bg-blue-100"
                           }`}
                         >
-                          {present === undefined ? (
+                          {isSaving ? (
+                            <span className="text-gray-300">…</span>
+                          ) : present === undefined ? (
                             ""
                           ) : present ? (
                             <span className="text-green-600 font-bold">出</span>

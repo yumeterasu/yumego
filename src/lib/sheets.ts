@@ -110,23 +110,67 @@ export async function getAttendanceForMonth(
     .map((r) => ({ date: r.date, studentId: r.studentId, present: r.present }));
 }
 
-/** Append attendance rows (one per student) for a given day/class. */
-export async function submitAttendance(records: AttendanceRecord[]): Promise<void> {
+/**
+ * Write attendance rows, updating any existing row for the same
+ * date+student in place instead of appending a duplicate. This is what
+ * lets both the daily check-in flow and the dashboard's per-cell edits
+ * safely re-save a day without the sheet accumulating duplicate rows.
+ */
+export async function upsertAttendance(records: AttendanceRecord[]): Promise<void> {
   if (records.length === 0) return;
 
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.append({
+  const existing = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Attendance!A:E",
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: records.map((r) => [
-        r.date,
-        r.className,
-        r.studentId,
-        r.present ? "TRUE" : "FALSE",
-        r.timestamp,
-      ]),
-    },
+    range: "Attendance!A2:E",
   });
+  const rows = existing.data.values ?? [];
+
+  // key -> sheet row number (1-based, header is row 1)
+  const rowIndex = new Map<string, number>();
+  rows.forEach((row, i) => {
+    const date = row[0] ?? "";
+    const studentId = row[2] ?? "";
+    if (date && studentId) rowIndex.set(`${date}|${studentId}`, i + 2);
+  });
+
+  const updates: { range: string; values: (string | boolean)[][] }[] = [];
+  const toAppend: AttendanceRecord[] = [];
+
+  for (const r of records) {
+    const key = `${r.date}|${r.studentId}`;
+    const rowNum = rowIndex.get(key);
+    const values = [
+      [r.date, r.className, r.studentId, r.present ? "TRUE" : "FALSE", r.timestamp],
+    ];
+    if (rowNum) {
+      updates.push({ range: `Attendance!A${rowNum}:E${rowNum}`, values });
+    } else {
+      toAppend.push(r);
+    }
+  }
+
+  if (updates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
+    });
+  }
+
+  if (toAppend.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "Attendance!A:E",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: toAppend.map((r) => [
+          r.date,
+          r.className,
+          r.studentId,
+          r.present ? "TRUE" : "FALSE",
+          r.timestamp,
+        ]),
+      },
+    });
+  }
 }

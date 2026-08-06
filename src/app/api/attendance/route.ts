@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  submitAttendance,
+  upsertAttendance,
   getAttendanceForMonth,
   AttendanceRecord,
 } from "@/lib/sheets";
@@ -31,6 +31,8 @@ export async function GET(req: NextRequest) {
 
 // POST /api/attendance
 // body: { date: "2026-08-05", className: "...", records: [{ studentId, present }] }
+// Used by the daily check-in flow. Safe to resubmit the same day — existing
+// rows for that date+student are updated in place, not duplicated.
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { date, className, records } = body ?? {};
@@ -55,12 +57,46 @@ export async function POST(req: NextRequest) {
   );
 
   try {
-    await submitAttendance(rows);
+    await upsertAttendance(rows);
     return NextResponse.json({ ok: true, count: rows.length });
   } catch (err) {
     console.error(err);
     return NextResponse.json(
       { error: "Failed to submit attendance" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/attendance
+// body: { date: "2026-08-05", className: "...", studentId: "...", present: true }
+// Used by the dashboard to correct a single day/student after the fact.
+export async function PATCH(req: NextRequest) {
+  const body = await req.json();
+  const { date, className, studentId, present } = body ?? {};
+
+  if (!date || !className || !studentId || typeof present !== "boolean") {
+    return NextResponse.json(
+      { error: "Missing date, className, studentId, or present" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    await upsertAttendance([
+      {
+        date,
+        className,
+        studentId,
+        present,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json(
+      { error: "Failed to update attendance" },
       { status: 500 }
     );
   }
