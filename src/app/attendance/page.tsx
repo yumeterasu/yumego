@@ -154,7 +154,8 @@ export default function AttendancePage() {
   if (!loaded || !selectedClass) return null;
 
   const presentCount = presentIds.size;
-  const absentCount = students.length - presentIds.size;
+  const absentStudents = students.filter((s) => !presentIds.has(s.studentId));
+  const absentCount = absentStudents.length;
 
   return (
     <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
@@ -228,7 +229,7 @@ export default function AttendancePage() {
                       : "bg-gray-50 border-gray-300 text-gray-500"
                   }`}
                 >
-                  {s.nameKanji}
+                  {s.nameEnglish || s.nameKanji}
                 </button>
               );
             })}
@@ -292,6 +293,22 @@ export default function AttendancePage() {
                 <p className="text-sm text-gray-500">未出席</p>
               </div>
             </div>
+            {absentStudents.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">未出席の生徒:</p>
+                <ul className="flex flex-wrap gap-2">
+                  {absentStudents.map((s) => (
+                    <li
+                      key={s.studentId}
+                      className="text-xs bg-gray-100 text-gray-700 rounded-full px-3 py-1"
+                    >
+                      {s.nameEnglish || s.nameKanji}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <p className="text-xs text-gray-400 text-center">
               この内容で記録します。よろしいですか？
             </p>
