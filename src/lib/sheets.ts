@@ -81,6 +81,35 @@ export async function addStudent(student: Omit<Student, "active">): Promise<void
   });
 }
 
+/** Read every attendance record for a class within a given YYYY-MM month. */
+export async function getAttendanceForMonth(
+  className: string,
+  yearMonth: string // "2026-08"
+): Promise<{ date: string; studentId: string; present: boolean }[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:E",
+  });
+
+  const rows = res.data.values ?? [];
+
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      className: (row[1] ?? "").toString(),
+      studentId: (row[2] ?? "").toString(),
+      present: (row[3] ?? "").toString().toUpperCase() === "TRUE",
+    }))
+    .filter(
+      (r) =>
+        r.className === className &&
+        r.date.startsWith(yearMonth) &&
+        r.studentId
+    )
+    .map((r) => ({ date: r.date, studentId: r.studentId, present: r.present }));
+}
+
 /** Append attendance rows (one per student) for a given day/class. */
 export async function submitAttendance(records: AttendanceRecord[]): Promise<void> {
   if (records.length === 0) return;

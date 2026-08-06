@@ -13,7 +13,7 @@ export default function SelectClassPage() {
 
   function handleSelect(className: string) {
     setSelectedClass(className);
-    router.replace("/attendance");
+    router.replace("/dashboard");
   }
 
   function ClassButton({ name }: { name: string }) {

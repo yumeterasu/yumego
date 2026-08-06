@@ -10,7 +10,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!loaded) return;
-    router.replace(selectedClass ? "/attendance" : "/select-class");
+    router.replace(selectedClass ? "/dashboard" : "/select-class");
   }, [loaded, selectedClass, router]);
 
   return null;

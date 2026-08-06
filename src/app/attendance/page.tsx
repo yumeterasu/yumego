@@ -263,9 +263,14 @@ export default function AttendancePage() {
 
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
-      <Link href="/students" className="text-xs text-gray-400 underline mt-4">
-        生徒一覧の管理
-      </Link>
+      <div className="flex gap-4 mt-4">
+        <Link href="/dashboard" className="text-xs text-gray-400 underline">
+          出席簿を見る
+        </Link>
+        <Link href="/students" className="text-xs text-gray-400 underline">
+          生徒一覧の管理
+        </Link>
+      </div>
 
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
