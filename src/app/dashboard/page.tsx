@@ -256,7 +256,10 @@ export default function DashboardPage() {
           <table className="text-sm border-collapse min-w-max">
             <thead>
               <tr>
-                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
+                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-8">
+                  #
+                </th>
+                <th className="sticky left-8 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
                   名前
                 </th>
                 {dayNumbers.map((day) => {
@@ -300,7 +303,18 @@ export default function DashboardPage() {
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
-                    <td className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap leading-tight">
+                    <td
+                      className={`sticky left-0 border border-gray-300 px-2 py-1 text-center text-gray-500 ${
+                        i % 2 === 1 ? "bg-gray-50" : "bg-white"
+                      }`}
+                    >
+                      {i + 1}
+                    </td>
+                    <td
+                      className={`sticky left-8 border border-gray-300 px-3 py-1 whitespace-nowrap leading-tight ${
+                        i % 2 === 1 ? "bg-gray-50" : "bg-white"
+                      }`}
+                    >
                       {s.nameKanji}
                       {s.nameEnglish && (
                         <span className="block text-[10px] text-gray-400">

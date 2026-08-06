@@ -224,18 +224,21 @@ export default function AttendancePage() {
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-            {students.map((s) => {
+            {students.map((s, i) => {
               const isPresent = presentIds.has(s.studentId);
               return (
                 <button
                   key={s.studentId}
                   onClick={() => togglePresent(s.studentId)}
-                  className={`rounded-xl border-2 px-3 py-6 text-center font-medium transition ${
+                  className={`relative rounded-xl border-2 px-3 py-6 text-center font-medium transition ${
                     isPresent
                       ? "bg-green-50 border-green-500 text-green-800 ring-2 ring-green-300"
                       : "bg-gray-50 border-gray-300 text-gray-500"
                   }`}
                 >
+                  <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
+                    {i + 1}
+                  </span>
                   {s.nameEnglish || s.nameKanji}
                 </button>
               );
