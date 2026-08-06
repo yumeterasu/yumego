@@ -23,6 +23,21 @@ function getSheetsClient() {
   return google.sheets({ version: "v4", auth: getAuth() });
 }
 
+async function getSheetIdByTitle(
+  sheets: ReturnType<typeof getSheetsClient>,
+  title: string
+): Promise<number> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: "sheets.properties",
+  });
+  const sheet = meta.data.sheets?.find((s) => s.properties?.title === title);
+  if (sheet?.properties?.sheetId == null) {
+    throw new Error(`Sheet tab "${title}" not found`);
+  }
+  return sheet.properties.sheetId;
+}
+
 export type Student = {
   studentId: string;
   nameKanji: string;
@@ -173,4 +188,46 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
       },
     });
   }
+}
+
+/**
+ * Remove any attendance row for a given date+student, returning the cell
+ * to a truly blank ("not checked yet") state rather than present/absent.
+ */
+export async function clearAttendance(
+  date: string,
+  studentId: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === date && (row[2] ?? "") === studentId
+  );
+  if (rowOffset === -1) return; // already blank, nothing to do
+
+  const sheetId = await getSheetIdByTitle(sheets, "Attendance");
+  const rowNum = rowOffset + 2; // 1-based, +1 for header
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowNum - 1, // 0-based, inclusive
+              endIndex: rowNum, // 0-based, exclusive
+            },
+          },
+        },
+      ],
+    },
+  });
 }

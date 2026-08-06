@@ -96,7 +96,8 @@ export default function DashboardPage() {
     const date = `${year}-${pad2(month)}-${pad2(day)}`;
     if (date > today) return; // can't edit the future
 
-    const next = current === undefined ? true : !current;
+    // Cycle: blank (not checked yet) -> 出 -> 欠 -> blank -> ...
+    const next = current === undefined ? true : current === true ? false : null;
     const key = `${studentId}|${date}`;
 
     // optimistic update
@@ -105,7 +106,7 @@ export default function DashboardPage() {
       const others = prev.filter(
         (r) => !(r.studentId === studentId && r.date === date)
       );
-      return [...others, { date, studentId, present: next }];
+      return next === null ? others : [...others, { date, studentId, present: next }];
     });
     setSavingKey(key);
     setError(null);
@@ -193,7 +194,7 @@ export default function DashboardPage() {
       </div>
 
       <p className="text-xs text-gray-400 text-center">
-        過去の日付のマスをタップすると出席状況を修正できます
+        過去の日付のマスをタップすると 空欄 → 出 → 欠 → 空欄 の順で切り替わります
       </p>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}

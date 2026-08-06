@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   upsertAttendance,
   getAttendanceForMonth,
+  clearAttendance,
   AttendanceRecord,
 } from "@/lib/sheets";
 
@@ -69,13 +70,19 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH /api/attendance
-// body: { date: "2026-08-05", className: "...", studentId: "...", present: true }
+// body: { date: "2026-08-05", className: "...", studentId: "...", present: true | false | null }
 // Used by the dashboard to correct a single day/student after the fact.
+// present: null clears the cell back to "not checked yet" (removes the row).
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { date, className, studentId, present } = body ?? {};
 
-  if (!date || !className || !studentId || typeof present !== "boolean") {
+  if (
+    !date ||
+    !className ||
+    !studentId ||
+    (typeof present !== "boolean" && present !== null)
+  ) {
     return NextResponse.json(
       { error: "Missing date, className, studentId, or present" },
       { status: 400 }
@@ -83,15 +90,19 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    await upsertAttendance([
-      {
-        date,
-        className,
-        studentId,
-        present,
-        timestamp: new Date().toISOString(),
-      },
-    ]);
+    if (present === null) {
+      await clearAttendance(date, studentId);
+    } else {
+      await upsertAttendance([
+        {
+          date,
+          className,
+          studentId,
+          present,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    }
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error(err);
