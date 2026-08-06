@@ -199,15 +199,15 @@ export default function SummaryPage() {
                 {FISCAL_MONTHS.map((fm) => (
                   <th
                     key={fm.monthNum}
-                    className="border border-gray-300 px-2 py-2 text-center bg-gray-50 w-12"
+                    className="border border-gray-300 px-2 py-2 text-center bg-gray-50 w-12 whitespace-nowrap"
                   >
                     {fm.monthNum}月
                   </th>
                 ))}
-                <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-16">
+                <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-20 whitespace-nowrap">
                   出席日数
                 </th>
-                <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40">
+                <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   その他
                 </th>
               </tr>
