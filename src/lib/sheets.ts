@@ -26,7 +26,7 @@ function getSheetsClient() {
 export type Student = {
   studentId: string;
   nameKanji: string;
-  nameFurigana: string;
+  nameEnglish: string;
   className: string;
   active: boolean;
 };
@@ -53,7 +53,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
     .map((row): Student => ({
       studentId: row[0] ?? "",
       nameKanji: row[1] ?? "",
-      nameFurigana: row[2] ?? "",
+      nameEnglish: row[2] ?? "",
       className: row[3] ?? "",
       active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
     }))
@@ -72,7 +72,7 @@ export async function addStudent(student: Omit<Student, "active">): Promise<void
         [
           student.studentId,
           student.nameKanji,
-          student.nameFurigana,
+          student.nameEnglish,
           student.className,
           "TRUE",
         ],

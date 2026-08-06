@@ -25,10 +25,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/students  { nameKanji, nameFurigana, className }
+// POST /api/students  { nameKanji, nameEnglish, className }
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { nameKanji, nameFurigana, className } = body ?? {};
+  const { nameKanji, nameEnglish, className } = body ?? {};
 
   if (!nameKanji || !className) {
     return NextResponse.json(
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     await addStudent({
       studentId,
       nameKanji,
-      nameFurigana: nameFurigana ?? "",
+      nameEnglish: nameEnglish ?? "",
       className,
     });
     return NextResponse.json({ studentId });

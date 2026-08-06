@@ -13,7 +13,7 @@ export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [nameKanji, setNameKanji] = useState("");
-  const [nameFurigana, setNameFurigana] = useState("");
+  const [nameEnglish, setNameEnglish] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,13 +56,13 @@ export default function StudentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nameKanji: nameKanji.trim(),
-          nameFurigana: nameFurigana.trim(),
+          nameEnglish: nameEnglish.trim(),
           className: selectedClass,
         }),
       });
       if (!res.ok) throw new Error("failed");
       setNameKanji("");
-      setNameFurigana("");
+      setNameEnglish("");
       await loadStudents(selectedClass);
     } catch {
       setError("生徒の追加に失敗しました");
@@ -94,12 +94,12 @@ export default function StudentsPage() {
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          ふりがな（任意）
+          英語名（任意）
           <input
-            value={nameFurigana}
-            onChange={(e) => setNameFurigana(e.target.value)}
+            value={nameEnglish}
+            onChange={(e) => setNameEnglish(e.target.value)}
             className="border rounded px-3 py-2"
-            placeholder="やまだ たろう"
+            placeholder="TARO YAMADA"
           />
         </label>
         <button
@@ -125,8 +125,8 @@ export default function StudentsPage() {
             {students.map((s) => (
               <li key={s.studentId} className="px-4 py-2">
                 <div className="font-medium">{s.nameKanji}</div>
-                {s.nameFurigana && (
-                  <div className="text-xs text-gray-500">{s.nameFurigana}</div>
+                {s.nameEnglish && (
+                  <div className="text-xs text-gray-500">{s.nameEnglish}</div>
                 )}
               </li>
             ))}

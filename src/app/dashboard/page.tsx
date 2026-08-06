@@ -206,9 +206,9 @@ export default function DashboardPage() {
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
                     <td className="sticky left-0 bg-white border-r px-3 py-2 whitespace-nowrap">
                       {s.nameKanji}
-                      {s.nameFurigana && (
+                      {s.nameEnglish && (
                         <span className="block text-[10px] text-gray-400">
-                          {s.nameFurigana}
+                          {s.nameEnglish}
                         </span>
                       )}
                     </td>
