@@ -10,6 +10,12 @@ const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
 type AttendanceRecord = { date: string; studentId: string; present: boolean };
 
+type EditingCell = {
+  studentId: string;
+  studentLabel: string;
+  date: string;
+};
+
 function daysInMonth(year: number, month: number) {
   // month is 1-based
   return new Date(year, month, 0).getDate();
@@ -37,6 +43,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
 
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
@@ -91,14 +98,17 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleCellClick(studentId: string, day: number, current: boolean | undefined) {
-    if (!selectedClass) return;
-    const date = `${year}-${pad2(month)}-${pad2(day)}`;
+  function openEditor(studentId: string, studentLabel: string, date: string) {
     if (date > today) return; // can't edit the future
+    setEditingCell({ studentId, studentLabel, date });
+  }
 
-    // Cycle: blank (not checked yet) -> 出 -> 欠 -> blank -> ...
-    const next = current === undefined ? true : current === true ? false : null;
+  async function applyEdit(next: boolean | null) {
+    if (!selectedClass || !editingCell) return;
+    const { studentId, date } = editingCell;
     const key = `${studentId}|${date}`;
+
+    setEditingCell(null);
 
     // optimistic update
     const previous = records;
@@ -194,7 +204,7 @@ export default function DashboardPage() {
       </div>
 
       <p className="text-xs text-gray-400 text-center">
-        過去の日付のマスをタップすると 空欄 → 出 → 欠 → 空欄 の順で切り替わります
+        過去の日付のマスをタップすると修正メニューが開きます
       </p>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
@@ -247,6 +257,7 @@ export default function DashboardPage() {
                   if (v) presentCount++;
                   else absentCount++;
                 }
+                const label = s.nameEnglish || s.nameKanji;
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
@@ -271,9 +282,7 @@ export default function DashboardPage() {
                         <td
                           key={day}
                           onClick={
-                            isFuture
-                              ? undefined
-                              : () => handleCellClick(s.studentId, day, present)
+                            isFuture ? undefined : () => openEditor(s.studentId, label, date)
                           }
                           className={`text-center border border-gray-300 py-2 select-none ${
                             isWeekend ? "bg-orange-50/60" : ""
@@ -312,6 +321,51 @@ export default function DashboardPage() {
       <Link href="/students" className="text-xs text-gray-400 underline">
         生徒一覧の管理
       </Link>
+
+      {editingCell && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => setEditingCell(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-xs flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-center">
+              <p className="font-bold">{editingCell.studentLabel}</p>
+              <p className="text-sm text-gray-500">{editingCell.date}</p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => applyEdit(true)}
+                className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3"
+              >
+                出席
+              </button>
+              <button
+                onClick={() => applyEdit(false)}
+                className="rounded-full bg-gray-50 border border-gray-300 text-gray-700 font-semibold py-3"
+              >
+                欠席
+              </button>
+              <button
+                onClick={() => applyEdit(null)}
+                className="rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3"
+              >
+                空欄にする（未確認）
+              </button>
+            </div>
+
+            <button
+              onClick={() => setEditingCell(null)}
+              className="text-sm text-gray-400 underline mt-1"
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
