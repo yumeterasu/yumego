@@ -189,6 +189,15 @@ export default function DashboardPage() {
     recordMap.get(r.studentId)!.set(day, r.present);
   }
 
+  // how many students were present on each day of the month
+  const dailyPresentCounts = dayNumbers.map((day) => {
+    let count = 0;
+    for (const dayMap of recordMap.values()) {
+      if (dayMap.get(day) === true) count++;
+    }
+    return count;
+  });
+
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -255,6 +264,23 @@ export default function DashboardPage() {
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
           <table className="text-sm border-collapse min-w-max">
             <thead>
+              <tr>
+                <th
+                  colSpan={2}
+                  className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-right text-xs font-normal text-gray-500 whitespace-nowrap z-10"
+                >
+                  出席人数
+                </th>
+                {dailyPresentCounts.map((count, idx) => (
+                  <th
+                    key={dayNumbers[idx]}
+                    className="border border-gray-300 text-center text-xs font-normal bg-gray-50 text-gray-600"
+                  >
+                    {count > 0 ? count : ""}
+                  </th>
+                ))}
+                <th colSpan={3} className="border border-gray-300 bg-gray-50" />
+              </tr>
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-8">
                   #
