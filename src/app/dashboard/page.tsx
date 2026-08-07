@@ -44,9 +44,29 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function todayDateString() {
-  const d = new Date();
+function formatDate(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function todayDateString() {
+  return formatDate(new Date());
+}
+
+/** Every weekday (Mon-Fri) between start and end, inclusive, YYYY-MM-DD. */
+function weekdayRange(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const cur = new Date(start + "T00:00:00");
+  const last = new Date(end + "T00:00:00");
+  while (cur <= last) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) dates.push(formatDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default function DashboardPage() {
@@ -68,6 +88,22 @@ export default function DashboardPage() {
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherText, setOtherText] = useState("");
   const [otherStatus, setOtherStatus] = useState<AbsenceBucket>("absent");
+
+  // Bulk "register a date range in advance" modal (e.g. a known 出席停止
+  // period). Unlike single-cell taps, this is allowed to write future
+  // dates since opening the modal and picking a range is a deliberate act.
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkStudentId, setBulkStudentId] = useState("");
+  const [bulkStartDate, setBulkStartDate] = useState(todayDateString());
+  const [bulkEndDate, setBulkEndDate] = useState(todayDateString());
+  const [bulkShowOtherInput, setBulkShowOtherInput] = useState(false);
+  const [bulkOtherText, setBulkOtherText] = useState("");
+  const [bulkOtherStatus, setBulkOtherStatus] = useState<AbsenceBucket>("absent");
+  const [bulkApplying, setBulkApplying] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(
+    null
+  );
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
@@ -193,6 +229,67 @@ export default function DashboardPage() {
     }
   }
 
+  function openBulkModal() {
+    setBulkStudentId(students[0]?.studentId ?? "");
+    setBulkStartDate(today);
+    setBulkEndDate(today);
+    setBulkShowOtherInput(false);
+    setBulkOtherText("");
+    setBulkOtherStatus("absent");
+    setBulkError(null);
+    setShowBulkModal(true);
+  }
+
+  async function applyBulk(status: AttendanceStatus, reason: string) {
+    if (!selectedClass || !bulkStudentId) return;
+    if (bulkEndDate < bulkStartDate) {
+      setBulkError("終了日は開始日より後にしてください");
+      return;
+    }
+
+    const dates = weekdayRange(bulkStartDate, bulkEndDate);
+    if (dates.length === 0) {
+      setBulkError("平日が含まれていません");
+      return;
+    }
+
+    setBulkApplying(true);
+    setBulkError(null);
+    setBulkProgress({ done: 0, total: dates.length });
+
+    let failures = 0;
+    for (let i = 0; i < dates.length; i++) {
+      try {
+        const res = await fetch("/api/attendance", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: dates[i],
+            className: selectedClass,
+            studentId: bulkStudentId,
+            status,
+            reason,
+          }),
+        });
+        if (!res.ok) failures++;
+      } catch {
+        failures++;
+      }
+      setBulkProgress({ done: i + 1, total: dates.length });
+      if (i < dates.length - 1) await sleep(350); // pace requests to stay under quota
+    }
+
+    setBulkApplying(false);
+    setBulkProgress(null);
+
+    if (failures > 0) {
+      setBulkError(`${failures}件の登録に失敗しました。もう一度お試しください`);
+    } else {
+      setShowBulkModal(false);
+    }
+    await load(); // refresh the grid with whatever succeeded
+  }
+
   if (!loaded || !selectedClass) return null;
 
   const numDays = daysInMonth(year, month);
@@ -277,6 +374,13 @@ export default function DashboardPage() {
       <p className="text-xs text-gray-400 text-center">
         過去の日付のマスをタップすると修正メニューが開きます（出/欠/遅/早/出停）
       </p>
+
+      <button
+        onClick={openBulkModal}
+        className="self-center rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold"
+      >
+        📅 期間で登録（未来日もOK）
+      </button>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
@@ -565,6 +669,175 @@ export default function DashboardPage() {
                 <button
                   onClick={() => setShowOtherInput(false)}
                   className="text-sm text-gray-400 underline"
+                >
+                  戻る
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showBulkModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !bulkApplying && setShowBulkModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-center">期間で登録</h2>
+            <p className="text-xs text-gray-400 text-center -mt-2">
+              土日は自動でスキップされます
+            </p>
+
+            {!bulkShowOtherInput ? (
+              <>
+                <label className="flex flex-col gap-1 text-sm">
+                  生徒
+                  <select
+                    value={bulkStudentId}
+                    onChange={(e) => setBulkStudentId(e.target.value)}
+                    className="border rounded-lg px-3 py-2"
+                  >
+                    {students.map((s) => (
+                      <option key={s.studentId} value={s.studentId}>
+                        {s.nameEnglish || s.nameKanji}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="flex gap-2">
+                  <label className="flex-1 flex flex-col gap-1 text-sm">
+                    開始日
+                    <input
+                      type="date"
+                      value={bulkStartDate}
+                      onChange={(e) => setBulkStartDate(e.target.value)}
+                      className="border rounded-lg px-2 py-2"
+                    />
+                  </label>
+                  <label className="flex-1 flex flex-col gap-1 text-sm">
+                    終了日
+                    <input
+                      type="date"
+                      value={bulkEndDate}
+                      onChange={(e) => setBulkEndDate(e.target.value)}
+                      className="border rounded-lg px-2 py-2"
+                    />
+                  </label>
+                </div>
+
+                {bulkError && <p className="text-red-600 text-sm">{bulkError}</p>}
+                {bulkProgress && (
+                  <p className="text-sm text-gray-500 text-center">
+                    登録中... {bulkProgress.done}/{bulkProgress.total}
+                  </p>
+                )}
+
+                <p className="text-xs text-gray-400 text-center mt-1">状態を選択</p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => applyBulk("present", "")}
+                    disabled={bulkApplying || !bulkStudentId}
+                    className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3 disabled:opacity-40"
+                  >
+                    出席
+                  </button>
+                  <button
+                    onClick={() => applyBulk("late", "")}
+                    disabled={bulkApplying || !bulkStudentId}
+                    className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-3 disabled:opacity-40"
+                  >
+                    遅刻
+                  </button>
+                  <button
+                    onClick={() => applyBulk("early_leave", "")}
+                    disabled={bulkApplying || !bulkStudentId}
+                    className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-3 disabled:opacity-40"
+                  >
+                    早退
+                  </button>
+                  {REASON_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.label}
+                      onClick={() => applyBulk(opt.status, opt.label)}
+                      disabled={bulkApplying || !bulkStudentId}
+                      className={`rounded-full border py-3 font-semibold disabled:opacity-40 ${
+                        opt.status === "suspended"
+                          ? "bg-purple-50 border-purple-400 text-purple-800"
+                          : "bg-red-50 border-red-400 text-red-700"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setBulkShowOtherInput(true)}
+                    disabled={bulkApplying || !bulkStudentId}
+                    className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3 disabled:opacity-40"
+                  >
+                    その他
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowBulkModal(false)}
+                  disabled={bulkApplying}
+                  className="text-sm text-gray-400 underline mt-1 disabled:opacity-40"
+                >
+                  キャンセル
+                </button>
+              </>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <input
+                  value={bulkOtherText}
+                  onChange={(e) => setBulkOtherText(e.target.value)}
+                  placeholder="理由を入力"
+                  autoFocus
+                  className="border rounded-lg px-3 py-2"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setBulkOtherStatus("absent")}
+                    className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                      bulkOtherStatus === "absent"
+                        ? "bg-red-50 border-red-400 text-red-700"
+                        : "border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    欠席として
+                  </button>
+                  <button
+                    onClick={() => setBulkOtherStatus("suspended")}
+                    className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                      bulkOtherStatus === "suspended"
+                        ? "bg-purple-50 border-purple-400 text-purple-800"
+                        : "border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    出停として
+                  </button>
+                </div>
+                {bulkProgress && (
+                  <p className="text-sm text-gray-500 text-center">
+                    登録中... {bulkProgress.done}/{bulkProgress.total}
+                  </p>
+                )}
+                <button
+                  onClick={() => applyBulk(bulkOtherStatus, bulkOtherText.trim())}
+                  disabled={bulkApplying || !bulkOtherText.trim()}
+                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                >
+                  適用する
+                </button>
+                <button
+                  onClick={() => setBulkShowOtherInput(false)}
+                  disabled={bulkApplying}
+                  className="text-sm text-gray-400 underline disabled:opacity-40"
                 >
                   戻る
                 </button>
