@@ -8,7 +8,12 @@ import type { Student, AttendanceStatus } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
-type AttendanceRecord = { date: string; studentId: string; status: AttendanceStatus };
+type AttendanceRecord = {
+  date: string;
+  studentId: string;
+  status: AttendanceStatus;
+  reason: string;
+};
 
 type EditingCell = {
   studentId: string;
@@ -159,7 +164,9 @@ export default function DashboardPage() {
       const others = prev.filter(
         (r) => !(r.studentId === studentId && r.date === date)
       );
-      return next === null ? others : [...others, { date, studentId, status: next }];
+      return next === null
+        ? others
+        : [...others, { date, studentId, status: next, reason: "" }];
     });
     setSavingKey(key);
     setError(null);
@@ -190,6 +197,15 @@ export default function DashboardPage() {
     const day = Number(r.date.slice(8, 10));
     if (!recordMap.has(r.studentId)) recordMap.set(r.studentId, new Map());
     recordMap.get(r.studentId)!.set(day, r.status);
+  }
+
+  // reasonCountMap[studentId] = "reason label" -> number of days that month
+  const reasonCountMap = new Map<string, Map<string, number>>();
+  for (const r of records) {
+    if (!r.reason) continue;
+    if (!reasonCountMap.has(r.studentId)) reasonCountMap.set(r.studentId, new Map());
+    const counts = reasonCountMap.get(r.studentId)!;
+    counts.set(r.reason, (counts.get(r.reason) ?? 0) + 1);
   }
 
   // how many students were present (出/遅/早) on each day of the month
@@ -282,7 +298,7 @@ export default function DashboardPage() {
                     {count > 0 ? count : ""}
                   </th>
                 ))}
-                <th colSpan={3} className="border border-gray-300 bg-gray-50" />
+                <th colSpan={4} className="border border-gray-300 bg-gray-50" />
               </tr>
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-8">
@@ -314,6 +330,9 @@ export default function DashboardPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-red-50 text-red-700 w-10 whitespace-nowrap">
                   欠
                 </th>
+                <th className="border border-gray-300 px-2 py-2 bg-red-50/40 text-red-700 whitespace-nowrap">
+                  欠席理由
+                </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   備考
                 </th>
@@ -329,6 +348,12 @@ export default function DashboardPage() {
                   else absentCount++;
                 }
                 const label = s.nameEnglish || s.nameKanji;
+                const reasonCounts = reasonCountMap.get(s.studentId);
+                const reasonSummary = reasonCounts
+                  ? Array.from(reasonCounts.entries())
+                      .map(([reason, count]) => `${reason} ${count}`)
+                      .join(", ")
+                  : "";
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
@@ -392,6 +417,9 @@ export default function DashboardPage() {
                     </td>
                     <td className="text-center border border-gray-300 font-semibold text-red-600">
                       {absentCount}
+                    </td>
+                    <td className="border border-gray-300 px-2 py-1 text-xs text-gray-600 whitespace-nowrap">
+                      {reasonSummary}
                     </td>
                     <td className="border border-gray-300 p-0">
                       <input
