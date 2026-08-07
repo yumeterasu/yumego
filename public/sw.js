@@ -4,13 +4,18 @@
 //   cached copy of that page when offline (so the app shell still opens).
 // - Static assets (_next/static, icons, etc.): cache-first, since their
 //   filenames are content-hashed and never change.
-// - GET API calls (e.g. /api/students): stale-while-revalidate, so the
-//   last known student list still shows up when offline.
+// - GET API calls (e.g. /api/students, /api/attendance): network-first —
+//   always try fresh data before ever touching the cache. Falling back to
+//   stale-while-revalidate here meant edits could take two page loads to
+//   show up (the first load serves the pre-edit cache while quietly
+//   refreshing it, the second load finally shows the refreshed copy).
+//   Network-first still falls back to the last cached response when truly
+//   offline, so the offline story is unchanged.
 // - Non-GET requests (POST /api/attendance, /api/students, /api/login):
 //   never intercepted here — the app itself queues failed submissions
 //   and retries them (see src/lib/offlineQueue.ts).
 
-const CACHE_NAME = "yumego-v1";
+const CACHE_NAME = "yumego-v2";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -57,7 +62,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (url.pathname.startsWith("/api/")) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(networkFirstJson(request));
     return;
   }
 });
@@ -89,15 +94,15 @@ async function cacheFirst(request) {
   return fresh;
 }
 
-async function staleWhileRevalidate(request) {
+async function networkFirstJson(request) {
   const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-  const networkPromise = fetch(request)
-    .then((fresh) => {
-      cache.put(request, fresh.clone());
-      return fresh;
-    })
-    .catch(() => undefined);
-
-  return cached || (await networkPromise) || new Response("[]", { status: 200 });
+  try {
+    const fresh = await fetch(request);
+    if (fresh.ok) cache.put(request, fresh.clone());
+    return fresh;
+  } catch {
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    return new Response("[]", { status: 200 });
+  }
 }
