@@ -192,7 +192,6 @@ export default function DashboardPage() {
   }
 
   function openEditor(studentId: string, studentLabel: string, date: string) {
-    if (date > today) return; // can't edit the future
     setShowOtherInput(false);
     setOtherText("");
     setOtherStatus("absent");
@@ -391,7 +390,7 @@ export default function DashboardPage() {
       </div>
 
       <p className="text-xs text-gray-400 text-center">
-        過去の日付のマスをタップすると修正メニューが開きます（出/欠/遅/早/出停）
+        過去の日付、または登録済みの未来日のマスをタップすると修正メニューが開きます（出/欠/遅/早/出停）
       </p>
 
       <button
@@ -513,6 +512,11 @@ export default function DashboardPage() {
                       const display = status ? STATUS_DISPLAY[status] : null;
                       const date = `${year}-${pad2(month)}-${pad2(day)}`;
                       const isFuture = date > today;
+                      // Blank future days are locked (use 期間で登録 instead)
+                      // to avoid casual future taps, but a future day that
+                      // already has data (e.g. a mistaken bulk entry) can
+                      // still be tapped open to fix or clear it.
+                      const isLocked = isFuture && !status;
                       const key = `${s.studentId}|${date}`;
                       const isSaving = savingKey === key;
 
@@ -520,12 +524,12 @@ export default function DashboardPage() {
                         <td
                           key={day}
                           onClick={
-                            isFuture ? undefined : () => openEditor(s.studentId, label, date)
+                            isLocked ? undefined : () => openEditor(s.studentId, label, date)
                           }
                           className={`text-center border border-gray-300 py-1 select-none ${
                             isWeekend ? "bg-orange-50/60" : ""
                           } ${
-                            isFuture
+                            isLocked
                               ? ""
                               : "cursor-pointer hover:bg-blue-50 active:bg-blue-100"
                           }`}
