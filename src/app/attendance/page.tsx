@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
+import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
 
 function todayDateString() {
   const d = new Date();
@@ -15,17 +16,7 @@ function todayDateString() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-type Absence = { status: "absent" | "suspended"; reason: string };
-
-// The only reasons a teacher can pick when marking someone absent.
-// No plain "欠席" — every absence must be one of these 6.
-const REASON_OPTIONS: { label: string; status: "absent" | "suspended" }[] = [
-  { label: "事故欠", status: "absent" },
-  { label: "病欠", status: "absent" },
-  { label: "インフルエンザ", status: "suspended" },
-  { label: "手足口病", status: "suspended" },
-  { label: "コロナ", status: "suspended" },
-];
+type Absence = { status: AbsenceBucket; reason: string };
 
 export default function AttendancePage() {
   const router = useRouter();
@@ -50,7 +41,7 @@ export default function AttendancePage() {
   } | null>(null);
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherText, setOtherText] = useState("");
-  const [otherStatus, setOtherStatus] = useState<"absent" | "suspended">("absent");
+  const [otherStatus, setOtherStatus] = useState<AbsenceBucket>("absent");
 
   const date = useMemo(() => todayDateString(), []);
 
@@ -131,7 +122,7 @@ export default function AttendancePage() {
     setReasonPickerFor({ studentId, label });
   }
 
-  function pickReason(label: string, status: "absent" | "suspended") {
+  function pickReason(label: string, status: AbsenceBucket) {
     if (!reasonPickerFor) return;
     setAbsences((prev) => {
       const next = new Map(prev);

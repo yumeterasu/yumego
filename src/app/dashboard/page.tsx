@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
+import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -64,6 +65,9 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+  const [showOtherInput, setShowOtherInput] = useState(false);
+  const [otherText, setOtherText] = useState("");
+  const [otherStatus, setOtherStatus] = useState<AbsenceBucket>("absent");
 
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
@@ -148,10 +152,13 @@ export default function DashboardPage() {
 
   function openEditor(studentId: string, studentLabel: string, date: string) {
     if (date > today) return; // can't edit the future
+    setShowOtherInput(false);
+    setOtherText("");
+    setOtherStatus("absent");
     setEditingCell({ studentId, studentLabel, date });
   }
 
-  async function applyEdit(next: AttendanceStatus | null) {
+  async function applyEdit(next: AttendanceStatus | null, reason: string = "") {
     if (!selectedClass || !editingCell) return;
     const { studentId, date } = editingCell;
     const key = `${studentId}|${date}`;
@@ -166,7 +173,7 @@ export default function DashboardPage() {
       );
       return next === null
         ? others
-        : [...others, { date, studentId, status: next, reason: "" }];
+        : [...others, { date, studentId, status: next, reason }];
     });
     setSavingKey(key);
     setError(null);
@@ -175,7 +182,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, className: selectedClass, studentId, status: next }),
+        body: JSON.stringify({ date, className: selectedClass, studentId, status: next, reason }),
       });
       if (!res.ok) throw new Error("failed");
     } catch {
@@ -462,51 +469,107 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-500">{editingCell.date}</p>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => applyEdit("present")}
-                className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3"
-              >
-                出席
-              </button>
-              <button
-                onClick={() => applyEdit("late")}
-                className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-3"
-              >
-                遅刻
-              </button>
-              <button
-                onClick={() => applyEdit("early_leave")}
-                className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-3"
-              >
-                早退
-              </button>
-              <button
-                onClick={() => applyEdit("absent")}
-                className="rounded-full bg-red-50 border border-red-400 text-red-700 font-semibold py-3"
-              >
-                欠席
-              </button>
-              <button
-                onClick={() => applyEdit("suspended")}
-                className="rounded-full bg-purple-50 border border-purple-400 text-purple-800 font-semibold py-3"
-              >
-                出席停止
-              </button>
-              <button
-                onClick={() => applyEdit(null)}
-                className="rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3"
-              >
-                空欄にする（未確認）
-              </button>
-            </div>
-
-            <button
-              onClick={() => setEditingCell(null)}
-              className="text-sm text-gray-400 underline mt-1"
-            >
-              キャンセル
-            </button>
+            {!showOtherInput ? (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => applyEdit("present")}
+                  className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3"
+                >
+                  出席
+                </button>
+                <button
+                  onClick={() => applyEdit("late")}
+                  className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-3"
+                >
+                  遅刻
+                </button>
+                <button
+                  onClick={() => applyEdit("early_leave")}
+                  className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-3"
+                >
+                  早退
+                </button>
+                <p className="text-xs text-gray-400 text-center mt-1">
+                  欠席理由を選択（出停は自動判定）
+                </p>
+                {REASON_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.label}
+                    onClick={() => applyEdit(opt.status, opt.label)}
+                    className={`rounded-full border py-3 font-semibold ${
+                      opt.status === "suspended"
+                        ? "bg-purple-50 border-purple-400 text-purple-800"
+                        : "bg-red-50 border-red-400 text-red-700"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowOtherInput(true)}
+                  className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3"
+                >
+                  その他
+                </button>
+                <button
+                  onClick={() => applyEdit(null)}
+                  className="rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3"
+                >
+                  空欄にする（未確認）
+                </button>
+                <button
+                  onClick={() => setEditingCell(null)}
+                  className="text-sm text-gray-400 underline mt-1"
+                >
+                  キャンセル
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <input
+                  value={otherText}
+                  onChange={(e) => setOtherText(e.target.value)}
+                  placeholder="理由を入力"
+                  autoFocus
+                  className="border rounded-lg px-3 py-2"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setOtherStatus("absent")}
+                    className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                      otherStatus === "absent"
+                        ? "bg-red-50 border-red-400 text-red-700"
+                        : "border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    欠席として
+                  </button>
+                  <button
+                    onClick={() => setOtherStatus("suspended")}
+                    className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                      otherStatus === "suspended"
+                        ? "bg-purple-50 border-purple-400 text-purple-800"
+                        : "border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    出停として
+                  </button>
+                </div>
+                <button
+                  onClick={() => applyEdit(otherStatus, otherText.trim())}
+                  disabled={!otherText.trim()}
+                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                >
+                  適用する
+                </button>
+                <button
+                  onClick={() => setShowOtherInput(false)}
+                  className="text-sm text-gray-400 underline"
+                >
+                  戻る
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
