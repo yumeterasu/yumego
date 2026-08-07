@@ -110,6 +110,14 @@ export default function DashboardPage() {
     displayLabel: string;
   } | null>(null);
 
+  // Custom, per-class labels for the チェック1/2/3 header cells.
+  const [checkLabels, setCheckLabels] = useState({
+    check1Label: "",
+    check2Label: "",
+    check3Label: "",
+  });
+  const [savingLabelColumn, setSavingLabelColumn] = useState<string | null>(null);
+
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
 
@@ -118,11 +126,12 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [studentsRes, attendanceRes] = await Promise.all([
+      const [studentsRes, attendanceRes, settingsRes] = await Promise.all([
         fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
         fetch(
           `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
         ),
+        fetch(`/api/class-settings?class=${encodeURIComponent(selectedClass)}`),
       ]);
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
@@ -133,6 +142,12 @@ export default function DashboardPage() {
       setRemarks(
         Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
       );
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json();
+        setCheckLabels(
+          settingsData.labels ?? { check1Label: "", check2Label: "", check3Label: "" }
+        );
+      }
     } catch {
       setError("データの取得に失敗しました");
     } finally {
@@ -185,6 +200,31 @@ export default function DashboardPage() {
       setStudents((prev) =>
         prev.map((s) => (s.studentId === studentId ? { ...s, [column]: current } : s))
       );
+    }
+  }
+
+  async function handleCheckLabelBlur(
+    column: "check1Label" | "check2Label" | "check3Label",
+    value: string
+  ) {
+    if (!selectedClass) return;
+    const original = checkLabels[column];
+    if (value === original) return;
+
+    setSavingLabelColumn(column);
+    setError(null);
+    try {
+      const res = await fetch("/api/class-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className: selectedClass, column, label: value }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setCheckLabels((prev) => ({ ...prev, [column]: value }));
+    } catch {
+      setError("見出しの保存に失敗しました");
+    } finally {
+      setSavingLabelColumn(null);
     }
   }
 
@@ -486,14 +526,44 @@ export default function DashboardPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-red-50/40 text-red-700 whitespace-nowrap">
                   欠席理由
                 </th>
-                <th className="border border-gray-300 px-2 py-2 bg-cyan-100 text-cyan-800 w-14 whitespace-nowrap">
-                  チェック1
+                <th className="border border-gray-300 px-1 py-1 bg-cyan-100 text-cyan-800 w-14">
+                  <input
+                    type="text"
+                    value={checkLabels.check1Label}
+                    placeholder="未設定"
+                    disabled={savingLabelColumn === "check1Label"}
+                    onChange={(e) =>
+                      setCheckLabels((prev) => ({ ...prev, check1Label: e.target.value }))
+                    }
+                    onBlur={(e) => handleCheckLabelBlur("check1Label", e.target.value)}
+                    className="w-full bg-transparent text-center text-cyan-800 placeholder-cyan-500/70 outline-none focus:bg-white/60 rounded px-0.5"
+                  />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 bg-pink-100 text-pink-800 w-14 whitespace-nowrap">
-                  チェック2
+                <th className="border border-gray-300 px-1 py-1 bg-pink-100 text-pink-800 w-14">
+                  <input
+                    type="text"
+                    value={checkLabels.check2Label}
+                    placeholder="未設定"
+                    disabled={savingLabelColumn === "check2Label"}
+                    onChange={(e) =>
+                      setCheckLabels((prev) => ({ ...prev, check2Label: e.target.value }))
+                    }
+                    onBlur={(e) => handleCheckLabelBlur("check2Label", e.target.value)}
+                    className="w-full bg-transparent text-center text-pink-800 placeholder-pink-500/70 outline-none focus:bg-white/60 rounded px-0.5"
+                  />
                 </th>
-                <th className="border border-gray-300 px-2 py-2 bg-lime-100 text-lime-800 w-14 whitespace-nowrap">
-                  チェック3
+                <th className="border border-gray-300 px-1 py-1 bg-lime-100 text-lime-800 w-14">
+                  <input
+                    type="text"
+                    value={checkLabels.check3Label}
+                    placeholder="未設定"
+                    disabled={savingLabelColumn === "check3Label"}
+                    onChange={(e) =>
+                      setCheckLabels((prev) => ({ ...prev, check3Label: e.target.value }))
+                    }
+                    onBlur={(e) => handleCheckLabelBlur("check3Label", e.target.value)}
+                    className="w-full bg-transparent text-center text-lime-800 placeholder-lime-600/70 outline-none focus:bg-white/60 rounded px-0.5"
+                  />
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   備考

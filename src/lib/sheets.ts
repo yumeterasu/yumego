@@ -421,3 +421,76 @@ export async function clearAttendance(
     },
   });
 }
+
+// Per-class custom labels for the 3 generic checkbox columns (チェック1/2/3).
+export type ClassCheckLabels = {
+  check1Label: string;
+  check2Label: string;
+  check3Label: string;
+};
+
+const CHECK_LABEL_COLUMN_LETTERS: Record<keyof ClassCheckLabels, string> = {
+  check1Label: "B",
+  check2Label: "C",
+  check3Label: "D",
+};
+
+/** Read a class's custom checkbox column labels (blank strings if unset). */
+export async function getClassCheckLabels(
+  className: string
+): Promise<ClassCheckLabels> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "ClassSettings!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  const row = rows.find((r) => (r[0] ?? "") === className);
+  return {
+    check1Label: row?.[1] ?? "",
+    check2Label: row?.[2] ?? "",
+    check3Label: row?.[3] ?? "",
+  };
+}
+
+/** Set one of a class's custom checkbox column labels. */
+export async function updateClassCheckLabel(
+  className: string,
+  column: keyof ClassCheckLabels,
+  label: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "ClassSettings!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === className);
+
+  const colLetter = CHECK_LABEL_COLUMN_LETTERS[column];
+
+  if (rowOffset === -1) {
+    // no row for this class yet — append one
+    const values =
+      column === "check1Label"
+        ? [className, label, "", ""]
+        : column === "check2Label"
+          ? [className, "", label, ""]
+          : [className, "", "", label];
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "ClassSettings!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [values] },
+    });
+    return;
+  }
+
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `ClassSettings!${colLetter}${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[label]] },
+  });
+}
