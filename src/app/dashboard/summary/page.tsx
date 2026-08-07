@@ -4,9 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import type { Student } from "@/lib/sheets";
+import type { Student, AttendanceStatus } from "@/lib/sheets";
 
-type AttendanceRecord = { date: string; studentId: string; present: boolean };
+type AttendanceRecord = { date: string; studentId: string; status: AttendanceStatus };
+
+// 遅刻/早退 count toward 出席日数; 出席停止 does not.
+function countsAsPresent(status: AttendanceStatus): boolean {
+  return status === "present" || status === "late" || status === "early_leave";
+}
 
 // Japanese school year: April through March. monthNum is the calendar
 // month (1-12); yearOffset is 0 for Apr-Dec, 1 for Jan-Mar (next
@@ -122,7 +127,7 @@ export default function SummaryPage() {
   for (const s of students) counts.set(s.studentId, new Array(12).fill(0));
 
   for (const r of records) {
-    if (!r.present) continue;
+    if (!countsAsPresent(r.status)) continue;
     const y = Number(r.date.slice(0, 4));
     const m = Number(r.date.slice(5, 7));
     const monthIndex = FISCAL_MONTHS.findIndex(

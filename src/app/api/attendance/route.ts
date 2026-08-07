@@ -4,7 +4,16 @@ import {
   getAttendanceForMonth,
   clearAttendance,
   AttendanceRecord,
+  AttendanceStatus,
 } from "@/lib/sheets";
+
+const VALID_STATUSES: AttendanceStatus[] = [
+  "present",
+  "absent",
+  "late",
+  "early_leave",
+  "suspended",
+];
 
 // GET /api/attendance?class=...&month=2026-08
 export async function GET(req: NextRequest) {
@@ -32,8 +41,9 @@ export async function GET(req: NextRequest) {
 
 // POST /api/attendance
 // body: { date: "2026-08-05", className: "...", records: [{ studentId, present }] }
-// Used by the daily check-in flow. Safe to resubmit the same day — existing
-// rows for that date+student are updated in place, not duplicated.
+// Used by the daily check-in flow (simple present/absent tap). Safe to
+// resubmit the same day — existing rows for that date+student are updated
+// in place, not duplicated.
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { date, className, records } = body ?? {};
@@ -52,7 +62,7 @@ export async function POST(req: NextRequest) {
       date,
       className,
       studentId: r.studentId,
-      present: r.present,
+      status: r.present ? "present" : "absent",
       timestamp,
     })
   );
@@ -70,27 +80,27 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH /api/attendance
-// body: { date: "2026-08-05", className: "...", studentId: "...", present: true | false | null }
+// body: { date: "2026-08-05", className: "...", studentId: "...", status: AttendanceStatus | null }
 // Used by the dashboard to correct a single day/student after the fact.
-// present: null clears the cell back to "not checked yet" (removes the row).
+// status: null clears the cell back to "not checked yet" (removes the row).
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { date, className, studentId, present } = body ?? {};
+  const { date, className, studentId, status } = body ?? {};
 
-  if (
-    !date ||
-    !className ||
-    !studentId ||
-    (typeof present !== "boolean" && present !== null)
-  ) {
+  const statusIsValid =
+    status === null ||
+    (typeof status === "string" &&
+      VALID_STATUSES.includes(status as AttendanceStatus));
+
+  if (!date || !className || !studentId || !statusIsValid) {
     return NextResponse.json(
-      { error: "Missing date, className, studentId, or present" },
+      { error: "Missing date, className, studentId, or invalid status" },
       { status: 400 }
     );
   }
 
   try {
-    if (present === null) {
+    if (status === null) {
       await clearAttendance(date, studentId);
     } else {
       await upsertAttendance([
@@ -98,7 +108,7 @@ export async function PATCH(req: NextRequest) {
           date,
           className,
           studentId,
-          present,
+          status,
           timestamp: new Date().toISOString(),
         },
       ]);

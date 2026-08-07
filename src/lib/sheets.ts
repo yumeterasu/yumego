@@ -47,11 +47,42 @@ export type Student = {
   remark: string;
 };
 
+// 出席 (present) / 欠席 (absent) / 遅刻 (late) / 早退 (early leave) /
+// 出席停止 (attendance suspended, e.g. quarantine)
+export type AttendanceStatus =
+  | "present"
+  | "absent"
+  | "late"
+  | "early_leave"
+  | "suspended";
+
+const VALID_STATUSES: AttendanceStatus[] = [
+  "present",
+  "absent",
+  "late",
+  "early_leave",
+  "suspended",
+];
+
+/** Whether a status counts toward the 出 (present) total vs the 欠 (absent) total. */
+export function countsAsPresent(status: AttendanceStatus): boolean {
+  return status === "present" || status === "late" || status === "early_leave";
+}
+
+function parseStatus(raw: string): AttendanceStatus {
+  const upper = raw.toString().toUpperCase();
+  if (upper === "TRUE") return "present"; // backward-compat with old boolean data
+  if (upper === "FALSE") return "absent";
+  return VALID_STATUSES.includes(raw as AttendanceStatus)
+    ? (raw as AttendanceStatus)
+    : "present";
+}
+
 export type AttendanceRecord = {
   date: string;
   className: string;
   studentId: string;
-  present: boolean;
+  status: AttendanceStatus;
   timestamp: string;
 };
 
@@ -101,7 +132,7 @@ export async function addStudent(
   });
 }
 
-/** Update a single student's remark (その他) note in place. */
+/** Update a single student's remark (備考) note in place. */
 export async function updateStudentRemark(
   studentId: string,
   remark: string
@@ -128,7 +159,7 @@ export async function updateStudentRemark(
  * Present-student count per class for a single date, across every class
  * in the sheet. Classes with no rows at all for that date are omitted —
  * that's how the caller tells "not checked in yet" apart from "checked
- * in, zero present".
+ * in, zero present". 遅刻/早退 count as present; 出席停止 counts as absent.
  */
 export async function getAttendanceSummaryForDate(
   date: string // "2026-08-06"
@@ -147,9 +178,9 @@ export async function getAttendanceSummaryForDate(
     if (rowDate !== date) continue;
     const className = (row[1] ?? "").toString();
     if (!className) continue;
-    const present = (row[3] ?? "").toString().toUpperCase() === "TRUE";
+    const status = parseStatus((row[3] ?? "").toString());
     if (!(className in summary)) summary[className] = 0;
-    if (present) summary[className]++;
+    if (countsAsPresent(status)) summary[className]++;
   }
 
   return summary;
@@ -159,7 +190,7 @@ export async function getAttendanceSummaryForDate(
 export async function getAttendanceForMonth(
   className: string,
   yearMonth: string // "2026-08"
-): Promise<{ date: string; studentId: string; present: boolean }[]> {
+): Promise<{ date: string; studentId: string; status: AttendanceStatus }[]> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -173,7 +204,7 @@ export async function getAttendanceForMonth(
       date: (row[0] ?? "").toString(),
       className: (row[1] ?? "").toString(),
       studentId: (row[2] ?? "").toString(),
-      present: (row[3] ?? "").toString().toUpperCase() === "TRUE",
+      status: parseStatus((row[3] ?? "").toString()),
     }))
     .filter(
       (r) =>
@@ -181,7 +212,7 @@ export async function getAttendanceForMonth(
         r.date.startsWith(yearMonth) &&
         r.studentId
     )
-    .map((r) => ({ date: r.date, studentId: r.studentId, present: r.present }));
+    .map((r) => ({ date: r.date, studentId: r.studentId, status: r.status }));
 }
 
 /**
@@ -191,7 +222,7 @@ export async function getAttendanceForMonth(
 export async function getAttendanceForFiscalYear(
   className: string,
   fiscalYearStartYear: number
-): Promise<{ date: string; studentId: string; present: boolean }[]> {
+): Promise<{ date: string; studentId: string; status: AttendanceStatus }[]> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
@@ -207,7 +238,7 @@ export async function getAttendanceForFiscalYear(
       date: (row[0] ?? "").toString(),
       className: (row[1] ?? "").toString(),
       studentId: (row[2] ?? "").toString(),
-      present: (row[3] ?? "").toString().toUpperCase() === "TRUE",
+      status: parseStatus((row[3] ?? "").toString()),
     }))
     .filter(
       (r) =>
@@ -216,7 +247,7 @@ export async function getAttendanceForFiscalYear(
         r.date >= startDate &&
         r.date <= endDate
     )
-    .map((r) => ({ date: r.date, studentId: r.studentId, present: r.present }));
+    .map((r) => ({ date: r.date, studentId: r.studentId, status: r.status }));
 }
 
 /**
@@ -243,15 +274,13 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
     if (date && studentId) rowIndex.set(`${date}|${studentId}`, i + 2);
   });
 
-  const updates: { range: string; values: (string | boolean)[][] }[] = [];
+  const updates: { range: string; values: string[][] }[] = [];
   const toAppend: AttendanceRecord[] = [];
 
   for (const r of records) {
     const key = `${r.date}|${r.studentId}`;
     const rowNum = rowIndex.get(key);
-    const values = [
-      [r.date, r.className, r.studentId, r.present ? "TRUE" : "FALSE", r.timestamp],
-    ];
+    const values = [[r.date, r.className, r.studentId, r.status, r.timestamp]];
     if (rowNum) {
       updates.push({ range: `Attendance!A${rowNum}:E${rowNum}`, values });
     } else {
@@ -276,7 +305,7 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
           r.date,
           r.className,
           r.studentId,
-          r.present ? "TRUE" : "FALSE",
+          r.status,
           r.timestamp,
         ]),
       },

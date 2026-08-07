@@ -4,16 +4,29 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import type { Student } from "@/lib/sheets";
+import type { Student, AttendanceStatus } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
-type AttendanceRecord = { date: string; studentId: string; present: boolean };
+type AttendanceRecord = { date: string; studentId: string; status: AttendanceStatus };
 
 type EditingCell = {
   studentId: string;
   studentLabel: string;
   date: string;
+};
+
+// 遅刻/早退 count toward 出 (present); 出席停止 counts toward 欠 (absent).
+function countsAsPresent(status: AttendanceStatus): boolean {
+  return status === "present" || status === "late" || status === "early_leave";
+}
+
+const STATUS_DISPLAY: Record<AttendanceStatus, { label: string; className: string }> = {
+  present: { label: "出", className: "text-green-600" },
+  absent: { label: "欠", className: "text-red-600" },
+  late: { label: "遅", className: "text-amber-600" },
+  early_leave: { label: "早", className: "text-blue-600" },
+  suspended: { label: "出停", className: "text-purple-700 text-xs" },
 };
 
 function daysInMonth(year: number, month: number) {
@@ -133,7 +146,7 @@ export default function DashboardPage() {
     setEditingCell({ studentId, studentLabel, date });
   }
 
-  async function applyEdit(next: boolean | null) {
+  async function applyEdit(next: AttendanceStatus | null) {
     if (!selectedClass || !editingCell) return;
     const { studentId, date } = editingCell;
     const key = `${studentId}|${date}`;
@@ -146,7 +159,7 @@ export default function DashboardPage() {
       const others = prev.filter(
         (r) => !(r.studentId === studentId && r.date === date)
       );
-      return next === null ? others : [...others, { date, studentId, present: next }];
+      return next === null ? others : [...others, { date, studentId, status: next }];
     });
     setSavingKey(key);
     setError(null);
@@ -155,7 +168,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, className: selectedClass, studentId, present: next }),
+        body: JSON.stringify({ date, className: selectedClass, studentId, status: next }),
       });
       if (!res.ok) throw new Error("failed");
     } catch {
@@ -181,19 +194,20 @@ export default function DashboardPage() {
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  // recordMap[studentId][day] = present boolean
-  const recordMap = new Map<string, Map<number, boolean>>();
+  // recordMap[studentId][day] = status
+  const recordMap = new Map<string, Map<number, AttendanceStatus>>();
   for (const r of records) {
     const day = Number(r.date.slice(8, 10));
     if (!recordMap.has(r.studentId)) recordMap.set(r.studentId, new Map());
-    recordMap.get(r.studentId)!.set(day, r.present);
+    recordMap.get(r.studentId)!.set(day, r.status);
   }
 
-  // how many students were present on each day of the month
+  // how many students were present (出/遅/早) on each day of the month
   const dailyPresentCounts = dayNumbers.map((day) => {
     let count = 0;
     for (const dayMap of recordMap.values()) {
-      if (dayMap.get(day) === true) count++;
+      const status = dayMap.get(day);
+      if (status && countsAsPresent(status)) count++;
     }
     return count;
   });
@@ -249,7 +263,7 @@ export default function DashboardPage() {
       </div>
 
       <p className="text-xs text-gray-400 text-center">
-        過去の日付のマスをタップすると修正メニューが開きます
+        過去の日付のマスをタップすると修正メニューが開きます（出/欠/遅/早/出停）
       </p>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
@@ -318,11 +332,11 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {students.map((s, i) => {
-                const dayMap = recordMap.get(s.studentId) ?? new Map();
+                const dayMap = recordMap.get(s.studentId) ?? new Map<number, AttendanceStatus>();
                 let presentCount = 0;
                 let absentCount = 0;
-                for (const v of dayMap.values()) {
-                  if (v) presentCount++;
+                for (const status of dayMap.values()) {
+                  if (countsAsPresent(status)) presentCount++;
                   else absentCount++;
                 }
                 const label = s.nameEnglish || s.nameKanji;
@@ -351,7 +365,8 @@ export default function DashboardPage() {
                     {dayNumbers.map((day) => {
                       const dow = new Date(year, month - 1, day).getDay();
                       const isWeekend = dow === 0 || dow === 6;
-                      const present = dayMap.get(day);
+                      const status = dayMap.get(day);
+                      const display = status ? STATUS_DISPLAY[status] : null;
                       const date = `${year}-${pad2(month)}-${pad2(day)}`;
                       const isFuture = date > today;
                       const key = `${s.studentId}|${date}`;
@@ -373,12 +388,12 @@ export default function DashboardPage() {
                         >
                           {isSaving ? (
                             <span className="text-gray-300">…</span>
-                          ) : present === undefined ? (
-                            ""
-                          ) : present ? (
-                            <span className="text-green-600 font-bold">出</span>
+                          ) : display ? (
+                            <span className={`font-bold ${display.className}`}>
+                              {display.label}
+                            </span>
                           ) : (
-                            <span className="text-red-600 font-bold">欠</span>
+                            ""
                           )}
                         </td>
                       );
@@ -432,16 +447,34 @@ export default function DashboardPage() {
 
             <div className="flex flex-col gap-2">
               <button
-                onClick={() => applyEdit(true)}
+                onClick={() => applyEdit("present")}
                 className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3"
               >
                 出席
               </button>
               <button
-                onClick={() => applyEdit(false)}
+                onClick={() => applyEdit("late")}
+                className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-3"
+              >
+                遅刻
+              </button>
+              <button
+                onClick={() => applyEdit("early_leave")}
+                className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-3"
+              >
+                早退
+              </button>
+              <button
+                onClick={() => applyEdit("absent")}
                 className="rounded-full bg-red-50 border border-red-400 text-red-700 font-semibold py-3"
               >
                 欠席
+              </button>
+              <button
+                onClick={() => applyEdit("suspended")}
+                className="rounded-full bg-purple-50 border border-purple-400 text-purple-800 font-semibold py-3"
+              >
+                出席停止
               </button>
               <button
                 onClick={() => applyEdit(null)}
