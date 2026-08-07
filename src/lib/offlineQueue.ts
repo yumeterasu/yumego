@@ -1,5 +1,7 @@
 "use client";
 
+import type { AttendanceStatus } from "@/lib/sheets";
+
 // Local queue for attendance submissions that failed because the device
 // was offline. Entries live in localStorage so they survive a page reload
 // or the app being closed and reopened later in the day.
@@ -12,7 +14,7 @@ export type QueuedAttendance = {
   payload: {
     date: string;
     className: string;
-    records: { studentId: string; present: boolean }[];
+    records: { studentId: string; status: AttendanceStatus; reason: string }[];
   };
 };
 

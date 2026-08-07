@@ -84,6 +84,8 @@ export type AttendanceRecord = {
   studentId: string;
   status: AttendanceStatus;
   timestamp: string;
+  /** Free-text detail, e.g. which of 事故欠/病欠/インフルエンザ/... this is. */
+  reason: string;
 };
 
 /** Read all students for a given class (active only). */
@@ -167,7 +169,7 @@ export async function getAttendanceSummaryForDate(
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Attendance!A2:E",
+    range: "Attendance!A2:F",
   });
 
   const rows = res.data.values ?? [];
@@ -186,15 +188,22 @@ export async function getAttendanceSummaryForDate(
   return summary;
 }
 
+type AttendanceRow = {
+  date: string;
+  studentId: string;
+  status: AttendanceStatus;
+  reason: string;
+};
+
 /** Read every attendance record for a class within a given YYYY-MM month. */
 export async function getAttendanceForMonth(
   className: string,
   yearMonth: string // "2026-08"
-): Promise<{ date: string; studentId: string; status: AttendanceStatus }[]> {
+): Promise<AttendanceRow[]> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Attendance!A2:E",
+    range: "Attendance!A2:F",
   });
 
   const rows = res.data.values ?? [];
@@ -205,6 +214,7 @@ export async function getAttendanceForMonth(
       className: (row[1] ?? "").toString(),
       studentId: (row[2] ?? "").toString(),
       status: parseStatus((row[3] ?? "").toString()),
+      reason: (row[5] ?? "").toString(),
     }))
     .filter(
       (r) =>
@@ -212,7 +222,12 @@ export async function getAttendanceForMonth(
         r.date.startsWith(yearMonth) &&
         r.studentId
     )
-    .map((r) => ({ date: r.date, studentId: r.studentId, status: r.status }));
+    .map((r) => ({
+      date: r.date,
+      studentId: r.studentId,
+      status: r.status,
+      reason: r.reason,
+    }));
 }
 
 /**
@@ -222,11 +237,11 @@ export async function getAttendanceForMonth(
 export async function getAttendanceForFiscalYear(
   className: string,
   fiscalYearStartYear: number
-): Promise<{ date: string; studentId: string; status: AttendanceStatus }[]> {
+): Promise<AttendanceRow[]> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Attendance!A2:E",
+    range: "Attendance!A2:F",
   });
 
   const rows = res.data.values ?? [];
@@ -239,6 +254,7 @@ export async function getAttendanceForFiscalYear(
       className: (row[1] ?? "").toString(),
       studentId: (row[2] ?? "").toString(),
       status: parseStatus((row[3] ?? "").toString()),
+      reason: (row[5] ?? "").toString(),
     }))
     .filter(
       (r) =>
@@ -247,7 +263,12 @@ export async function getAttendanceForFiscalYear(
         r.date >= startDate &&
         r.date <= endDate
     )
-    .map((r) => ({ date: r.date, studentId: r.studentId, status: r.status }));
+    .map((r) => ({
+      date: r.date,
+      studentId: r.studentId,
+      status: r.status,
+      reason: r.reason,
+    }));
 }
 
 /**
@@ -262,7 +283,7 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
   const sheets = getSheetsClient();
   const existing = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Attendance!A2:E",
+    range: "Attendance!A2:F",
   });
   const rows = existing.data.values ?? [];
 
@@ -280,9 +301,11 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
   for (const r of records) {
     const key = `${r.date}|${r.studentId}`;
     const rowNum = rowIndex.get(key);
-    const values = [[r.date, r.className, r.studentId, r.status, r.timestamp]];
+    const values = [
+      [r.date, r.className, r.studentId, r.status, r.timestamp, r.reason ?? ""],
+    ];
     if (rowNum) {
-      updates.push({ range: `Attendance!A${rowNum}:E${rowNum}`, values });
+      updates.push({ range: `Attendance!A${rowNum}:F${rowNum}`, values });
     } else {
       toAppend.push(r);
     }
@@ -298,7 +321,7 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
   if (toAppend.length > 0) {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: "Attendance!A:E",
+      range: "Attendance!A:F",
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: toAppend.map((r) => [
@@ -307,6 +330,7 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
           r.studentId,
           r.status,
           r.timestamp,
+          r.reason ?? "",
         ]),
       },
     });
@@ -324,7 +348,7 @@ export async function clearAttendance(
   const sheets = getSheetsClient();
   const existing = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Attendance!A2:E",
+    range: "Attendance!A2:F",
   });
   const rows = existing.data.values ?? [];
 

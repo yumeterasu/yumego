@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import type { Student } from "@/lib/sheets";
+import type { Student, AttendanceStatus } from "@/lib/sheets";
 import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
 
 function todayDateString() {
@@ -15,13 +15,25 @@ function todayDateString() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+type Absence = { status: "absent" | "suspended"; reason: string };
+
+// The only reasons a teacher can pick when marking someone absent.
+// No plain "欠席" — every absence must be one of these 6.
+const REASON_OPTIONS: { label: string; status: "absent" | "suspended" }[] = [
+  { label: "事故欠", status: "absent" },
+  { label: "病欠", status: "absent" },
+  { label: "インフルエンザ", status: "suspended" },
+  { label: "手足口病", status: "suspended" },
+  { label: "コロナ", status: "suspended" },
+];
+
 export default function AttendancePage() {
   const router = useRouter();
   const { selectedClass, loaded, clearSelectedClass } = useSelectedClass();
 
   const [students, setStudents] = useState<Student[]>([]);
-  // Who is marked present. Empty by default — nobody has arrived yet.
-  const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
+  // Everyone starts present. Only students tapped-out show up here.
+  const [absences, setAbsences] = useState<Map<string, Absence>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -30,6 +42,15 @@ export default function AttendancePage() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
+
+  // Which student's reason picker is open, and its "その他" sub-state.
+  const [reasonPickerFor, setReasonPickerFor] = useState<{
+    studentId: string;
+    label: string;
+  } | null>(null);
+  const [showOtherInput, setShowOtherInput] = useState(false);
+  const [otherText, setOtherText] = useState("");
+  const [otherStatus, setOtherStatus] = useState<"absent" | "suspended">("absent");
 
   const date = useMemo(() => todayDateString(), []);
 
@@ -78,7 +99,7 @@ export default function AttendancePage() {
       const data = await res.json();
       setStudents(data.students ?? []);
       localStorage.setItem(cacheKey, JSON.stringify(data.students ?? []));
-      setPresentIds(new Set());
+      setAbsences(new Map());
       setSubmitted(false);
       setQueuedOffline(false);
     } catch {
@@ -94,17 +115,43 @@ export default function AttendancePage() {
     }
   }
 
-  function togglePresent(studentId: string) {
-    setPresentIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(studentId)) next.delete(studentId);
-      else next.add(studentId);
-      return next;
-    });
+  function handleStudentClick(studentId: string, label: string) {
+    if (absences.has(studentId)) {
+      // Already marked absent — tapping again undoes it back to present.
+      setAbsences((prev) => {
+        const next = new Map(prev);
+        next.delete(studentId);
+        return next;
+      });
+      return;
+    }
+    setShowOtherInput(false);
+    setOtherText("");
+    setOtherStatus("absent");
+    setReasonPickerFor({ studentId, label });
   }
 
-  function markAllPresent() {
-    setPresentIds(new Set(students.map((s) => s.studentId)));
+  function pickReason(label: string, status: "absent" | "suspended") {
+    if (!reasonPickerFor) return;
+    setAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(reasonPickerFor.studentId, { status, reason: label });
+      return next;
+    });
+    setReasonPickerFor(null);
+  }
+
+  function applyOtherReason() {
+    if (!reasonPickerFor || !otherText.trim()) return;
+    setAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(reasonPickerFor.studentId, {
+        status: otherStatus,
+        reason: otherText.trim(),
+      });
+      return next;
+    });
+    setReasonPickerFor(null);
   }
 
   async function handleSubmit() {
@@ -112,10 +159,11 @@ export default function AttendancePage() {
     setSubmitting(true);
     setError(null);
 
-    const records = students.map((s) => ({
-      studentId: s.studentId,
-      present: presentIds.has(s.studentId),
-    }));
+    const records = students.map((s) => {
+      const absence = absences.get(s.studentId);
+      const status: AttendanceStatus = absence ? absence.status : "present";
+      return { studentId: s.studentId, status, reason: absence?.reason ?? "" };
+    });
     const payload = { date, className: selectedClass, records };
 
     try {
@@ -153,8 +201,8 @@ export default function AttendancePage() {
 
   if (!loaded || !selectedClass) return null;
 
-  const presentCount = presentIds.size;
-  const absentStudents = students.filter((s) => !presentIds.has(s.studentId));
+  const presentCount = students.length - absences.size;
+  const absentStudents = students.filter((s) => absences.has(s.studentId));
   const absentCount = absentStudents.length;
 
   return (
@@ -211,35 +259,37 @@ export default function AttendancePage() {
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-gray-600">
-              来た生徒をタップしてください（全員デフォルトで未出席）
-            </p>
-            <button
-              onClick={markAllPresent}
-              className="shrink-0 rounded-full border border-green-500 text-green-700 text-sm font-semibold px-4 py-2 hover:bg-green-50"
-            >
-              全員出席
-            </button>
-          </div>
+          <p className="text-sm text-gray-600">
+            全員デフォルトで出席済みです。休みの生徒だけタップしてください
+          </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
             {students.map((s, i) => {
-              const isPresent = presentIds.has(s.studentId);
+              const label = s.nameEnglish || s.nameKanji;
+              const absence = absences.get(s.studentId);
+              const isSuspended = absence?.status === "suspended";
+              const isAbsent = absence?.status === "absent";
               return (
                 <button
                   key={s.studentId}
-                  onClick={() => togglePresent(s.studentId)}
+                  onClick={() => handleStudentClick(s.studentId, label)}
                   className={`relative rounded-xl border-2 px-3 py-6 text-center font-medium transition ${
-                    isPresent
-                      ? "bg-green-50 border-green-500 text-green-800 ring-2 ring-green-300"
-                      : "bg-gray-50 border-gray-300 text-gray-500"
+                    isSuspended
+                      ? "bg-purple-50 border-purple-500 text-purple-800"
+                      : isAbsent
+                        ? "bg-red-50 border-red-500 text-red-800"
+                        : "bg-green-50 border-green-400 text-green-800"
                   }`}
                 >
                   <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
                     {i + 1}
                   </span>
-                  {s.nameEnglish || s.nameKanji}
+                  {label}
+                  {absence && (
+                    <span className="block text-[10px] font-normal mt-0.5">
+                      {absence.reason}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -247,7 +297,7 @@ export default function AttendancePage() {
 
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm">
-              出席: <span className="font-bold">{presentCount}</span> / 未出席:{" "}
+              出席: <span className="font-bold">{presentCount}</span> / 欠席:{" "}
               <span className="font-bold">{absentCount}</span>
             </p>
             <button
@@ -278,6 +328,97 @@ export default function AttendancePage() {
         生徒一覧の管理
       </Link>
 
+      {/* Reason picker — opens when tapping a present student to mark them out */}
+      {reasonPickerFor && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => setReasonPickerFor(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-xs flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="font-bold text-center">{reasonPickerFor.label}</p>
+            <p className="text-xs text-gray-500 text-center mb-1">理由を選んでください</p>
+
+            {!showOtherInput ? (
+              <div className="flex flex-col gap-2">
+                {REASON_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.label}
+                    onClick={() => pickReason(opt.label, opt.status)}
+                    className={`rounded-full border py-3 font-semibold ${
+                      opt.status === "suspended"
+                        ? "bg-purple-50 border-purple-400 text-purple-800"
+                        : "bg-red-50 border-red-400 text-red-700"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowOtherInput(true)}
+                  className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3"
+                >
+                  その他
+                </button>
+                <button
+                  onClick={() => setReasonPickerFor(null)}
+                  className="text-sm text-gray-400 underline mt-1"
+                >
+                  キャンセル
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <input
+                  value={otherText}
+                  onChange={(e) => setOtherText(e.target.value)}
+                  placeholder="理由を入力"
+                  autoFocus
+                  className="border rounded-lg px-3 py-2"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setOtherStatus("absent")}
+                    className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                      otherStatus === "absent"
+                        ? "bg-red-50 border-red-400 text-red-700"
+                        : "border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    欠席として
+                  </button>
+                  <button
+                    onClick={() => setOtherStatus("suspended")}
+                    className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                      otherStatus === "suspended"
+                        ? "bg-purple-50 border-purple-400 text-purple-800"
+                        : "border-gray-200 text-gray-400"
+                    }`}
+                  >
+                    出停として
+                  </button>
+                </div>
+                <button
+                  onClick={applyOtherReason}
+                  disabled={!otherText.trim()}
+                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                >
+                  適用する
+                </button>
+                <button
+                  onClick={() => setShowOtherInput(false)}
+                  className="text-sm text-gray-400 underline"
+                >
+                  戻る
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
@@ -292,24 +433,28 @@ export default function AttendancePage() {
                 <p className="text-sm text-gray-500">出席</p>
               </div>
               <div>
-                <p className="text-3xl font-bold text-gray-500">
+                <p className="text-3xl font-bold text-red-600">
                   {absentCount}
                 </p>
-                <p className="text-sm text-gray-500">未出席</p>
+                <p className="text-sm text-gray-500">欠席</p>
               </div>
             </div>
             {absentStudents.length > 0 && (
               <div>
-                <p className="text-xs text-gray-500 mb-1">未出席の生徒:</p>
+                <p className="text-xs text-gray-500 mb-1">欠席の生徒:</p>
                 <ul className="flex flex-wrap gap-2">
-                  {absentStudents.map((s) => (
-                    <li
-                      key={s.studentId}
-                      className="text-xs bg-gray-100 text-gray-700 rounded-full px-3 py-1"
-                    >
-                      {s.nameEnglish || s.nameKanji}
-                    </li>
-                  ))}
+                  {absentStudents.map((s) => {
+                    const absence = absences.get(s.studentId);
+                    return (
+                      <li
+                        key={s.studentId}
+                        className="text-xs bg-gray-100 text-gray-700 rounded-full px-3 py-1"
+                      >
+                        {s.nameEnglish || s.nameKanji}
+                        {absence && ` (${absence.reason})`}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}

@@ -40,10 +40,9 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/attendance
-// body: { date: "2026-08-05", className: "...", records: [{ studentId, present }] }
-// Used by the daily check-in flow (simple present/absent tap). Safe to
-// resubmit the same day — existing rows for that date+student are updated
-// in place, not duplicated.
+// body: { date, className, records: [{ studentId, status, reason? }] }
+// Used by the daily check-in flow. Safe to resubmit the same day — existing
+// rows for that date+student are updated in place, not duplicated.
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { date, className, records } = body ?? {};
@@ -58,11 +57,12 @@ export async function POST(req: NextRequest) {
   const timestamp = new Date().toISOString();
 
   const rows: AttendanceRecord[] = records.map(
-    (r: { studentId: string; present: boolean }) => ({
+    (r: { studentId: string; status: AttendanceStatus; reason?: string }) => ({
       date,
       className,
       studentId: r.studentId,
-      status: r.present ? "present" : "absent",
+      status: VALID_STATUSES.includes(r.status) ? r.status : "present",
+      reason: r.reason ?? "",
       timestamp,
     })
   );
@@ -80,12 +80,12 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH /api/attendance
-// body: { date: "2026-08-05", className: "...", studentId: "...", status: AttendanceStatus | null }
+// body: { date, className, studentId, status: AttendanceStatus | null, reason? }
 // Used by the dashboard to correct a single day/student after the fact.
 // status: null clears the cell back to "not checked yet" (removes the row).
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { date, className, studentId, status } = body ?? {};
+  const { date, className, studentId, status, reason } = body ?? {};
 
   const statusIsValid =
     status === null ||
@@ -109,6 +109,7 @@ export async function PATCH(req: NextRequest) {
           className,
           studentId,
           status,
+          reason: typeof reason === "string" ? reason : "",
           timestamp: new Date().toISOString(),
         },
       ]);
