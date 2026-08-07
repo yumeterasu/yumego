@@ -176,6 +176,7 @@ export default function AttendancePage() {
       setSubmitted(true);
       setQueuedOffline(false);
       setShowConfirmModal(false);
+      router.push("/dashboard");
     } catch {
       // Network failure (offline) or the request never reached the server —
       // save it locally and retry automatically once the connection returns.
@@ -184,6 +185,7 @@ export default function AttendancePage() {
       setSubmitted(true);
       setQueuedOffline(true);
       setShowConfirmModal(false);
+      router.push("/dashboard");
     } finally {
       setSubmitting(false);
     }
