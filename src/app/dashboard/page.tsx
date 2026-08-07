@@ -122,6 +122,17 @@ export default function DashboardPage() {
   const labelSaveTimers = useRef<
     Partial<Record<"check1Label" | "check2Label" | "check3Label", ReturnType<typeof setTimeout>>>
   >({});
+  // Last value actually confirmed saved to the server — kept separate from
+  // `checkLabels` (which updates on every keystroke) so "has this changed
+  // since the last save?" doesn't just compare the live value to itself.
+  const savedCheckLabelsRef = useRef({
+    check1Label: "",
+    check2Label: "",
+    check3Label: "",
+  });
+  // Columns with an edit not yet confirmed saved — drives the "unsaved
+  // changes, leave anyway?" browser confirm on refresh/close.
+  const dirtyLabelColumnsRef = useRef<Set<string>>(new Set());
 
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
@@ -147,12 +158,13 @@ export default function DashboardPage() {
       setRemarks(
         Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
       );
-      if (settingsRes.ok) {
-        const settingsData = await settingsRes.json();
-        setCheckLabels(
-          settingsData.labels ?? { check1Label: "", check2Label: "", check3Label: "" }
-        );
-      }
+      const blankLabels = { check1Label: "", check2Label: "", check3Label: "" };
+      const labels = settingsRes.ok
+        ? ((await settingsRes.json()).labels ?? blankLabels)
+        : blankLabels;
+      setCheckLabels(labels);
+      savedCheckLabelsRef.current = labels;
+      dirtyLabelColumnsRef.current.clear();
     } catch {
       setError("データの取得に失敗しました");
     } finally {
@@ -220,8 +232,14 @@ export default function DashboardPage() {
     }
 
     if (!selectedClass) return;
-    const original = checkLabels[column];
-    if (value === original) return;
+    // Compare against the last *saved* value, not the live `checkLabels`
+    // state — that state is mutated on every keystroke, so comparing
+    // against it would always look "unchanged" and skip the save.
+    const original = savedCheckLabelsRef.current[column];
+    if (value === original) {
+      dirtyLabelColumnsRef.current.delete(column);
+      return;
+    }
 
     setSavingLabelColumn(column);
     setError(null);
@@ -232,9 +250,13 @@ export default function DashboardPage() {
         body: JSON.stringify({ className: selectedClass, column, label: value }),
       });
       if (!res.ok) throw new Error("failed");
+      savedCheckLabelsRef.current = { ...savedCheckLabelsRef.current, [column]: value };
       setCheckLabels((prev) => ({ ...prev, [column]: value }));
+      dirtyLabelColumnsRef.current.delete(column);
     } catch {
       setError("見出しの保存に失敗しました");
+      // leave the column marked dirty — the next blur/retry will try again,
+      // and beforeunload will keep warning before it's actually saved
     } finally {
       setSavingLabelColumn(null);
     }
@@ -255,14 +277,39 @@ export default function DashboardPage() {
     }, 800);
   }
 
+  function handleLabelChange(
+    column: "check1Label" | "check2Label" | "check3Label",
+    value: string
+  ) {
+    setCheckLabels((prev) => ({ ...prev, [column]: value }));
+    dirtyLabelColumnsRef.current.add(column);
+    scheduleLabelSave(column, value);
+  }
+
   // Switching class (or leaving the page) should never let a pending
   // debounced save from the previous class land against the new one.
   useEffect(() => {
     return () => {
       Object.values(labelSaveTimers.current).forEach((t) => clearTimeout(t));
       labelSaveTimers.current = {};
+      dirtyLabelColumnsRef.current.clear();
     };
   }, [selectedClass]);
+
+  // Warn before leaving/refreshing if a label edit hasn't been confirmed
+  // saved yet (native browser confirm dialog — the exact text is set by
+  // the browser itself, not customizable, but it does block the navigation
+  // until the user confirms).
+  useEffect(() => {
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      if (dirtyLabelColumnsRef.current.size > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   useEffect(() => {
     if (!loaded) return;
@@ -568,11 +615,7 @@ export default function DashboardPage() {
                     value={checkLabels.check1Label}
                     placeholder="未設定"
                     disabled={savingLabelColumn === "check1Label"}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setCheckLabels((prev) => ({ ...prev, check1Label: v }));
-                      scheduleLabelSave("check1Label", v);
-                    }}
+                    onChange={(e) => handleLabelChange("check1Label", e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                     }}
@@ -586,11 +629,7 @@ export default function DashboardPage() {
                     value={checkLabels.check2Label}
                     placeholder="未設定"
                     disabled={savingLabelColumn === "check2Label"}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setCheckLabels((prev) => ({ ...prev, check2Label: v }));
-                      scheduleLabelSave("check2Label", v);
-                    }}
+                    onChange={(e) => handleLabelChange("check2Label", e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                     }}
@@ -604,11 +643,7 @@ export default function DashboardPage() {
                     value={checkLabels.check3Label}
                     placeholder="未設定"
                     disabled={savingLabelColumn === "check3Label"}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setCheckLabels((prev) => ({ ...prev, check3Label: v }));
-                      scheduleLabelSave("check3Label", v);
-                    }}
+                    onChange={(e) => handleLabelChange("check3Label", e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                     }}
