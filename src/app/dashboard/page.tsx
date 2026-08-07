@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
@@ -117,6 +117,11 @@ export default function DashboardPage() {
     check3Label: "",
   });
   const [savingLabelColumn, setSavingLabelColumn] = useState<string | null>(null);
+  // Debounce timers so a label also saves while typing (not only on blur) —
+  // otherwise typing then hitting refresh before clicking away loses the edit.
+  const labelSaveTimers = useRef<
+    Partial<Record<"check1Label" | "check2Label" | "check3Label", ReturnType<typeof setTimeout>>>
+  >({});
 
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
@@ -207,6 +212,13 @@ export default function DashboardPage() {
     column: "check1Label" | "check2Label" | "check3Label",
     value: string
   ) {
+    // A debounced auto-save may already be scheduled for this column —
+    // cancel it since we're about to save (or already up to date) now.
+    if (labelSaveTimers.current[column]) {
+      clearTimeout(labelSaveTimers.current[column]);
+      delete labelSaveTimers.current[column];
+    }
+
     if (!selectedClass) return;
     const original = checkLabels[column];
     if (value === original) return;
@@ -227,6 +239,30 @@ export default function DashboardPage() {
       setSavingLabelColumn(null);
     }
   }
+
+  // Save shortly after typing stops, so an edit isn't lost if the user
+  // refreshes or navigates away before ever blurring the field.
+  function scheduleLabelSave(
+    column: "check1Label" | "check2Label" | "check3Label",
+    value: string
+  ) {
+    if (labelSaveTimers.current[column]) {
+      clearTimeout(labelSaveTimers.current[column]);
+    }
+    labelSaveTimers.current[column] = setTimeout(() => {
+      delete labelSaveTimers.current[column];
+      handleCheckLabelBlur(column, value);
+    }, 800);
+  }
+
+  // Switching class (or leaving the page) should never let a pending
+  // debounced save from the previous class land against the new one.
+  useEffect(() => {
+    return () => {
+      Object.values(labelSaveTimers.current).forEach((t) => clearTimeout(t));
+      labelSaveTimers.current = {};
+    };
+  }, [selectedClass]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -532,9 +568,14 @@ export default function DashboardPage() {
                     value={checkLabels.check1Label}
                     placeholder="未設定"
                     disabled={savingLabelColumn === "check1Label"}
-                    onChange={(e) =>
-                      setCheckLabels((prev) => ({ ...prev, check1Label: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCheckLabels((prev) => ({ ...prev, check1Label: v }));
+                      scheduleLabelSave("check1Label", v);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     onBlur={(e) => handleCheckLabelBlur("check1Label", e.target.value)}
                     className="w-full bg-transparent text-center text-cyan-800 placeholder-cyan-500/70 outline-none focus:bg-white/60 rounded px-0.5"
                   />
@@ -545,9 +586,14 @@ export default function DashboardPage() {
                     value={checkLabels.check2Label}
                     placeholder="未設定"
                     disabled={savingLabelColumn === "check2Label"}
-                    onChange={(e) =>
-                      setCheckLabels((prev) => ({ ...prev, check2Label: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCheckLabels((prev) => ({ ...prev, check2Label: v }));
+                      scheduleLabelSave("check2Label", v);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     onBlur={(e) => handleCheckLabelBlur("check2Label", e.target.value)}
                     className="w-full bg-transparent text-center text-pink-800 placeholder-pink-500/70 outline-none focus:bg-white/60 rounded px-0.5"
                   />
@@ -558,9 +604,14 @@ export default function DashboardPage() {
                     value={checkLabels.check3Label}
                     placeholder="未設定"
                     disabled={savingLabelColumn === "check3Label"}
-                    onChange={(e) =>
-                      setCheckLabels((prev) => ({ ...prev, check3Label: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setCheckLabels((prev) => ({ ...prev, check3Label: v }));
+                      scheduleLabelSave("check3Label", v);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     onBlur={(e) => handleCheckLabelBlur("check3Label", e.target.value)}
                     className="w-full bg-transparent text-center text-lime-800 placeholder-lime-600/70 outline-none focus:bg-white/60 rounded px-0.5"
                   />
