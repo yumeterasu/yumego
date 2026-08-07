@@ -104,6 +104,11 @@ export default function DashboardPage() {
     null
   );
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [bulkPending, setBulkPending] = useState<{
+    status: AttendanceStatus;
+    reason: string;
+    displayLabel: string;
+  } | null>(null);
 
   const today = todayDateString();
   const yearMonth = `${year}-${pad2(month)}`;
@@ -237,15 +242,28 @@ export default function DashboardPage() {
     setBulkOtherText("");
     setBulkOtherStatus("absent");
     setBulkError(null);
+    setBulkPending(null);
     setShowBulkModal(true);
   }
 
-  async function applyBulk(status: AttendanceStatus, reason: string) {
-    if (!selectedClass || !bulkStudentId) return;
+  // Tapping a status button doesn't save anything yet — it just moves to
+  // a confirmation screen showing who/when/what before writing anything.
+  function selectBulkChoice(status: AttendanceStatus, reason: string, displayLabel: string) {
     if (bulkEndDate < bulkStartDate) {
       setBulkError("終了日は開始日より後にしてください");
       return;
     }
+    if (weekdayRange(bulkStartDate, bulkEndDate).length === 0) {
+      setBulkError("平日が含まれていません");
+      return;
+    }
+    setBulkError(null);
+    setBulkPending({ status, reason, displayLabel });
+  }
+
+  async function confirmBulk() {
+    if (!selectedClass || !bulkStudentId || !bulkPending) return;
+    const { status, reason } = bulkPending;
 
     const dates = weekdayRange(bulkStartDate, bulkEndDate);
     if (dates.length === 0) {
@@ -286,6 +304,7 @@ export default function DashboardPage() {
       setBulkError(`${failures}件の登録に失敗しました。もう一度お試しください`);
     } else {
       setShowBulkModal(false);
+      setBulkPending(null);
     }
     await load(); // refresh the grid with whatever succeeded
   }
@@ -691,7 +710,63 @@ export default function DashboardPage() {
               土日は自動でスキップされます
             </p>
 
-            {!bulkShowOtherInput ? (
+            {bulkPending ? (
+              <div className="flex flex-col gap-4">
+                <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">生徒</span>
+                    <span className="font-semibold">
+                      {(() => {
+                        const s = students.find((s) => s.studentId === bulkStudentId);
+                        return s ? s.nameEnglish || s.nameKanji : "";
+                      })()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">期間</span>
+                    <span className="font-semibold">
+                      {bulkStartDate} 〜 {bulkEndDate}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">登録日数</span>
+                    <span className="font-semibold">
+                      {weekdayRange(bulkStartDate, bulkEndDate).length}日（平日のみ）
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">状態</span>
+                    <span className="font-bold">{bulkPending.displayLabel}</span>
+                  </div>
+                </div>
+
+                <p className="text-sm text-center text-gray-600">
+                  この内容で登録します。よろしいですか？
+                </p>
+
+                {bulkError && <p className="text-red-600 text-sm text-center">{bulkError}</p>}
+                {bulkProgress && (
+                  <p className="text-sm text-gray-500 text-center">
+                    登録中... {bulkProgress.done}/{bulkProgress.total}
+                  </p>
+                )}
+
+                <button
+                  onClick={confirmBulk}
+                  disabled={bulkApplying}
+                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                >
+                  {bulkApplying ? "登録中..." : "登録する"}
+                </button>
+                <button
+                  onClick={() => setBulkPending(null)}
+                  disabled={bulkApplying}
+                  className="text-sm text-gray-400 underline disabled:opacity-40"
+                >
+                  戻る（選び直す）
+                </button>
+              </div>
+            ) : !bulkShowOtherInput ? (
               <>
                 <label className="flex flex-col gap-1 text-sm">
                   生徒
@@ -730,31 +805,26 @@ export default function DashboardPage() {
                 </div>
 
                 {bulkError && <p className="text-red-600 text-sm">{bulkError}</p>}
-                {bulkProgress && (
-                  <p className="text-sm text-gray-500 text-center">
-                    登録中... {bulkProgress.done}/{bulkProgress.total}
-                  </p>
-                )}
 
                 <p className="text-xs text-gray-400 text-center mt-1">状態を選択</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => applyBulk("present", "")}
-                    disabled={bulkApplying || !bulkStudentId}
+                    onClick={() => selectBulkChoice("present", "", "出席")}
+                    disabled={!bulkStudentId}
                     className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     出席
                   </button>
                   <button
-                    onClick={() => applyBulk("late", "")}
-                    disabled={bulkApplying || !bulkStudentId}
+                    onClick={() => selectBulkChoice("late", "", "遅刻")}
+                    disabled={!bulkStudentId}
                     className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     遅刻
                   </button>
                   <button
-                    onClick={() => applyBulk("early_leave", "")}
-                    disabled={bulkApplying || !bulkStudentId}
+                    onClick={() => selectBulkChoice("early_leave", "", "早退")}
+                    disabled={!bulkStudentId}
                     className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     早退
@@ -762,8 +832,8 @@ export default function DashboardPage() {
                   {REASON_OPTIONS.map((opt) => (
                     <button
                       key={opt.label}
-                      onClick={() => applyBulk(opt.status, opt.label)}
-                      disabled={bulkApplying || !bulkStudentId}
+                      onClick={() => selectBulkChoice(opt.status, opt.label, opt.label)}
+                      disabled={!bulkStudentId}
                       className={`rounded-full border py-2.5 text-sm font-semibold disabled:opacity-40 ${
                         opt.status === "suspended"
                           ? "bg-purple-50 border-purple-400 text-purple-800"
@@ -775,7 +845,7 @@ export default function DashboardPage() {
                   ))}
                   <button
                     onClick={() => setBulkShowOtherInput(true)}
-                    disabled={bulkApplying || !bulkStudentId}
+                    disabled={!bulkStudentId}
                     className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     その他
@@ -784,8 +854,7 @@ export default function DashboardPage() {
 
                 <button
                   onClick={() => setShowBulkModal(false)}
-                  disabled={bulkApplying}
-                  className="text-sm text-gray-400 underline mt-1 disabled:opacity-40"
+                  className="text-sm text-gray-400 underline mt-1"
                 >
                   キャンセル
                 </button>
@@ -821,22 +890,19 @@ export default function DashboardPage() {
                     出停として
                   </button>
                 </div>
-                {bulkProgress && (
-                  <p className="text-sm text-gray-500 text-center">
-                    登録中... {bulkProgress.done}/{bulkProgress.total}
-                  </p>
-                )}
+                {bulkError && <p className="text-red-600 text-sm">{bulkError}</p>}
                 <button
-                  onClick={() => applyBulk(bulkOtherStatus, bulkOtherText.trim())}
-                  disabled={bulkApplying || !bulkOtherText.trim()}
+                  onClick={() =>
+                    selectBulkChoice(bulkOtherStatus, bulkOtherText.trim(), bulkOtherText.trim())
+                  }
+                  disabled={!bulkOtherText.trim()}
                   className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
                 >
-                  適用する
+                  次へ
                 </button>
                 <button
                   onClick={() => setBulkShowOtherInput(false)}
-                  disabled={bulkApplying}
-                  className="text-sm text-gray-400 underline disabled:opacity-40"
+                  className="text-sm text-gray-400 underline"
                 >
                   戻る
                 </button>
