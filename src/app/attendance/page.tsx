@@ -29,7 +29,7 @@ const REASON_OPTIONS: { label: string; status: "absent" | "suspended" }[] = [
 
 export default function AttendancePage() {
   const router = useRouter();
-  const { selectedClass, loaded, clearSelectedClass } = useSelectedClass();
+  const { selectedClass, loaded } = useSelectedClass();
 
   const [students, setStudents] = useState<Student[]>([]);
   // Everyone starts present. Only students tapped-out show up here.
@@ -189,16 +189,6 @@ export default function AttendancePage() {
     }
   }
 
-  function handleChangeRoom() {
-    const ok = window.confirm(
-      "このタブレットのクラスを変更しますか？\n（普段は押さないでください）"
-    );
-    if (ok) {
-      clearSelectedClass();
-      router.replace("/select-class");
-    }
-  }
-
   if (!loaded || !selectedClass) return null;
 
   const presentCount = students.length - absences.size;
@@ -219,13 +209,12 @@ export default function AttendancePage() {
           <h1 className="text-xl font-bold">{selectedClass}</h1>
           <p className="text-sm text-gray-500">{date}</p>
         </div>
-        <button
-          onClick={handleChangeRoom}
-          aria-label="クラスを変更"
-          className="text-gray-400 text-xs border rounded px-2 py-1"
+        <Link
+          href="/select-class"
+          className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
         >
-          ⚙ 設定
-        </button>
+          🏠 トップページ
+        </Link>
       </div>
 
       {pendingCount > 0 && (

@@ -45,7 +45,7 @@ function todayDateString() {
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { selectedClass, loaded, clearSelectedClass } = useSelectedClass();
+  const { selectedClass, loaded } = useSelectedClass();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -179,16 +179,6 @@ export default function DashboardPage() {
     }
   }
 
-  function handleChangeRoom() {
-    const ok = window.confirm(
-      "このタブレットのクラスを変更しますか？\n（普段は押さないでください）"
-    );
-    if (ok) {
-      clearSelectedClass();
-      router.replace("/select-class");
-    }
-  }
-
   if (!loaded || !selectedClass) return null;
 
   const numDays = daysInMonth(year, month);
@@ -232,13 +222,12 @@ export default function DashboardPage() {
           >
             出席確認
           </Link>
-          <button
-            onClick={handleChangeRoom}
-            aria-label="クラスを変更"
-            className="text-gray-400 text-xs border rounded px-2 py-1"
+          <Link
+            href="/select-class"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
           >
-            ⚙ 設定
-          </button>
+            🏠 トップページ
+          </Link>
         </div>
       </div>
 

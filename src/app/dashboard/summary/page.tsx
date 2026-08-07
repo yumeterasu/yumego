@@ -40,7 +40,7 @@ function defaultFiscalYearStart(): number {
 
 export default function SummaryPage() {
   const router = useRouter();
-  const { selectedClass, loaded, clearSelectedClass } = useSelectedClass();
+  const { selectedClass, loaded } = useSelectedClass();
 
   const [fiscalYearStart, setFiscalYearStart] = useState(defaultFiscalYearStart);
   const [students, setStudents] = useState<Student[]>([]);
@@ -110,16 +110,6 @@ export default function SummaryPage() {
     load();
   }, [loaded, selectedClass, router, load]);
 
-  function handleChangeRoom() {
-    const ok = window.confirm(
-      "このタブレットのクラスを変更しますか？\n（普段は押さないでください）"
-    );
-    if (ok) {
-      clearSelectedClass();
-      router.replace("/select-class");
-    }
-  }
-
   if (!loaded || !selectedClass) return null;
 
   // studentId -> monthIndex(0-11, Apr..Mar) -> present day count
@@ -152,13 +142,12 @@ export default function SummaryPage() {
           <h1 className="text-xl font-bold">{selectedClass}</h1>
           <p className="text-sm text-gray-500">年間まとめ</p>
         </div>
-        <button
-          onClick={handleChangeRoom}
-          aria-label="クラスを変更"
-          className="text-gray-400 text-xs border rounded px-2 py-1"
+        <Link
+          href="/select-class"
+          className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
         >
-          ⚙ 設定
-        </button>
+          🏠 トップページ
+        </Link>
       </div>
 
       <div className="flex items-center justify-center gap-4">
