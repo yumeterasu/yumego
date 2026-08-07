@@ -565,7 +565,7 @@ export default function DashboardPage() {
           onClick={() => setEditingCell(null)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-xs flex flex-col gap-4"
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-center">
@@ -574,47 +574,46 @@ export default function DashboardPage() {
             </div>
 
             {!showOtherInput ? (
-              <div className="flex flex-col gap-2">
-                <button
-                  onClick={() => applyEdit("present")}
-                  className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3"
-                >
-                  出席
-                </button>
-                <button
-                  onClick={() => applyEdit("late")}
-                  className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-3"
-                >
-                  遅刻
-                </button>
-                <button
-                  onClick={() => applyEdit("early_leave")}
-                  className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-3"
-                >
-                  早退
-                </button>
-                <p className="text-xs text-gray-400 text-center mt-1">
-                  欠席理由を選択（出停は自動判定）
-                </p>
-                {REASON_OPTIONS.map((opt) => (
+              <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-2">
                   <button
-                    key={opt.label}
-                    onClick={() => applyEdit(opt.status, opt.label)}
-                    className={`rounded-full border py-3 font-semibold ${
-                      opt.status === "suspended"
-                        ? "bg-purple-50 border-purple-400 text-purple-800"
-                        : "bg-red-50 border-red-400 text-red-700"
-                    }`}
+                    onClick={() => applyEdit("present")}
+                    className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm"
                   >
-                    {opt.label}
+                    出席
                   </button>
-                ))}
-                <button
-                  onClick={() => setShowOtherInput(true)}
-                  className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3"
-                >
-                  その他
-                </button>
+                  <button
+                    onClick={() => applyEdit("late")}
+                    className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm"
+                  >
+                    遅刻
+                  </button>
+                  <button
+                    onClick={() => applyEdit("early_leave")}
+                    className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm"
+                  >
+                    早退
+                  </button>
+                  {REASON_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.label}
+                      onClick={() => applyEdit(opt.status, opt.label)}
+                      className={`rounded-full border py-2.5 text-sm font-semibold ${
+                        opt.status === "suspended"
+                          ? "bg-purple-50 border-purple-400 text-purple-800"
+                          : "bg-red-50 border-red-400 text-red-700"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setShowOtherInput(true)}
+                    className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm"
+                  >
+                    その他
+                  </button>
+                </div>
                 <button
                   onClick={() => applyEdit(null)}
                   className="rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3"
@@ -684,7 +683,7 @@ export default function DashboardPage() {
           onClick={() => !bulkApplying && setShowBulkModal(false)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="text-lg font-bold text-center">期間で登録</h2>
@@ -738,25 +737,25 @@ export default function DashboardPage() {
                 )}
 
                 <p className="text-xs text-gray-400 text-center mt-1">状態を選択</p>
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => applyBulk("present", "")}
                     disabled={bulkApplying || !bulkStudentId}
-                    className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-3 disabled:opacity-40"
+                    className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     出席
                   </button>
                   <button
                     onClick={() => applyBulk("late", "")}
                     disabled={bulkApplying || !bulkStudentId}
-                    className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-3 disabled:opacity-40"
+                    className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     遅刻
                   </button>
                   <button
                     onClick={() => applyBulk("early_leave", "")}
                     disabled={bulkApplying || !bulkStudentId}
-                    className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-3 disabled:opacity-40"
+                    className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     早退
                   </button>
@@ -765,7 +764,7 @@ export default function DashboardPage() {
                       key={opt.label}
                       onClick={() => applyBulk(opt.status, opt.label)}
                       disabled={bulkApplying || !bulkStudentId}
-                      className={`rounded-full border py-3 font-semibold disabled:opacity-40 ${
+                      className={`rounded-full border py-2.5 text-sm font-semibold disabled:opacity-40 ${
                         opt.status === "suspended"
                           ? "bg-purple-50 border-purple-400 text-purple-800"
                           : "bg-red-50 border-red-400 text-red-700"
@@ -777,7 +776,7 @@ export default function DashboardPage() {
                   <button
                     onClick={() => setBulkShowOtherInput(true)}
                     disabled={bulkApplying || !bulkStudentId}
-                    className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3 disabled:opacity-40"
+                    className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     その他
                   </button>
