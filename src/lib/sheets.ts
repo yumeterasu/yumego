@@ -124,6 +124,37 @@ export async function updateStudentRemark(
   });
 }
 
+/**
+ * Present-student count per class for a single date, across every class
+ * in the sheet. Classes with no rows at all for that date are omitted —
+ * that's how the caller tells "not checked in yet" apart from "checked
+ * in, zero present".
+ */
+export async function getAttendanceSummaryForDate(
+  date: string // "2026-08-06"
+): Promise<Record<string, number>> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:E",
+  });
+
+  const rows = res.data.values ?? [];
+  const summary: Record<string, number> = {};
+
+  for (const row of rows) {
+    const rowDate = (row[0] ?? "").toString();
+    if (rowDate !== date) continue;
+    const className = (row[1] ?? "").toString();
+    if (!className) continue;
+    const present = (row[3] ?? "").toString().toUpperCase() === "TRUE";
+    if (!(className in summary)) summary[className] = 0;
+    if (present) summary[className]++;
+  }
+
+  return summary;
+}
+
 /** Read every attendance record for a class within a given YYYY-MM month. */
 export async function getAttendanceForMonth(
   className: string,
