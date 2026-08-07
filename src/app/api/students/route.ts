@@ -3,8 +3,12 @@ import {
   addStudent,
   getStudentsByClass,
   updateStudentRemark,
+  updateStudentCheck,
+  CheckColumn,
 } from "@/lib/sheets";
 import { randomUUID } from "crypto";
+
+const CHECK_COLUMNS: CheckColumn[] = ["check1", "check2", "check3"];
 
 // GET /api/students?class=プロンポン　年長
 export async function GET(req: NextRequest) {
@@ -59,25 +63,39 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH /api/students  { studentId, remark }
+// PATCH /api/students  { studentId, remark? } or { studentId, column, value }
+// column is one of "check1"/"check2"/"check3", value is boolean.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, remark } = body ?? {};
+  const { studentId, remark, column, value } = body ?? {};
 
-  if (!studentId || typeof remark !== "string") {
-    return NextResponse.json(
-      { error: "Missing studentId or remark" },
-      { status: 400 }
-    );
+  if (!studentId) {
+    return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
   }
 
   try {
-    await updateStudentRemark(studentId, remark);
-    return NextResponse.json({ ok: true });
+    if (typeof remark === "string") {
+      await updateStudentRemark(studentId, remark);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (
+      typeof column === "string" &&
+      CHECK_COLUMNS.includes(column as CheckColumn) &&
+      typeof value === "boolean"
+    ) {
+      await updateStudentCheck(studentId, column as CheckColumn, value);
+      return NextResponse.json({ ok: true });
+    }
+
+    return NextResponse.json(
+      { error: "Missing remark, or column/value" },
+      { status: 400 }
+    );
   } catch (err) {
     console.error(err);
     return NextResponse.json(
-      { error: "Failed to update remark" },
+      { error: "Failed to update student" },
       { status: 500 }
     );
   }

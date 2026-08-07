@@ -45,6 +45,17 @@ export type Student = {
   className: string;
   active: boolean;
   remark: string;
+  /** Generic, meaning-free checkboxes (チェック1/2/3) — up to the teacher. */
+  check1: boolean;
+  check2: boolean;
+  check3: boolean;
+};
+
+export type CheckColumn = "check1" | "check2" | "check3";
+const CHECK_COLUMN_LETTERS: Record<CheckColumn, string> = {
+  check1: "G",
+  check2: "H",
+  check3: "I",
 };
 
 // 出席 (present) / 欠席 (absent) / 遅刻 (late) / 早退 (early leave) /
@@ -93,7 +104,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:F",
+    range: "Students!A2:I",
   });
 
   const rows = res.data.values ?? [];
@@ -106,18 +117,21 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
       className: row[3] ?? "",
       active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
       remark: row[5] ?? "",
+      check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
+      check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
+      check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
     }))
     .filter((s) => s.studentId && s.className === className && s.active);
 }
 
 /** Append a new student row to the Students sheet. */
 export async function addStudent(
-  student: Omit<Student, "active" | "remark">
+  student: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3">
 ): Promise<void> {
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:F",
+    range: "Students!A:I",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -128,10 +142,26 @@ export async function addStudent(
           student.className,
           "TRUE",
           "",
+          "FALSE",
+          "FALSE",
+          "FALSE",
         ],
       ],
     },
   });
+}
+
+async function findStudentRowNumber(
+  sheets: ReturnType<typeof getSheetsClient>,
+  studentId: string
+): Promise<number | null> {
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === studentId);
+  return rowOffset === -1 ? null : rowOffset + 2; // 1-based, +1 for header
 }
 
 /** Update a single student's remark (備考) note in place. */
@@ -140,20 +170,33 @@ export async function updateStudentRemark(
   remark: string
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: "Students!A2:A",
-  });
-  const rows = existing.data.values ?? [];
-  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === studentId);
-  if (rowOffset === -1) return;
+  const rowNum = await findStudentRowNumber(sheets, studentId);
+  if (rowNum === null) return;
 
-  const rowNum = rowOffset + 2; // 1-based, +1 for header
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: `Students!F${rowNum}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[remark]] },
+  });
+}
+
+/** Toggle one of a student's generic, meaning-free checkboxes. */
+export async function updateStudentCheck(
+  studentId: string,
+  column: CheckColumn,
+  value: boolean
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const rowNum = await findStudentRowNumber(sheets, studentId);
+  if (rowNum === null) return;
+
+  const colLetter = CHECK_COLUMN_LETTERS[column];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Students!${colLetter}${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[value ? "TRUE" : "FALSE"]] },
   });
 }
 

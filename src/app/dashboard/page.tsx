@@ -164,6 +164,30 @@ export default function DashboardPage() {
     }
   }
 
+  async function toggleCheck(studentId: string, column: "check1" | "check2" | "check3") {
+    const current = students.find((s) => s.studentId === studentId)?.[column] ?? false;
+    const next = !current;
+
+    // optimistic update
+    setStudents((prev) =>
+      prev.map((s) => (s.studentId === studentId ? { ...s, [column]: next } : s))
+    );
+
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId, column, value: next }),
+      });
+      if (!res.ok) throw new Error("failed");
+    } catch {
+      setError("チェックの保存に失敗しました");
+      setStudents((prev) =>
+        prev.map((s) => (s.studentId === studentId ? { ...s, [column]: current } : s))
+      );
+    }
+  }
+
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
@@ -427,7 +451,7 @@ export default function DashboardPage() {
                     {count > 0 ? count : ""}
                   </th>
                 ))}
-                <th colSpan={4} className="border border-gray-300 bg-gray-50" />
+                <th colSpan={7} className="border border-gray-300 bg-gray-50" />
               </tr>
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-8">
@@ -461,6 +485,15 @@ export default function DashboardPage() {
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-red-50/40 text-red-700 whitespace-nowrap">
                   欠席理由
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-cyan-100 text-cyan-800 w-14 whitespace-nowrap">
+                  チェック1
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-pink-100 text-pink-800 w-14 whitespace-nowrap">
+                  チェック2
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-lime-100 text-lime-800 w-14 whitespace-nowrap">
+                  チェック3
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   備考
@@ -554,6 +587,30 @@ export default function DashboardPage() {
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-xs text-gray-600 whitespace-nowrap">
                       {reasonSummary}
+                    </td>
+                    <td className="text-center border border-gray-300 bg-cyan-50/40">
+                      <input
+                        type="checkbox"
+                        checked={s.check1}
+                        onChange={() => toggleCheck(s.studentId, "check1")}
+                        className="w-4 h-4 accent-cyan-600 cursor-pointer"
+                      />
+                    </td>
+                    <td className="text-center border border-gray-300 bg-pink-50/40">
+                      <input
+                        type="checkbox"
+                        checked={s.check2}
+                        onChange={() => toggleCheck(s.studentId, "check2")}
+                        className="w-4 h-4 accent-pink-600 cursor-pointer"
+                      />
+                    </td>
+                    <td className="text-center border border-gray-300 bg-lime-50/40">
+                      <input
+                        type="checkbox"
+                        checked={s.check3}
+                        onChange={() => toggleCheck(s.studentId, "check3")}
+                        className="w-4 h-4 accent-lime-600 cursor-pointer"
+                      />
                     </td>
                     <td className="border border-gray-300 p-0">
                       <input
