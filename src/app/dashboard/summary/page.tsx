@@ -140,24 +140,25 @@ export default function SummaryPage() {
 
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
-      <Link
-        href="/dashboard"
-        className="self-start text-sm text-gray-500 hover:text-gray-800"
-      >
-        ← 出席簿に戻る
-      </Link>
-
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
           <p className="text-sm text-gray-500">年間まとめ</p>
         </div>
-        <Link
-          href="/select-class"
-          className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
-        >
-          🏠 トップページ
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+          >
+            ← 出席簿に戻る
+          </Link>
+          <Link
+            href="/select-class"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+          >
+            🏠 トップページ
+          </Link>
+        </div>
       </div>
 
       <div className="flex items-center justify-center gap-4">

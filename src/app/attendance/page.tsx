@@ -190,24 +190,25 @@ export default function AttendancePage() {
 
   return (
     <main className="min-h-screen p-6 max-w-lg md:max-w-4xl lg:max-w-6xl mx-auto flex flex-col gap-6">
-      <Link
-        href="/dashboard"
-        className="self-start text-sm text-gray-500 hover:text-gray-800 flex items-center gap-1"
-      >
-        ← 出席簿に戻る
-      </Link>
-
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
           <p className="text-sm text-gray-500">{date}</p>
         </div>
-        <Link
-          href="/select-class"
-          className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
-        >
-          🏠 トップページ
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
+          >
+            ← 出席簿に戻る
+          </Link>
+          <Link
+            href="/select-class"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
+          >
+            🏠 トップページ
+          </Link>
+        </div>
       </div>
 
       {pendingCount > 0 && (
