@@ -174,6 +174,23 @@ export default function SpecialistCountPage() {
       return;
     }
 
+    // Number inputs misfire easily (scroll wheel, stray taps on the
+    // up/down arrows) — confirm before actually writing a real change.
+    const categoryName = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
+    const fromLabel = original === undefined ? "未入力" : String(original);
+    const toLabel = parsed === null ? "未入力" : String(parsed);
+    if (
+      !window.confirm(
+        `「${categoryName}」${date} の参加人数を ${fromLabel} → ${toLabel} に変更しますか？`
+      )
+    ) {
+      setDraftCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+      return;
+    }
+
     setSavingKey(key);
     setError(null);
     try {
