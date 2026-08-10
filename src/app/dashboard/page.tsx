@@ -514,7 +514,7 @@ export default function DashboardPage() {
             href="/dashboard/specialist"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
-            専門コーチ
+            専門コーチ予定
           </Link>
           <Link
             href="/attendance"
