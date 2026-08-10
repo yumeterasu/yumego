@@ -215,7 +215,15 @@ export default function SpecialistCoachPage() {
   }
 
   async function deleteCategory(categoryId: string, name: string) {
-    if (!window.confirm(`「${name}」を削除しますか？(この項目のチェックは表示されなくなります)`)) {
+    // Categories are shared branch-wide (this is one row spanning all 3
+    // grades, same as the reference sheet) — make that blast radius
+    // explicit here, since deleting from a 年長 tablet also removes it
+    // from 年中/年少 of the same branch, not just this screen.
+    if (
+      !window.confirm(
+        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年のタブレットからも見えなくなります）。過去のチェック記録はシート上に残りますが、非表示になります。`
+      )
+    ) {
       return;
     }
     setError(null);
