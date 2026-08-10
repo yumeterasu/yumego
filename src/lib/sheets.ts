@@ -807,3 +807,129 @@ export async function setSpecialistParticipationCount(
     },
   });
 }
+
+// 外出記録 — a free-form log of the class going out somewhere (not tied
+// to 専門コーチ's fixed category list; could be anything, and a class can
+// log more than one outing on the same day). Each entry is its own row,
+// keyed by a UUID rather than date+student like everything else, since
+// there's no natural single-cell-per-day shape here.
+export type OutingLog = {
+  id: string;
+  date: string; // "YYYY-MM-DD"
+  className: string;
+  headcount: number;
+  departureTime: string; // "HH:MM"
+  returnTime: string; // "HH:MM", may be "" if not back yet
+  description: string; // free text, optional
+};
+
+export async function getOutingLogs(
+  className: string,
+  yearMonth: string // "2026-08"
+): Promise<OutingLog[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "OutingLog!A2:H",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      id: (row[0] ?? "").toString(),
+      date: (row[1] ?? "").toString(),
+      className: (row[2] ?? "").toString(),
+      headcount: Number(row[3] ?? 0),
+      departureTime: (row[4] ?? "").toString(),
+      returnTime: (row[5] ?? "").toString(),
+      description: (row[6] ?? "").toString(),
+    }))
+    .filter(
+      (r) => r.id && r.className === className && r.date.startsWith(yearMonth)
+    )
+    .sort((a, b) => (a.date + a.departureTime).localeCompare(b.date + b.departureTime));
+}
+
+export async function addOutingLog(entry: OutingLog): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "OutingLog!A:H",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [
+        [
+          entry.id,
+          entry.date,
+          entry.className,
+          entry.headcount,
+          entry.departureTime,
+          entry.returnTime,
+          entry.description,
+          new Date().toISOString(),
+        ],
+      ],
+    },
+  });
+}
+
+/** Replaces every editable field of an entry at once (a full form save, not a partial patch). */
+export async function updateOutingLog(
+  id: string,
+  fields: Omit<OutingLog, "id">
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "OutingLog!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `OutingLog!B${rowNum}:H${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [
+        [
+          fields.date,
+          fields.className,
+          fields.headcount,
+          fields.departureTime,
+          fields.returnTime,
+          fields.description,
+          new Date().toISOString(),
+        ],
+      ],
+    },
+  });
+}
+
+export async function deleteOutingLog(id: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "OutingLog!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[0] ?? "") === id)
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return;
+
+  const sheetId = await getSheetIdByTitle(sheets, "OutingLog");
+  rowNums.sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+}

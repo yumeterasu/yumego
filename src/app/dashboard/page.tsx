@@ -523,6 +523,12 @@ export default function DashboardPage() {
             専門コーチ人数
           </Link>
           <Link
+            href="/dashboard/outings"
+            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+          >
+            外出記録
+          </Link>
+          <Link
             href="/attendance"
             className="rounded-full bg-black text-white px-5 py-2.5 font-semibold text-sm"
           >
