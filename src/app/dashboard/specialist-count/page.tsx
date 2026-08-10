@@ -366,13 +366,18 @@ export default function SpecialistCountPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-16 whitespace-nowrap">
                   合計
                 </th>
+                <th className="border border-gray-300 px-2 py-2 bg-emerald-100 text-emerald-900 w-16 whitespace-nowrap">
+                  全学年
+                  <br />
+                  合計
+                </th>
               </tr>
             </thead>
             <tbody>
               {categories.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={dayNumbers.length + 3}
+                    colSpan={dayNumbers.length + 4}
                     className="text-center text-gray-400 text-sm py-6 border border-gray-300"
                   >
                     まだ項目がありません。下から追加してください。
@@ -381,11 +386,39 @@ export default function SpecialistCountPage() {
               ) : (
                 categories.map((c, ci) => {
                   const zebra = ci % 2 === 1;
+
+                  // Precompute each grade's monthly total up front (not
+                  // just "my" grade) so they can be summed into a single
+                  // combined 長+中+少 total for this category alone —
+                  // other categories never feed into it.
+                  const gradeMonthTotals: Record<GradeShort, number> = {
+                    長: 0,
+                    中: 0,
+                    少: 0,
+                  };
+                  for (const g of GRADES) {
+                    for (const day of dayNumbers) {
+                      const date = `${year}-${pad2(month)}-${pad2(day)}`;
+                      const key = cellKey(c.categoryId, g, date);
+                      if (g === myGrade) {
+                        const draft = draftCounts[key] ?? "";
+                        if (draft !== "") gradeMonthTotals[g] += Number(draft) || 0;
+                      } else {
+                        const saved = savedCountsRef.current[key];
+                        if (saved !== undefined) gradeMonthTotals[g] += saved;
+                      }
+                    }
+                  }
+                  const categoryTotal = GRADES.reduce(
+                    (sum, g) => sum + gradeMonthTotals[g],
+                    0
+                  );
+
                   return (
                     <Fragment key={c.categoryId}>
                       {GRADES.map((g, gi) => {
                         const isMine = g === myGrade;
-                        let monthTotal = 0;
+                        const monthTotal = gradeMonthTotals[g];
                         return (
                           <tr
                             key={`${c.categoryId}-${g}`}
@@ -446,7 +479,6 @@ export default function SpecialistCountPage() {
 
                               if (!isMine) {
                                 const saved = savedCountsRef.current[key];
-                                if (saved !== undefined) monthTotal += saved;
                                 return (
                                   <td
                                     key={day}
@@ -460,7 +492,6 @@ export default function SpecialistCountPage() {
                               }
 
                               const draft = draftCounts[key] ?? "";
-                              if (draft !== "") monthTotal += Number(draft) || 0;
                               const disabled = total === 0 || isSaving;
 
                               return (
@@ -506,6 +537,14 @@ export default function SpecialistCountPage() {
                             >
                               {monthTotal > 0 ? monthTotal : ""}
                             </td>
+                            {gi === 0 && (
+                              <td
+                                rowSpan={GRADES.length}
+                                className="text-center border border-gray-300 font-bold text-emerald-800 bg-emerald-50 align-middle"
+                              >
+                                {categoryTotal > 0 ? categoryTotal : ""}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
