@@ -499,3 +499,187 @@ export async function updateClassCheckLabel(
     requestBody: { values: [[label]] },
   });
 }
+
+// 専門コーチ (specialist coach) checklist — a simple per-branch, per-day
+// checklist unrelated to student attendance. Rows are user-defined
+// categories (e.g. "英語", "ダンス"); each has one checkbox per grade
+// (長/中/少) per day. Categories are keyed by a stable UUID so renaming
+// one doesn't orphan its past checked days.
+export type SpecialistCategory = {
+  categoryId: string;
+  branch: string;
+  name: string;
+};
+
+export type SpecialistCheckedCell = {
+  categoryId: string;
+  grade: string; // "長" | "中" | "少"
+  date: string; // "YYYY-MM-DD"
+};
+
+export async function getSpecialistCategories(
+  branch: string
+): Promise<SpecialistCategory[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistCategories!A2:C",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      categoryId: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      name: (row[2] ?? "").toString(),
+    }))
+    .filter((c) => c.categoryId && c.branch === branch);
+}
+
+export async function addSpecialistCategory(
+  input: SpecialistCategory
+): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistCategories!A:C",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[input.categoryId, input.branch, input.name]] },
+  });
+}
+
+export async function renameSpecialistCategory(
+  categoryId: string,
+  name: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistCategories!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === categoryId);
+  if (rowOffset === -1) return;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `SpecialistCategories!C${rowOffset + 2}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[name]] },
+  });
+}
+
+export async function deleteSpecialistCategory(categoryId: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistCategories!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === categoryId);
+  if (rowOffset === -1) return;
+
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistCategories");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowNum - 1,
+              endIndex: rowNum,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
+/** All checked cells for a branch within one calendar month. */
+export async function getSpecialistAttendance(
+  branch: string,
+  yearMonth: string // "2026-08"
+): Promise<SpecialistCheckedCell[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistAttendance!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      categoryId: (row[2] ?? "").toString(),
+      grade: (row[3] ?? "").toString(),
+    }))
+    .filter(
+      (r) => r.branch === branch && r.date.startsWith(yearMonth) && r.categoryId
+    )
+    .map((r) => ({ categoryId: r.categoryId, grade: r.grade, date: r.date }));
+}
+
+/**
+ * A row's mere existence means "checked" — there is no separate boolean
+ * column. Checking appends a row (no-op if already checked); unchecking
+ * deletes every matching row (defensively — see the Attendance sheet's
+ * duplicate-row lesson, clearAttendance above).
+ */
+export async function setSpecialistChecked(
+  branch: string,
+  categoryId: string,
+  grade: string,
+  date: string,
+  checked: boolean
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistAttendance!A2:D",
+  });
+  const rows = existing.data.values ?? [];
+  const matchingRowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(
+      ({ row }) =>
+        (row[0] ?? "") === date &&
+        (row[1] ?? "") === branch &&
+        (row[2] ?? "") === categoryId &&
+        (row[3] ?? "") === grade
+    )
+    .map(({ rowNum }) => rowNum);
+
+  if (checked) {
+    if (matchingRowNums.length > 0) return; // already checked
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "SpecialistAttendance!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[date, branch, categoryId, grade]] },
+    });
+    return;
+  }
+
+  if (matchingRowNums.length === 0) return; // already unchecked
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistAttendance");
+  matchingRowNums.sort((a, b) => b - a); // highest index first, see clearAttendance
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: matchingRowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: rowNum - 1,
+            endIndex: rowNum,
+          },
+        },
+      })),
+    },
+  });
+}
