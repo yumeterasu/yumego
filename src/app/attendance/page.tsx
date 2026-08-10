@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
 import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
@@ -97,9 +98,11 @@ export default function AttendancePage() {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         setStudents(JSON.parse(cached));
-        setError("オフラインです。前回保存した生徒一覧を表示しています");
+        setError(
+          "オフラインです。前回保存した生徒一覧を表示しています / Offline — showing the last saved student list"
+        );
       } else {
-        setError("生徒一覧の取得に失敗しました");
+        setError("生徒一覧の取得に失敗しました / Failed to load students");
       }
     } finally {
       setLoading(false);
@@ -193,6 +196,7 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
+          <p className="text-xs text-gray-400">{classNameToEnglish(selectedClass)}</p>
           <p className="text-sm text-gray-500">{date}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -201,12 +205,16 @@ export default function AttendancePage() {
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
           >
             ← 出席簿に戻る
+            <span className="block text-[10px] font-normal opacity-70">
+              Back to attendance
+            </span>
           </Link>
           <Link
             href="/select-class"
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
           >
             🏠 トップページ
+            <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
         </div>
       </div>
@@ -215,35 +223,42 @@ export default function AttendancePage() {
         <div className="flex items-center justify-between gap-3 bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-3">
           <p className="text-sm text-yellow-800">
             ⚠ オフライン保存中の出席が <b>{pendingCount}件</b> あります
+            <span className="block text-xs font-normal">
+              {pendingCount} attendance record(s) saved offline
+            </span>
           </p>
           <button
             onClick={syncPending}
             disabled={syncing}
             className="shrink-0 text-sm font-semibold text-yellow-900 border border-yellow-400 rounded-full px-3 py-1 disabled:opacity-40"
           >
-            {syncing ? "送信中..." : "今すぐ送信"}
+            {syncing ? "送信中... / Sending..." : "今すぐ送信 / Send now"}
           </button>
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm">読み込み中...</p>
+        <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
       ) : students.length === 0 ? (
         <div className="flex flex-col gap-3 items-start">
           <p className="text-gray-500 text-sm">
             このクラスにはまだ生徒が登録されていません
+            <span className="block text-xs">No students registered in this class yet</span>
           </p>
           <Link
             href="/students"
             className="text-blue-600 underline text-sm"
           >
-            生徒を追加する
+            生徒を追加する / Add students
           </Link>
         </div>
       ) : (
         <>
           <p className="text-sm text-gray-600">
             全員デフォルトで出席済みです。休みの生徒だけタップしてください
+            <span className="block text-xs text-gray-400">
+              Everyone starts marked present — tap only the students who are absent
+            </span>
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
@@ -282,6 +297,9 @@ export default function AttendancePage() {
             <p className="text-sm">
               出席: <span className="font-bold">{presentCount}</span> / 欠席:{" "}
               <span className="font-bold">{absentCount}</span>
+              <span className="block text-xs text-gray-400">
+                Present: {presentCount} / Absent: {absentCount}
+              </span>
             </p>
             <button
               onClick={() => setShowConfirmModal(true)}
@@ -289,17 +307,22 @@ export default function AttendancePage() {
               className="rounded-full bg-black text-white px-6 py-3 font-semibold disabled:opacity-40"
             >
               確定する
+              <span className="block text-[10px] font-normal opacity-70">Confirm</span>
             </button>
           </div>
 
           {submitted && !queuedOffline && (
             <p className="text-green-700 font-semibold">
               ✓ 出席を記録しました
+              <span className="block text-xs font-normal">Attendance recorded</span>
             </p>
           )}
           {submitted && queuedOffline && (
             <p className="text-yellow-800 font-semibold">
               📶 オフラインのため端末に保存しました。オンラインになったら自動で送信します
+              <span className="block text-xs font-normal">
+                Saved on device (offline) — will send automatically once back online
+              </span>
             </p>
           )}
         </>
@@ -308,7 +331,7 @@ export default function AttendancePage() {
       {error && <p className="text-red-600 text-sm">{error}</p>}
 
       <Link href="/students" className="text-xs text-gray-400 underline mt-4">
-        生徒一覧の管理
+        生徒一覧の管理 / Manage student list
       </Link>
 
       {/* Reason picker — opens when tapping a present student to mark them out */}
@@ -322,7 +345,10 @@ export default function AttendancePage() {
             onClick={(e) => e.stopPropagation()}
           >
             <p className="font-bold text-center">{reasonPickerFor.label}</p>
-            <p className="text-xs text-gray-500 text-center mb-1">理由を選んでください</p>
+            <p className="text-xs text-gray-500 text-center mb-1">
+              理由を選んでください
+              <span className="block">Please choose a reason</span>
+            </p>
 
             {!showOtherInput ? (
               <div className="flex flex-col gap-2">
@@ -337,6 +363,7 @@ export default function AttendancePage() {
                     }`}
                   >
                     {opt.label}
+                    <span className="block text-[10px] font-normal opacity-70">{opt.en}</span>
                   </button>
                 ))}
                 <button
@@ -344,12 +371,13 @@ export default function AttendancePage() {
                   className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3"
                 >
                   その他
+                  <span className="block text-[10px] font-normal opacity-70">Other</span>
                 </button>
                 <button
                   onClick={() => setReasonPickerFor(null)}
                   className="text-sm text-gray-400 underline mt-1"
                 >
-                  キャンセル
+                  キャンセル / Cancel
                 </button>
               </div>
             ) : (
@@ -357,7 +385,7 @@ export default function AttendancePage() {
                 <input
                   value={otherText}
                   onChange={(e) => setOtherText(e.target.value)}
-                  placeholder="理由を入力"
+                  placeholder="理由を入力 / Enter reason"
                   autoFocus
                   className="border rounded-lg px-3 py-2"
                 />
@@ -371,6 +399,7 @@ export default function AttendancePage() {
                     }`}
                   >
                     欠席として
+                    <span className="block text-[10px] font-normal opacity-70">As absent</span>
                   </button>
                   <button
                     onClick={() => setOtherStatus("suspended")}
@@ -381,6 +410,9 @@ export default function AttendancePage() {
                     }`}
                   >
                     出停として
+                    <span className="block text-[10px] font-normal opacity-70">
+                      As suspended
+                    </span>
                   </button>
                 </div>
                 <button
@@ -388,13 +420,13 @@ export default function AttendancePage() {
                   disabled={!otherText.trim()}
                   className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
                 >
-                  適用する
+                  適用する / Apply
                 </button>
                 <button
                   onClick={() => setShowOtherInput(false)}
                   className="text-sm text-gray-400 underline"
                 >
-                  戻る
+                  戻る / Back
                 </button>
               </div>
             )}
@@ -407,24 +439,33 @@ export default function AttendancePage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
             <h2 className="text-lg font-bold text-center">
               本日の出席状況
+              <span className="block text-sm font-normal text-gray-500">
+                Today&apos;s attendance
+              </span>
             </h2>
             <div className="flex justify-around text-center">
               <div>
                 <p className="text-3xl font-bold text-green-700">
                   {presentCount}
                 </p>
-                <p className="text-sm text-gray-500">出席</p>
+                <p className="text-sm text-gray-500">
+                  出席
+                  <span className="block text-xs">Present</span>
+                </p>
               </div>
               <div>
                 <p className="text-3xl font-bold text-red-600">
                   {absentCount}
                 </p>
-                <p className="text-sm text-gray-500">欠席</p>
+                <p className="text-sm text-gray-500">
+                  欠席
+                  <span className="block text-xs">Absent</span>
+                </p>
               </div>
             </div>
             {absentStudents.length > 0 && (
               <div>
-                <p className="text-xs text-gray-500 mb-1">欠席の生徒:</p>
+                <p className="text-xs text-gray-500 mb-1">欠席の生徒: / Absent students:</p>
                 <ul className="flex flex-wrap gap-2">
                   {absentStudents.map((s) => {
                     const absence = absences.get(s.studentId);
@@ -444,6 +485,7 @@ export default function AttendancePage() {
 
             <p className="text-xs text-gray-400 text-center">
               この内容で記録します。よろしいですか？
+              <span className="block">Record with this content — is that OK?</span>
             </p>
             <div className="flex gap-3 mt-2">
               <button
@@ -451,14 +493,14 @@ export default function AttendancePage() {
                 disabled={submitting}
                 className="flex-1 rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
               >
-                キャンセル
+                キャンセル / Cancel
               </button>
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
                 className="flex-1 rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
               >
-                {submitting ? "送信中..." : "送信する"}
+                {submitting ? "送信中... / Sending..." : "送信する / Submit"}
               </button>
             </div>
           </div>

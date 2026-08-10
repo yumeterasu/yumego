@@ -33,3 +33,29 @@ export function classNameToBranchGrade(
 export function branchGradeToClassName(branch: Branch, grade: GradeShort): ClassName {
   return `${branch}　年${grade}` as ClassName;
 }
+
+const BRANCH_EN: Record<Branch, string> = {
+  プロンポン: "Phrom Phong",
+  トンロー: "Thong Lo",
+};
+
+const GRADE_EN: Record<GradeShort, string> = {
+  長: "Older Class (K3)",
+  中: "Middle Class (K2)",
+  少: "Younger Class (K1)",
+};
+
+/** "プロンポン　年長" -> "Phrom Phong · Older Class (K3)", for the English gloss under class names. */
+export function classNameToEnglish(className: string): string {
+  const bg = classNameToBranchGrade(className);
+  if (!bg) return "";
+  return `${BRANCH_EN[bg.branch]} · ${GRADE_EN[bg.grade]}`;
+}
+
+export function branchToEnglish(branch: Branch): string {
+  return BRANCH_EN[branch];
+}
+
+export function gradeToEnglish(grade: GradeShort): string {
+  return GRADE_EN[grade];
+}

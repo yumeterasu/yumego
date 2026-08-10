@@ -91,7 +91,7 @@ export default function SpecialistCoachPage() {
       }
       setCheckedDates(next);
     } catch {
-      setError("データの取得に失敗しました");
+      setError("データの取得に失敗しました / Failed to load data");
     } finally {
       setLoading(false);
     }
@@ -137,7 +137,11 @@ export default function SpecialistCoachPage() {
     // new checkmark stays a single tap, no confirm needed.
     if (isChecked) {
       const categoryName = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
-      if (!window.confirm(`「${categoryName}」${date} のチェックを外しますか？`)) {
+      if (
+        !window.confirm(
+          `「${categoryName}」${date} のチェックを外しますか？\nRemove the checkmark for "${categoryName}" on ${date}?`
+        )
+      ) {
         return;
       }
     }
@@ -161,7 +165,7 @@ export default function SpecialistCoachPage() {
       });
       if (!res.ok) throw new Error("failed");
     } catch {
-      setError("保存に失敗しました");
+      setError("保存に失敗しました / Failed to save");
       // revert
       setCheckedDates((prev) => {
         const copy = { ...prev };
@@ -195,7 +199,7 @@ export default function SpecialistCoachPage() {
         prev.map((c) => (c.categoryId === categoryId ? { ...c, name: value } : c))
       );
     } catch {
-      setError("名前の保存に失敗しました");
+      setError("名前の保存に失敗しました / Failed to save the name");
       setNameDrafts((prev) => ({ ...prev, [categoryId]: original }));
     } finally {
       setSavingNameId(null);
@@ -219,7 +223,7 @@ export default function SpecialistCoachPage() {
       setNameDrafts((prev) => ({ ...prev, [categoryId]: name }));
       setNewCategoryName("");
     } catch {
-      setError("項目の追加に失敗しました");
+      setError("項目の追加に失敗しました / Failed to add item");
     } finally {
       setAddingCategory(false);
     }
@@ -232,7 +236,7 @@ export default function SpecialistCoachPage() {
     // from 年中/年少 of the same branch, not just this screen.
     if (
       !window.confirm(
-        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年のタブレットからも見えなくなります）。過去のチェック記録はシート上に残りますが、非表示になります。`
+        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年のタブレットからも見えなくなります）。過去のチェック記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少 (other tablets in this branch will no longer see it). Past checkmarks stay in the sheet but will be hidden.`
       )
     ) {
       return;
@@ -246,7 +250,7 @@ export default function SpecialistCoachPage() {
       if (!res.ok) throw new Error("failed");
       setCategories((prev) => prev.filter((c) => c.categoryId !== categoryId));
     } catch {
-      setError("削除に失敗しました");
+      setError("削除に失敗しました / Failed to delete");
     }
   }
 
@@ -260,8 +264,15 @@ export default function SpecialistCoachPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
+          <p className="text-xs text-gray-400">
+            {branch} Specialist Coach Schedule
+          </p>
           <p className="text-sm text-gray-500">
             編集できるのは{myGrade}の行だけです（{selectedClass}）。他の学年はグレー表示（閲覧のみ）
+            <span className="block text-xs">
+              Only the {myGrade} row is editable ({selectedClass}). Other grades are shown
+              read-only (grayed out)
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -270,6 +281,9 @@ export default function SpecialistCoachPage() {
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
+            <span className="block text-[10px] font-normal opacity-70">
+              Back to attendance
+            </span>
           </Link>
         </div>
       </div>
@@ -278,7 +292,7 @@ export default function SpecialistCoachPage() {
         <button
           onClick={goPrevMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="前の月"
+          aria-label="前の月 / Previous month"
         >
           ◀
         </button>
@@ -288,7 +302,7 @@ export default function SpecialistCoachPage() {
         <button
           onClick={goNextMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="次の月"
+          aria-label="次の月 / Next month"
         >
           ▶
         </button>
@@ -297,7 +311,7 @@ export default function SpecialistCoachPage() {
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中...</p>
+        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
           <table className="text-sm border-collapse min-w-max">
@@ -305,6 +319,7 @@ export default function SpecialistCoachPage() {
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-28">
                   項目
+                  <span className="block text-[9px] font-normal text-gray-400">Item</span>
                 </th>
                 <th className="sticky left-28 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-10">
                   学年
@@ -328,6 +343,7 @@ export default function SpecialistCoachPage() {
                 })}
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-14 whitespace-nowrap">
                   回数
+                  <span className="block text-[9px] font-normal">Count</span>
                 </th>
               </tr>
             </thead>
@@ -339,6 +355,7 @@ export default function SpecialistCoachPage() {
                     className="text-center text-gray-400 text-sm py-6 border border-gray-300"
                   >
                     まだ項目がありません。下から追加してください。
+                    <span className="block text-xs">No items yet — add one below</span>
                   </td>
                 </tr>
               ) : (
@@ -454,7 +471,7 @@ export default function SpecialistCoachPage() {
           onKeyDown={(e) => {
             if (e.key === "Enter") addCategory();
           }}
-          placeholder="新しい項目名（例：体操）"
+          placeholder="新しい項目名（例：体操）/ New item name (e.g. Gymnastics)"
           disabled={addingCategory}
           className="rounded-full border border-gray-300 px-4 py-2 text-sm w-56"
         />
@@ -463,7 +480,7 @@ export default function SpecialistCoachPage() {
           disabled={addingCategory || !newCategoryName.trim()}
           className="rounded-full bg-black text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
         >
-          ＋ 追加
+          ＋ 追加 / Add
         </button>
       </div>
     </main>

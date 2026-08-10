@@ -4,8 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
+
+// English names for the 5 attendance statuses, used only in the edit
+// popup's buttons — NOT in the compact day-by-day grid cells (出/欠/遅/
+// 早/出停 stay Japanese-only there, no room to spare).
+const STATUS_EN: Record<AttendanceStatus, string> = {
+  present: "Present",
+  absent: "Absent",
+  late: "Late",
+  early_leave: "Early leave",
+  suspended: "Suspended (illness)",
+};
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -166,7 +178,7 @@ export default function DashboardPage() {
       savedCheckLabelsRef.current = labels;
       dirtyLabelColumnsRef.current.clear();
     } catch {
-      setError("データの取得に失敗しました");
+      setError("データの取得に失敗しました / Failed to load data");
     } finally {
       setLoading(false);
     }
@@ -189,7 +201,7 @@ export default function DashboardPage() {
         prev.map((s) => (s.studentId === studentId ? { ...s, remark: value } : s))
       );
     } catch {
-      setError("備考の保存に失敗しました");
+      setError("備考の保存に失敗しました / Failed to save note");
       setRemarks((prev) => ({ ...prev, [studentId]: original }));
     } finally {
       setSavingRemarkId(null);
@@ -213,7 +225,7 @@ export default function DashboardPage() {
       });
       if (!res.ok) throw new Error("failed");
     } catch {
-      setError("チェックの保存に失敗しました");
+      setError("チェックの保存に失敗しました / Failed to save checkbox");
       setStudents((prev) =>
         prev.map((s) => (s.studentId === studentId ? { ...s, [column]: current } : s))
       );
@@ -254,7 +266,7 @@ export default function DashboardPage() {
       setCheckLabels((prev) => ({ ...prev, [column]: value }));
       dirtyLabelColumnsRef.current.delete(column);
     } catch {
-      setError("見出しの保存に失敗しました");
+      setError("見出しの保存に失敗しました / Failed to save header label");
       // leave the column marked dirty — the next blur/retry will try again,
       // and beforeunload will keep warning before it's actually saved
     } finally {
@@ -374,7 +386,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error("failed");
     } catch {
       setRecords(previous); // revert
-      setError("修正の保存に失敗しました。もう一度お試しください");
+      setError("修正の保存に失敗しました。もう一度お試しください / Failed to save the correction, please try again");
     } finally {
       setSavingKey(null);
     }
@@ -396,11 +408,11 @@ export default function DashboardPage() {
   // a confirmation screen showing who/when/what before writing anything.
   function selectBulkChoice(status: AttendanceStatus, reason: string, displayLabel: string) {
     if (bulkEndDate < bulkStartDate) {
-      setBulkError("終了日は開始日より後にしてください");
+      setBulkError("終了日は開始日より後にしてください / End date must be after the start date");
       return;
     }
     if (weekdayRange(bulkStartDate, bulkEndDate).length === 0) {
-      setBulkError("平日が含まれていません");
+      setBulkError("平日が含まれていません / No weekdays in this range");
       return;
     }
     setBulkError(null);
@@ -413,7 +425,7 @@ export default function DashboardPage() {
 
     const dates = weekdayRange(bulkStartDate, bulkEndDate);
     if (dates.length === 0) {
-      setBulkError("平日が含まれていません");
+      setBulkError("平日が含まれていません / No weekdays in this range");
       return;
     }
 
@@ -447,7 +459,9 @@ export default function DashboardPage() {
     setBulkProgress(null);
 
     if (failures > 0) {
-      setBulkError(`${failures}件の登録に失敗しました。もう一度お試しください`);
+      setBulkError(
+        `${failures}件の登録に失敗しました。もう一度お試しください / ${failures} entries failed, please try again`
+      );
     } else {
       setShowBulkModal(false);
       setBulkPending(null);
@@ -501,44 +515,62 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
-          <p className="text-sm text-gray-500">出席簿</p>
+          <p className="text-xs text-gray-400">{classNameToEnglish(selectedClass)}</p>
+          <p className="text-sm text-gray-500">
+            出席簿
+            <span className="ml-1 text-xs text-gray-400">Attendance Register</span>
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link
             href="/dashboard/summary"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
             年間まとめ
+            <span className="block text-[10px] font-normal opacity-70">Annual Summary</span>
           </Link>
           <Link
             href="/dashboard/specialist"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
             専門コーチ予定
+            <span className="block text-[10px] font-normal opacity-70">
+              Coach Schedule
+            </span>
           </Link>
           <Link
             href="/dashboard/specialist-count"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
             専門コーチ人数
+            <span className="block text-[10px] font-normal opacity-70">
+              Coach Headcount
+            </span>
           </Link>
           <Link
             href="/dashboard/outings"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
             入退出記録
+            <span className="block text-[10px] font-normal opacity-70">
+              Entry/Exit Log
+            </span>
           </Link>
           <Link
             href="/attendance"
             className="rounded-full bg-black text-white px-5 py-2.5 font-semibold text-sm"
           >
             出席確認
+            <span className="block text-[10px] font-normal opacity-70">
+              Take Attendance
+            </span>
           </Link>
           <Link
             href="/select-class"
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
           >
             🏠 トップページ
+            <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
         </div>
       </div>
@@ -547,7 +579,7 @@ export default function DashboardPage() {
         <button
           onClick={goPrevMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="前の月"
+          aria-label="前の月 / Previous month"
         >
           ◀
         </button>
@@ -557,7 +589,7 @@ export default function DashboardPage() {
         <button
           onClick={goNextMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="次の月"
+          aria-label="次の月 / Next month"
         >
           ▶
         </button>
@@ -565,6 +597,9 @@ export default function DashboardPage() {
 
       <p className="text-xs text-gray-400 text-center">
         過去の日付、または登録済みの未来日のマスをタップすると修正メニューが開きます（出/欠/遅/早/出停）
+        <span className="block">
+          Tap a past date, or a future date that already has data, to open the edit menu
+        </span>
       </p>
 
       <button
@@ -572,15 +607,19 @@ export default function DashboardPage() {
         className="self-center rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold"
       >
         📅 期間で登録（未来日もOK）
+        <span className="block text-[10px] font-normal opacity-70">
+          Register a date range (future dates OK)
+        </span>
       </button>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中...</p>
+        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
       ) : students.length === 0 ? (
         <p className="text-gray-500 text-sm text-center">
           このクラスにはまだ生徒が登録されていません
+          <span className="block text-xs">No students registered in this class yet</span>
         </p>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
@@ -592,6 +631,7 @@ export default function DashboardPage() {
                   className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-right text-xs font-normal text-gray-500 whitespace-nowrap z-10"
                 >
                   出席人数
+                  <span className="block text-[9px]">Daily count</span>
                 </th>
                 {dailyPresentCounts.map((count, idx) => (
                   <th
@@ -609,6 +649,7 @@ export default function DashboardPage() {
                 </th>
                 <th className="sticky left-8 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
                   名前
+                  <span className="block text-[9px] font-normal text-gray-400">Name</span>
                 </th>
                 {dayNumbers.map((day) => {
                   const dow = new Date(year, month - 1, day).getDay();
@@ -635,12 +676,13 @@ export default function DashboardPage() {
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-red-50/40 text-red-700 whitespace-nowrap">
                   欠席理由
+                  <span className="block text-[9px] font-normal">Absence Reason</span>
                 </th>
                 <th className="border border-gray-300 px-1 py-1 bg-cyan-100 text-cyan-800 w-14">
                   <input
                     type="text"
                     value={checkLabels.check1Label}
-                    placeholder="未設定"
+                    placeholder="未設定 / Not set"
                     disabled={savingLabelColumn === "check1Label"}
                     onChange={(e) => handleLabelChange("check1Label", e.target.value)}
                     onKeyDown={(e) => {
@@ -654,7 +696,7 @@ export default function DashboardPage() {
                   <input
                     type="text"
                     value={checkLabels.check2Label}
-                    placeholder="未設定"
+                    placeholder="未設定 / Not set"
                     disabled={savingLabelColumn === "check2Label"}
                     onChange={(e) => handleLabelChange("check2Label", e.target.value)}
                     onKeyDown={(e) => {
@@ -668,7 +710,7 @@ export default function DashboardPage() {
                   <input
                     type="text"
                     value={checkLabels.check3Label}
-                    placeholder="未設定"
+                    placeholder="未設定 / Not set"
                     disabled={savingLabelColumn === "check3Label"}
                     onChange={(e) => handleLabelChange("check3Label", e.target.value)}
                     onKeyDown={(e) => {
@@ -680,6 +722,7 @@ export default function DashboardPage() {
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   備考
+                  <span className="block text-[9px] font-normal text-gray-400">Notes</span>
                 </th>
               </tr>
             </thead>
@@ -806,7 +849,7 @@ export default function DashboardPage() {
                         }
                         onBlur={(e) => handleRemarkBlur(s.studentId, e.target.value)}
                         disabled={savingRemarkId === s.studentId}
-                        placeholder={savingRemarkId === s.studentId ? "保存中..." : ""}
+                        placeholder={savingRemarkId === s.studentId ? "保存中... / Saving..." : ""}
                         className="w-full h-full px-2 py-1 text-sm outline-none focus:bg-blue-50 disabled:bg-gray-50"
                       />
                     </td>
@@ -819,7 +862,7 @@ export default function DashboardPage() {
       )}
 
       <Link href="/students" className="text-xs text-gray-400 underline">
-        生徒一覧の管理
+        生徒一覧の管理 / Manage student list
       </Link>
 
       {editingCell && (
@@ -844,18 +887,27 @@ export default function DashboardPage() {
                     className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm"
                   >
                     出席
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {STATUS_EN.present}
+                    </span>
                   </button>
                   <button
                     onClick={() => applyEdit("late")}
                     className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm"
                   >
                     遅刻
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {STATUS_EN.late}
+                    </span>
                   </button>
                   <button
                     onClick={() => applyEdit("early_leave")}
                     className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm"
                   >
                     早退
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {STATUS_EN.early_leave}
+                    </span>
                   </button>
                   {REASON_OPTIONS.map((opt) => (
                     <button
@@ -868,6 +920,7 @@ export default function DashboardPage() {
                       }`}
                     >
                       {opt.label}
+                      <span className="block text-[10px] font-normal opacity-70">{opt.en}</span>
                     </button>
                   ))}
                   <button
@@ -875,6 +928,7 @@ export default function DashboardPage() {
                     className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm"
                   >
                     その他
+                    <span className="block text-[10px] font-normal opacity-70">Other</span>
                   </button>
                 </div>
                 <button
@@ -882,12 +936,15 @@ export default function DashboardPage() {
                   className="rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3"
                 >
                   空欄にする（未確認）
+                  <span className="block text-[10px] font-normal">
+                    Clear (mark as not checked)
+                  </span>
                 </button>
                 <button
                   onClick={() => setEditingCell(null)}
                   className="text-sm text-gray-400 underline mt-1"
                 >
-                  キャンセル
+                  キャンセル / Cancel
                 </button>
               </div>
             ) : (
@@ -895,7 +952,7 @@ export default function DashboardPage() {
                 <input
                   value={otherText}
                   onChange={(e) => setOtherText(e.target.value)}
-                  placeholder="理由を入力"
+                  placeholder="理由を入力 / Enter reason"
                   autoFocus
                   className="border rounded-lg px-3 py-2"
                 />
@@ -909,6 +966,7 @@ export default function DashboardPage() {
                     }`}
                   >
                     欠席として
+                    <span className="block text-[10px] font-normal opacity-70">As absent</span>
                   </button>
                   <button
                     onClick={() => setOtherStatus("suspended")}
@@ -919,6 +977,9 @@ export default function DashboardPage() {
                     }`}
                   >
                     出停として
+                    <span className="block text-[10px] font-normal opacity-70">
+                      As suspended
+                    </span>
                   </button>
                 </div>
                 <button
@@ -926,13 +987,13 @@ export default function DashboardPage() {
                   disabled={!otherText.trim()}
                   className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
                 >
-                  適用する
+                  適用する / Apply
                 </button>
                 <button
                   onClick={() => setShowOtherInput(false)}
                   className="text-sm text-gray-400 underline"
                 >
-                  戻る
+                  戻る / Back
                 </button>
               </div>
             )}
@@ -949,16 +1010,25 @@ export default function DashboardPage() {
             className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-lg font-bold text-center">期間で登録</h2>
+            <h2 className="text-lg font-bold text-center">
+              期間で登録
+              <span className="block text-sm font-normal text-gray-500">
+                Register a date range
+              </span>
+            </h2>
             <p className="text-xs text-gray-400 text-center -mt-2">
               土日は自動でスキップされます
+              <span className="block">Weekends are skipped automatically</span>
             </p>
 
             {bulkPending ? (
               <div className="flex flex-col gap-4">
                 <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">生徒</span>
+                    <span className="text-gray-500">
+                      生徒
+                      <span className="block text-[10px]">Student</span>
+                    </span>
                     <span className="font-semibold">
                       {(() => {
                         const s = students.find((s) => s.studentId === bulkStudentId);
@@ -967,31 +1037,47 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">期間</span>
+                    <span className="text-gray-500">
+                      期間
+                      <span className="block text-[10px]">Date range</span>
+                    </span>
                     <span className="font-semibold">
                       {bulkStartDate} 〜 {bulkEndDate}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">登録日数</span>
+                    <span className="text-gray-500">
+                      登録日数
+                      <span className="block text-[10px]">Days to register</span>
+                    </span>
                     <span className="font-semibold">
                       {weekdayRange(bulkStartDate, bulkEndDate).length}日（平日のみ）
+                      <span className="block text-[10px] font-normal">
+                        {weekdayRange(bulkStartDate, bulkEndDate).length} day(s), weekdays only
+                      </span>
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">状態</span>
+                    <span className="text-gray-500">
+                      状態
+                      <span className="block text-[10px]">Status</span>
+                    </span>
                     <span className="font-bold">{bulkPending.displayLabel}</span>
                   </div>
                 </div>
 
                 <p className="text-sm text-center text-gray-600">
                   この内容で登録します。よろしいですか？
+                  <span className="block text-xs">Register with this content — is that OK?</span>
                 </p>
 
                 {bulkError && <p className="text-red-600 text-sm text-center">{bulkError}</p>}
                 {bulkProgress && (
                   <p className="text-sm text-gray-500 text-center">
                     登録中... {bulkProgress.done}/{bulkProgress.total}
+                    <span className="block text-xs">
+                      Registering... {bulkProgress.done}/{bulkProgress.total}
+                    </span>
                   </p>
                 )}
 
@@ -1000,20 +1086,21 @@ export default function DashboardPage() {
                   disabled={bulkApplying}
                   className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
                 >
-                  {bulkApplying ? "登録中..." : "登録する"}
+                  {bulkApplying ? "登録中... / Registering..." : "登録する / Register"}
                 </button>
                 <button
                   onClick={() => setBulkPending(null)}
                   disabled={bulkApplying}
                   className="text-sm text-gray-400 underline disabled:opacity-40"
                 >
-                  戻る（選び直す）
+                  戻る（選び直す）/ Back (choose again)
                 </button>
               </div>
             ) : !bulkShowOtherInput ? (
               <>
                 <label className="flex flex-col gap-1 text-sm">
                   生徒
+                  <span className="text-xs font-normal text-gray-500">Student</span>
                   <select
                     value={bulkStudentId}
                     onChange={(e) => setBulkStudentId(e.target.value)}
@@ -1030,6 +1117,7 @@ export default function DashboardPage() {
                 <div className="flex gap-2">
                   <label className="flex-1 flex flex-col gap-1 text-sm">
                     開始日
+                    <span className="text-xs font-normal text-gray-500">Start date</span>
                     <input
                       type="date"
                       value={bulkStartDate}
@@ -1039,6 +1127,7 @@ export default function DashboardPage() {
                   </label>
                   <label className="flex-1 flex flex-col gap-1 text-sm">
                     終了日
+                    <span className="text-xs font-normal text-gray-500">End date</span>
                     <input
                       type="date"
                       value={bulkEndDate}
@@ -1050,7 +1139,10 @@ export default function DashboardPage() {
 
                 {bulkError && <p className="text-red-600 text-sm">{bulkError}</p>}
 
-                <p className="text-xs text-gray-400 text-center mt-1">状態を選択</p>
+                <p className="text-xs text-gray-400 text-center mt-1">
+                  状態を選択
+                  <span className="block">Choose a status</span>
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => selectBulkChoice("present", "", "出席")}
@@ -1058,6 +1150,9 @@ export default function DashboardPage() {
                     className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     出席
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {STATUS_EN.present}
+                    </span>
                   </button>
                   <button
                     onClick={() => selectBulkChoice("late", "", "遅刻")}
@@ -1065,6 +1160,9 @@ export default function DashboardPage() {
                     className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     遅刻
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {STATUS_EN.late}
+                    </span>
                   </button>
                   <button
                     onClick={() => selectBulkChoice("early_leave", "", "早退")}
@@ -1072,6 +1170,9 @@ export default function DashboardPage() {
                     className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     早退
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {STATUS_EN.early_leave}
+                    </span>
                   </button>
                   {REASON_OPTIONS.map((opt) => (
                     <button
@@ -1085,6 +1186,7 @@ export default function DashboardPage() {
                       }`}
                     >
                       {opt.label}
+                      <span className="block text-[10px] font-normal opacity-70">{opt.en}</span>
                     </button>
                   ))}
                   <button
@@ -1093,6 +1195,7 @@ export default function DashboardPage() {
                     className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     その他
+                    <span className="block text-[10px] font-normal opacity-70">Other</span>
                   </button>
                 </div>
 
@@ -1100,7 +1203,7 @@ export default function DashboardPage() {
                   onClick={() => setShowBulkModal(false)}
                   className="text-sm text-gray-400 underline mt-1"
                 >
-                  キャンセル
+                  キャンセル / Cancel
                 </button>
               </>
             ) : (
@@ -1108,7 +1211,7 @@ export default function DashboardPage() {
                 <input
                   value={bulkOtherText}
                   onChange={(e) => setBulkOtherText(e.target.value)}
-                  placeholder="理由を入力"
+                  placeholder="理由を入力 / Enter reason"
                   autoFocus
                   className="border rounded-lg px-3 py-2"
                 />
@@ -1122,6 +1225,7 @@ export default function DashboardPage() {
                     }`}
                   >
                     欠席として
+                    <span className="block text-[10px] font-normal opacity-70">As absent</span>
                   </button>
                   <button
                     onClick={() => setBulkOtherStatus("suspended")}
@@ -1132,6 +1236,9 @@ export default function DashboardPage() {
                     }`}
                   >
                     出停として
+                    <span className="block text-[10px] font-normal opacity-70">
+                      As suspended
+                    </span>
                   </button>
                 </div>
                 {bulkError && <p className="text-red-600 text-sm">{bulkError}</p>}
@@ -1142,13 +1249,13 @@ export default function DashboardPage() {
                   disabled={!bulkOtherText.trim()}
                   className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
                 >
-                  次へ
+                  次へ / Next
                 </button>
                 <button
                   onClick={() => setBulkShowOtherInput(false)}
                   className="text-sm text-gray-400 underline"
                 >
-                  戻る
+                  戻る / Back
                 </button>
               </div>
             )}

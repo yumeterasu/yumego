@@ -4,9 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 
 type AttendanceRecord = { date: string; studentId: string; status: AttendanceStatus };
+
+const MONTH_EN = [
+  "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar",
+];
 
 // 遅刻/早退 count toward 出席日数; 出席停止 does not.
 function countsAsPresent(status: AttendanceStatus): boolean {
@@ -71,7 +76,7 @@ export default function SummaryPage() {
         Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
       );
     } catch {
-      setError("データの取得に失敗しました");
+      setError("データの取得に失敗しました / Failed to load data");
     } finally {
       setLoading(false);
     }
@@ -94,7 +99,7 @@ export default function SummaryPage() {
         prev.map((s) => (s.studentId === studentId ? { ...s, remark: value } : s))
       );
     } catch {
-      setError("備考の保存に失敗しました");
+      setError("備考の保存に失敗しました / Failed to save note");
       setRemarks((prev) => ({ ...prev, [studentId]: original })); // revert
     } finally {
       setSavingRemarkId(null);
@@ -143,7 +148,11 @@ export default function SummaryPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
-          <p className="text-sm text-gray-500">年間まとめ</p>
+          <p className="text-xs text-gray-400">{classNameToEnglish(selectedClass)}</p>
+          <p className="text-sm text-gray-500">
+            年間まとめ
+            <span className="ml-1 text-xs text-gray-400">Annual Summary</span>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -151,12 +160,16 @@ export default function SummaryPage() {
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
+            <span className="block text-[10px] font-normal opacity-70">
+              Back to attendance
+            </span>
           </Link>
           <Link
             href="/select-class"
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
           >
             🏠 トップページ
+            <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
         </div>
       </div>
@@ -165,7 +178,7 @@ export default function SummaryPage() {
         <button
           onClick={() => setFiscalYearStart((y) => y - 1)}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="前年度"
+          aria-label="前年度 / Previous fiscal year"
         >
           ◀
         </button>
@@ -175,7 +188,7 @@ export default function SummaryPage() {
         <button
           onClick={() => setFiscalYearStart((y) => y + 1)}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="翌年度"
+          aria-label="翌年度 / Next fiscal year"
         >
           ▶
         </button>
@@ -183,15 +196,19 @@ export default function SummaryPage() {
 
       <p className="text-xs text-gray-400 text-center">
         各月の出席した日数（{fiscalYearStart}年4月〜{fiscalYearStart + 1}年3月）
+        <span className="block">
+          Present days per month (Apr {fiscalYearStart} – Mar {fiscalYearStart + 1})
+        </span>
       </p>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中...</p>
+        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
       ) : students.length === 0 ? (
         <p className="text-gray-500 text-sm text-center">
           このクラスにはまだ生徒が登録されていません
+          <span className="block text-xs">No students registered in this class yet</span>
         </p>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
@@ -200,20 +217,26 @@ export default function SummaryPage() {
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
                   名前
+                  <span className="block text-[9px] font-normal text-gray-400">Name</span>
                 </th>
-                {FISCAL_MONTHS.map((fm) => (
+                {FISCAL_MONTHS.map((fm, idx) => (
                   <th
                     key={fm.monthNum}
                     className="border border-gray-300 px-2 py-2 text-center bg-gray-50 w-12 whitespace-nowrap"
                   >
                     {fm.monthNum}月
+                    <span className="block text-[9px] font-normal text-gray-400">
+                      {MONTH_EN[idx]}
+                    </span>
                   </th>
                 ))}
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-20 whitespace-nowrap">
                   出席日数
+                  <span className="block text-[9px] font-normal">Present Days</span>
                 </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   備考
+                  <span className="block text-[9px] font-normal text-gray-400">Notes</span>
                 </th>
               </tr>
             </thead>
@@ -251,7 +274,7 @@ export default function SummaryPage() {
                         }
                         onBlur={(e) => handleRemarkBlur(s.studentId, e.target.value)}
                         disabled={savingRemarkId === s.studentId}
-                        placeholder={savingRemarkId === s.studentId ? "保存中..." : ""}
+                        placeholder={savingRemarkId === s.studentId ? "保存中... / Saving..." : ""}
                         className="w-full h-full px-2 py-1 text-sm outline-none focus:bg-blue-50 disabled:bg-gray-50"
                       />
                     </td>

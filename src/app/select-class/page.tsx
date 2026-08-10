@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CLASSES } from "@/lib/classes";
+import { CLASSES, classNameToEnglish } from "@/lib/classes";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { Bi } from "@/components/Bilingual";
 
 const PROMPONG_CLASSES = CLASSES.filter((c) => c.startsWith("プロンポン"));
 const THONGLOR_CLASSES = CLASSES.filter((c) => c.startsWith("トンロー"));
@@ -66,10 +67,14 @@ export default function SelectClassPage() {
         onClick={() => handleSelect(name)}
         className="relative rounded-xl border border-gray-300 px-6 py-8 text-lg font-semibold hover:bg-gray-100 active:scale-95 transition"
       >
-        {name}
+        <span className="block">{name}</span>
+        <span className="block text-xs font-normal opacity-70">
+          {classNameToEnglish(name)}
+        </span>
         {checked && (
           <span className="absolute top-2 right-3 text-sm font-bold text-green-700 bg-green-50 border border-green-300 rounded-full px-2 py-0.5">
             出席 {count}
+            <span className="block text-[9px] font-normal">Present</span>
           </span>
         )}
       </button>
@@ -78,16 +83,25 @@ export default function SelectClassPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
-      <h1 className="text-2xl font-bold">このタブレットのクラスを選んでください</h1>
-      <p className="text-sm text-gray-500">
+      <h1 className="text-2xl font-bold text-center">
+        <Bi
+          ja="このタブレットのクラスを選んでください"
+          en="Please choose this tablet's class"
+          enClassName="block text-sm font-normal text-gray-500 mt-1"
+        />
+      </h1>
+      <p className="text-sm text-gray-500 text-center -mt-6">
         一度選ぶと、このタブレットではそのクラスが記憶されます
+        <span className="block text-xs opacity-70">
+          Once chosen, this tablet remembers that class
+        </span>
       </p>
 
       <div className="flex items-center gap-4">
         <button
           onClick={() => setSelectedDate((d) => addDays(d, -1))}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="前の日"
+          aria-label="前の日 / Previous day"
         >
           ◀
         </button>
@@ -98,7 +112,7 @@ export default function SelectClassPage() {
               onClick={() => setSelectedDate(today)}
               className="text-xs text-blue-600 underline"
             >
-              今日に戻る
+              今日に戻る / Back to today
             </button>
           )}
         </div>
@@ -106,15 +120,18 @@ export default function SelectClassPage() {
           onClick={() => setSelectedDate((d) => addDays(d, 1))}
           disabled={selectedDate >= today}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center disabled:opacity-30"
-          aria-label="次の日"
+          aria-label="次の日 / Next day"
         >
           ▶
         </button>
       </div>
 
       {!loading && (
-        <p className="text-xs text-gray-400 -mt-4">
+        <p className="text-xs text-gray-400 -mt-4 text-center">
           出席人数はチェック済みのクラスのみ表示されます
+          <span className="block">
+            Attendance counts only show for classes already checked in
+          </span>
         </p>
       )}
 
@@ -130,6 +147,7 @@ export default function SelectClassPage() {
         <div className="flex flex-col gap-4">
           <h2 className="text-lg font-bold text-center text-gray-700">
             プロンポン
+            <span className="block text-xs font-normal opacity-70">Phrom Phong</span>
           </h2>
           {PROMPONG_CLASSES.map((name) => (
             <ClassButton key={name} name={name} />
@@ -138,6 +156,7 @@ export default function SelectClassPage() {
         <div className="flex flex-col gap-4">
           <h2 className="text-lg font-bold text-center text-gray-700">
             トンロー
+            <span className="block text-xs font-normal opacity-70">Thong Lo</span>
           </h2>
           {THONGLOR_CLASSES.map((name) => (
             <ClassButton key={name} name={name} />

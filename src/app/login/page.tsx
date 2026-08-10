@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Bi } from "@/components/Bilingual";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,7 +21,7 @@ export default function LoginPage() {
         body: JSON.stringify({ password }),
       });
       if (!res.ok) {
-        setError("パスワードが違います");
+        setError("パスワードが違います / Incorrect password");
         return;
       }
       const params = new URLSearchParams(window.location.search);
@@ -43,7 +44,7 @@ export default function LoginPage() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="パスワード"
+          placeholder="パスワード / Password"
           className="border rounded px-3 py-3 text-center text-lg"
           autoFocus
           required
@@ -53,7 +54,11 @@ export default function LoginPage() {
           disabled={submitting || !password}
           className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
         >
-          {submitting ? "確認中..." : "ログイン"}
+          {submitting ? (
+            <Bi ja="確認中..." en="Checking..." />
+          ) : (
+            <Bi ja="ログイン" en="Log in" />
+          )}
         </button>
         {error && (
           <p className="text-red-600 text-sm text-center">{error}</p>

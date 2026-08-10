@@ -4,10 +4,10 @@
 
 export type AbsenceBucket = "absent" | "suspended";
 
-export const REASON_OPTIONS: { label: string; status: AbsenceBucket }[] = [
-  { label: "事故欠", status: "absent" },
-  { label: "病欠", status: "absent" },
-  { label: "インフルエンザ", status: "suspended" },
-  { label: "手足口病", status: "suspended" },
-  { label: "コロナ", status: "suspended" },
+export const REASON_OPTIONS: { label: string; en: string; status: AbsenceBucket }[] = [
+  { label: "事故欠", en: "Accident/Injury", status: "absent" },
+  { label: "病欠", en: "Sick", status: "absent" },
+  { label: "インフルエンザ", en: "Influenza", status: "suspended" },
+  { label: "手足口病", en: "Hand-Foot-Mouth Disease", status: "suspended" },
+  { label: "コロナ", en: "COVID-19", status: "suspended" },
 ];

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { classNameToEnglish } from "@/lib/classes";
 import type { Student } from "@/lib/sheets";
 
 export default function StudentsPage() {
@@ -38,7 +39,7 @@ export default function StudentsPage() {
       const data = await res.json();
       setStudents(data.students ?? []);
     } catch {
-      setError("生徒一覧の取得に失敗しました");
+      setError("生徒一覧の取得に失敗しました / Failed to load students");
     } finally {
       setLoading(false);
     }
@@ -65,7 +66,7 @@ export default function StudentsPage() {
       setNameEnglish("");
       await loadStudents(selectedClass);
     } catch {
-      setError("生徒の追加に失敗しました");
+      setError("生徒の追加に失敗しました / Failed to add student");
     } finally {
       setSaving(false);
     }
@@ -76,15 +77,22 @@ export default function StudentsPage() {
   return (
     <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
-        <Link href="/attendance" className="text-sm text-blue-600 underline">
+        <div>
+          <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
+          <p className="text-xs text-gray-500">
+            {classNameToEnglish(selectedClass)} · Student Management
+          </p>
+        </div>
+        <Link href="/attendance" className="text-sm text-blue-600 underline text-right">
           出席へ戻る
+          <span className="block text-xs">Back to attendance</span>
         </Link>
       </div>
 
       <form onSubmit={handleAdd} className="flex flex-col gap-3 border rounded-xl p-4">
         <label className="flex flex-col gap-1 text-sm">
           名前（漢字）
+          <span className="text-xs font-normal text-gray-500">Name (Kanji)</span>
           <input
             value={nameKanji}
             onChange={(e) => setNameKanji(e.target.value)}
@@ -95,6 +103,7 @@ export default function StudentsPage() {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           英語名（任意）
+          <span className="text-xs font-normal text-gray-500">English name (optional)</span>
           <input
             value={nameEnglish}
             onChange={(e) => setNameEnglish(e.target.value)}
@@ -107,7 +116,7 @@ export default function StudentsPage() {
           disabled={saving || !nameKanji.trim()}
           className="rounded-full bg-black text-white py-2 disabled:opacity-40"
         >
-          {saving ? "追加中..." : "生徒を追加"}
+          {saving ? "追加中... / Adding..." : "生徒を追加 / Add student"}
         </button>
         {error && <p className="text-red-600 text-sm">{error}</p>}
       </form>
@@ -115,11 +124,16 @@ export default function StudentsPage() {
       <div>
         <h2 className="font-semibold mb-2">
           現在の生徒一覧 {!loading && `(${students.length}名)`}
+          <span className="block text-xs font-normal text-gray-500">
+            Current student list{!loading && ` (${students.length})`}
+          </span>
         </h2>
         {loading ? (
-          <p className="text-gray-500 text-sm">読み込み中...</p>
+          <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
         ) : students.length === 0 ? (
-          <p className="text-gray-500 text-sm">まだ生徒が登録されていません</p>
+          <p className="text-gray-500 text-sm">
+            まだ生徒が登録されていません / No students registered yet
+          </p>
         ) : (
           <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
             {students.map((s) => (

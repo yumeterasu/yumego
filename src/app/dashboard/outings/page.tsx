@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { classNameToEnglish } from "@/lib/classes";
 import type { OutingLog } from "@/lib/sheets";
 
 function pad2(n: number) {
@@ -91,7 +92,7 @@ export default function OutingsPage() {
       const data = await res.json();
       setEntries(data.entries ?? []);
     } catch {
-      setError("データの取得に失敗しました");
+      setError("データの取得に失敗しました / Failed to load data");
     } finally {
       setLoading(false);
     }
@@ -145,17 +146,21 @@ export default function OutingsPage() {
 
     if (form.mode === "add" || form.mode === "edit") {
       if (!form.date || !form.departureTime || !form.departureSign.trim()) {
-        setFormError("日付・退室時間・退室確認サインは必須です");
+        setFormError(
+          "日付・退室時間・退室確認サインは必須です / Date, departure time, and departure sign are required"
+        );
         return;
       }
       if (!Number.isFinite(headcountNum) || headcountNum < 0) {
-        setFormError("人数を正しく入力してください");
+        setFormError("人数を正しく入力してください / Please enter a valid headcount");
         return;
       }
     }
     if (form.mode === "return") {
       if (!form.returnTime || !form.returnSign.trim()) {
-        setFormError("入室時間と入室確認サインを入力してください");
+        setFormError(
+          "入室時間と入室確認サインを入力してください / Please enter the return time and return sign"
+        );
         return;
       }
     }
@@ -182,7 +187,7 @@ export default function OutingsPage() {
       setForm(null);
       await load();
     } catch {
-      setFormError("保存に失敗しました");
+      setFormError("保存に失敗しました / Failed to save");
     } finally {
       setSaving(false);
     }
@@ -192,7 +197,7 @@ export default function OutingsPage() {
     const label = entry.description ? `（${entry.description}）` : "";
     if (
       !window.confirm(
-        `${entry.date} ${entry.departureTime} 退室の記録${label}を削除しますか？`
+        `${entry.date} ${entry.departureTime} 退室の記録${label}を削除しますか？\nDelete the ${entry.date} ${entry.departureTime} departure record${entry.description ? ` (${entry.description})` : ""}?`
       )
     ) {
       return;
@@ -205,7 +210,7 @@ export default function OutingsPage() {
       if (!res.ok) throw new Error("failed");
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
     } catch {
-      setError("削除に失敗しました");
+      setError("削除に失敗しました / Failed to delete");
     }
   }
 
@@ -216,8 +221,14 @@ export default function OutingsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass} 入退出記録</h1>
+          <p className="text-xs text-gray-400">
+            {classNameToEnglish(selectedClass)} · Entry/Exit Log
+          </p>
           <p className="text-sm text-gray-500">
             外出先は自由記入です（専門コーチの項目に限りません）
+            <span className="block text-xs">
+              Destination is free text (not limited to Specialist Coach items)
+            </span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -226,6 +237,9 @@ export default function OutingsPage() {
             className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
+            <span className="block text-[10px] font-normal opacity-70">
+              Back to attendance
+            </span>
           </Link>
         </div>
       </div>
@@ -234,7 +248,7 @@ export default function OutingsPage() {
         <button
           onClick={goPrevMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="前の月"
+          aria-label="前の月 / Previous month"
         >
           ◀
         </button>
@@ -244,7 +258,7 @@ export default function OutingsPage() {
         <button
           onClick={goNextMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
-          aria-label="次の月"
+          aria-label="次の月 / Next month"
         >
           ▶
         </button>
@@ -255,15 +269,17 @@ export default function OutingsPage() {
         className="self-center rounded-full bg-black text-white px-5 py-2.5 text-sm font-semibold"
       >
         ＋ 退室を記録
+        <span className="block text-[10px] font-normal opacity-70">Record departure</span>
       </button>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中...</p>
+        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
       ) : entries.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">
           この月の記録はまだありません
+          <span className="block text-xs">No records yet this month</span>
         </p>
       ) : (
         <div className="flex flex-col gap-2 max-w-2xl w-full mx-auto">
@@ -291,7 +307,7 @@ export default function OutingsPage() {
                         {entry.returnSign ? `（${entry.returnSign}）` : ""}
                       </>
                     ) : (
-                      <span className="text-amber-700 font-semibold">未入室</span>
+                      <span className="text-amber-700 font-semibold">未入室 / Not back yet</span>
                     )}
                   </p>
                 </div>
@@ -302,19 +318,22 @@ export default function OutingsPage() {
                       className="rounded-full bg-amber-500 text-white px-3 py-1.5 text-xs font-semibold"
                     >
                       入室を記録
+                      <span className="block text-[9px] font-normal opacity-80">
+                        Record return
+                      </span>
                     </button>
                   )}
                   <button
                     onClick={() => openEditForm(entry)}
                     className="rounded-full border border-gray-300 text-gray-700 px-3 py-1.5 text-xs font-semibold"
                   >
-                    編集
+                    編集 / Edit
                   </button>
                   <button
                     onClick={() => handleDelete(entry)}
                     className="rounded-full border border-red-300 text-red-600 px-3 py-1.5 text-xs font-semibold"
                   >
-                    削除
+                    削除 / Delete
                   </button>
                 </div>
               </div>
@@ -333,15 +352,33 @@ export default function OutingsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-bold text-lg">
-              {form.mode === "add" && "退室を記録"}
-              {form.mode === "return" && "入室を記録"}
-              {form.mode === "edit" && "記録を編集"}
+              {form.mode === "add" && (
+                <>
+                  退室を記録
+                  <span className="block text-sm font-normal text-gray-500">
+                    Record departure
+                  </span>
+                </>
+              )}
+              {form.mode === "return" && (
+                <>
+                  入室を記録
+                  <span className="block text-sm font-normal text-gray-500">Record return</span>
+                </>
+              )}
+              {form.mode === "edit" && (
+                <>
+                  記録を編集
+                  <span className="block text-sm font-normal text-gray-500">Edit record</span>
+                </>
+              )}
             </h2>
 
             {form.mode !== "return" && (
               <>
                 <label className="flex flex-col gap-1 text-sm">
                   日付
+                  <span className="text-xs font-normal text-gray-500">Date</span>
                   <input
                     type="date"
                     value={form.date}
@@ -352,6 +389,7 @@ export default function OutingsPage() {
 
                 <label className="flex flex-col gap-1 text-sm">
                   人数
+                  <span className="text-xs font-normal text-gray-500">Headcount</span>
                   <input
                     type="number"
                     min={0}
@@ -367,6 +405,7 @@ export default function OutingsPage() {
                 <div className="flex gap-3">
                   <label className="flex flex-col gap-1 text-sm flex-1">
                     退室時間
+                    <span className="text-xs font-normal text-gray-500">Departure time</span>
                     <input
                       type="time"
                       value={form.departureTime}
@@ -378,13 +417,14 @@ export default function OutingsPage() {
                   </label>
                   <label className="flex flex-col gap-1 text-sm flex-1">
                     退室確認サイン
+                    <span className="text-xs font-normal text-gray-500">Departure sign</span>
                     <input
                       type="text"
                       value={form.departureSign}
                       onChange={(e) =>
                         setForm((f) => (f ? { ...f, departureSign: e.target.value } : f))
                       }
-                      placeholder="名前"
+                      placeholder="名前 / Name"
                       className="border border-gray-300 rounded-lg px-3 py-2"
                     />
                   </label>
@@ -392,6 +432,9 @@ export default function OutingsPage() {
 
                 <label className="flex flex-col gap-1 text-sm">
                   行き先・内容（任意）
+                  <span className="text-xs font-normal text-gray-500">
+                    Destination/notes (optional)
+                  </span>
                   <input
                     type="text"
                     value={form.description}
@@ -409,6 +452,7 @@ export default function OutingsPage() {
               <div className="flex gap-3">
                 <label className="flex flex-col gap-1 text-sm flex-1">
                   入室時間
+                  <span className="text-xs font-normal text-gray-500">Return time</span>
                   <input
                     type="time"
                     value={form.returnTime}
@@ -420,13 +464,14 @@ export default function OutingsPage() {
                 </label>
                 <label className="flex flex-col gap-1 text-sm flex-1">
                   入室確認サイン
+                  <span className="text-xs font-normal text-gray-500">Return sign</span>
                   <input
                     type="text"
                     value={form.returnSign}
                     onChange={(e) =>
                       setForm((f) => (f ? { ...f, returnSign: e.target.value } : f))
                     }
-                    placeholder="名前"
+                    placeholder="名前 / Name"
                     className="border border-gray-300 rounded-lg px-3 py-2"
                   />
                 </label>
@@ -441,14 +486,14 @@ export default function OutingsPage() {
                 disabled={saving}
                 className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
               >
-                キャンセル
+                キャンセル / Cancel
               </button>
               <button
                 onClick={submitForm}
                 disabled={saving}
                 className="rounded-full bg-black text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
               >
-                {saving ? "保存中..." : "保存する"}
+                {saving ? "保存中... / Saving..." : "保存する / Save"}
               </button>
             </div>
           </div>
