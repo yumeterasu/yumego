@@ -131,6 +131,17 @@ export default function SpecialistCoachPage() {
     const next = !isChecked;
     const savingId = `${key}|${date}`;
 
+    // Removing a checkmark is easy to do by accident and this page is
+    // usually only opened once a month, so a mistaken uncheck could sit
+    // unnoticed for weeks — confirm before actually removing it. Adding a
+    // new checkmark stays a single tap, no confirm needed.
+    if (isChecked) {
+      const categoryName = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
+      if (!window.confirm(`「${categoryName}」${date} のチェックを外しますか？`)) {
+        return;
+      }
+    }
+
     // optimistic update
     setCheckedDates((prev) => {
       const copy = { ...prev };
