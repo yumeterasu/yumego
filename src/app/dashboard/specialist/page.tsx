@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import { classNameToBranchGrade } from "@/lib/classes";
+import { classNameToBranchGrade, type GradeShort } from "@/lib/classes";
 import type { SpecialistCategory } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+const GRADES: GradeShort[] = ["長", "中", "少"];
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
@@ -15,6 +16,10 @@ function daysInMonth(year: number, month: number) {
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
+}
+
+function cellKey(categoryId: string, grade: string) {
+  return `${categoryId}|${grade}`;
 }
 
 export default function SpecialistCoachPage() {
@@ -33,7 +38,10 @@ export default function SpecialistCoachPage() {
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-based
 
   const [categories, setCategories] = useState<SpecialistCategory[]>([]);
-  // categoryId -> Set of checked "YYYY-MM-DD" dates, this branch+grade+month
+  // "categoryId|grade" -> Set of checked "YYYY-MM-DD" dates, this branch+month.
+  // All 3 grades are loaded (not just this tablet's own) so the table can
+  // show the whole branch's picture — only this tablet's own grade row is
+  // editable, the rest are shown read-only/grayed out for context.
   const [checkedDates, setCheckedDates] = useState<Record<string, Set<string>>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +59,7 @@ export default function SpecialistCoachPage() {
 
   const yearMonth = `${year}-${pad2(month)}`;
   const branch = branchGrade?.branch ?? "";
-  const grade = branchGrade?.grade ?? "";
+  const myGrade = branchGrade?.grade ?? "";
 
   const load = useCallback(async () => {
     if (!branch) return;
@@ -77,9 +85,9 @@ export default function SpecialistCoachPage() {
         attendanceData.cells ?? [];
       const next: Record<string, Set<string>> = {};
       for (const cell of cells) {
-        if (cell.grade !== grade) continue;
-        if (!next[cell.categoryId]) next[cell.categoryId] = new Set();
-        next[cell.categoryId].add(cell.date);
+        const key = cellKey(cell.categoryId, cell.grade);
+        if (!next[key]) next[key] = new Set();
+        next[key].add(cell.date);
       }
       setCheckedDates(next);
     } catch {
@@ -87,7 +95,7 @@ export default function SpecialistCoachPage() {
     } finally {
       setLoading(false);
     }
-  }, [branch, grade, yearMonth]);
+  }, [branch, yearMonth]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -118,26 +126,27 @@ export default function SpecialistCoachPage() {
   }
 
   async function toggleChecked(categoryId: string, date: string) {
-    const isChecked = checkedDates[categoryId]?.has(date) ?? false;
+    const key = cellKey(categoryId, myGrade);
+    const isChecked = checkedDates[key]?.has(date) ?? false;
     const next = !isChecked;
-    const key = `${categoryId}|${date}`;
+    const savingId = `${key}|${date}`;
 
     // optimistic update
     setCheckedDates((prev) => {
       const copy = { ...prev };
-      const set = new Set(copy[categoryId] ?? []);
+      const set = new Set(copy[key] ?? []);
       if (next) set.add(date);
       else set.delete(date);
-      copy[categoryId] = set;
+      copy[key] = set;
       return copy;
     });
-    setSavingKey(key);
+    setSavingKey(savingId);
     setError(null);
     try {
       const res = await fetch("/api/specialist/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch, categoryId, grade, date, checked: next }),
+        body: JSON.stringify({ branch, categoryId, grade: myGrade, date, checked: next }),
       });
       if (!res.ok) throw new Error("failed");
     } catch {
@@ -145,10 +154,10 @@ export default function SpecialistCoachPage() {
       // revert
       setCheckedDates((prev) => {
         const copy = { ...prev };
-        const set = new Set(copy[categoryId] ?? []);
+        const set = new Set(copy[key] ?? []);
         if (isChecked) set.add(date);
         else set.delete(date);
-        copy[categoryId] = set;
+        copy[key] = set;
         return copy;
       });
     } finally {
@@ -231,10 +240,10 @@ export default function SpecialistCoachPage() {
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">
-            {branch} 専門コーチ
-          </h1>
-          <p className="text-sm text-gray-500">対象学年：{grade}（{selectedClass}）</p>
+          <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
+          <p className="text-sm text-gray-500">
+            編集できるのは{myGrade}の行だけです（{selectedClass}）。他の学年はグレー表示（閲覧のみ）
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
@@ -275,8 +284,11 @@ export default function SpecialistCoachPage() {
           <table className="text-sm border-collapse min-w-max">
             <thead>
               <tr>
-                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-32">
+                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-28">
                   項目
+                </th>
+                <th className="sticky left-28 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-10">
+                  学年
                 </th>
                 {dayNumbers.map((day) => {
                   const dow = new Date(year, month - 1, day).getDay();
@@ -304,77 +316,109 @@ export default function SpecialistCoachPage() {
               {categories.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={dayNumbers.length + 2}
+                    colSpan={dayNumbers.length + 3}
                     className="text-center text-gray-400 text-sm py-6 border border-gray-300"
                   >
                     まだ項目がありません。下から追加してください。
                   </td>
                 </tr>
               ) : (
-                categories.map((c, i) => {
-                  const dates = checkedDates[c.categoryId] ?? new Set<string>();
-                  const count = dates.size;
+                categories.map((c, ci) => {
+                  const zebra = ci % 2 === 1;
                   return (
-                    <tr key={c.categoryId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
-                      <td
-                        className={`sticky left-0 border border-gray-300 px-2 py-1 whitespace-nowrap ${
-                          i % 2 === 1 ? "bg-gray-50" : "bg-white"
-                        }`}
-                      >
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="text"
-                            value={nameDrafts[c.categoryId] ?? ""}
-                            disabled={savingNameId === c.categoryId}
-                            onChange={(e) =>
-                              setNameDrafts((prev) => ({
-                                ...prev,
-                                [c.categoryId]: e.target.value,
-                              }))
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") e.currentTarget.blur();
-                            }}
-                            onBlur={(e) => saveNameEdit(c.categoryId, e.target.value)}
-                            className="w-24 bg-transparent outline-none focus:bg-blue-50 rounded px-1"
-                          />
-                          <button
-                            onClick={() => deleteCategory(c.categoryId, c.name)}
-                            aria-label={`${c.name}を削除`}
-                            className="text-gray-300 hover:text-red-500 text-xs px-1"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </td>
-                      {dayNumbers.map((day) => {
-                        const date = `${year}-${pad2(month)}-${pad2(day)}`;
-                        const dow = new Date(year, month - 1, day).getDay();
-                        const isWeekend = dow === 0 || dow === 6;
-                        const isChecked = dates.has(date);
-                        const key = `${c.categoryId}|${date}`;
-                        const isSaving = savingKey === key;
+                    <Fragment key={c.categoryId}>
+                      {GRADES.map((g, gi) => {
+                        const isMine = g === myGrade;
+                        const key = cellKey(c.categoryId, g);
+                        const dates = checkedDates[key] ?? new Set<string>();
+                        const count = dates.size;
                         return (
-                          <td
-                            key={day}
-                            className={`text-center border border-gray-300 py-1 ${
-                              isWeekend ? "bg-orange-50/60" : ""
-                            }`}
+                          <tr
+                            key={`${c.categoryId}-${g}`}
+                            className={isMine ? "bg-green-50/60" : zebra ? "bg-gray-50/50" : ""}
                           >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              disabled={isSaving}
-                              onChange={() => toggleChecked(c.categoryId, date)}
-                              className="w-4 h-4 accent-green-600 cursor-pointer"
-                            />
-                          </td>
+                            {gi === 0 && (
+                              <td
+                                rowSpan={GRADES.length}
+                                className={`sticky left-0 border border-gray-300 px-2 py-1 whitespace-nowrap align-top ${
+                                  zebra ? "bg-gray-50" : "bg-white"
+                                }`}
+                              >
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    type="text"
+                                    value={nameDrafts[c.categoryId] ?? ""}
+                                    disabled={savingNameId === c.categoryId}
+                                    onChange={(e) =>
+                                      setNameDrafts((prev) => ({
+                                        ...prev,
+                                        [c.categoryId]: e.target.value,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") e.currentTarget.blur();
+                                    }}
+                                    onBlur={(e) => saveNameEdit(c.categoryId, e.target.value)}
+                                    className="w-20 bg-transparent outline-none focus:bg-blue-50 rounded px-1"
+                                  />
+                                  <button
+                                    onClick={() => deleteCategory(c.categoryId, c.name)}
+                                    aria-label={`${c.name}を削除`}
+                                    className="text-gray-300 hover:text-red-500 text-xs px-1"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </td>
+                            )}
+                            <td
+                              className={`sticky left-28 border border-gray-300 px-2 py-1 text-center whitespace-nowrap ${
+                                isMine ? "bg-green-50/60 font-bold text-green-800" : zebra ? "bg-gray-50" : "bg-white"
+                              }`}
+                            >
+                              {g}
+                            </td>
+                            {dayNumbers.map((day) => {
+                              const date = `${year}-${pad2(month)}-${pad2(day)}`;
+                              const dow = new Date(year, month - 1, day).getDay();
+                              const isWeekend = dow === 0 || dow === 6;
+                              const isChecked = dates.has(date);
+                              const savingId = `${key}|${date}`;
+                              const isSaving = savingKey === savingId;
+                              return (
+                                <td
+                                  key={day}
+                                  className={`text-center border border-gray-300 py-1 ${
+                                    isWeekend && isMine ? "bg-orange-50/60" : ""
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    disabled={!isMine || isSaving}
+                                    onChange={
+                                      isMine ? () => toggleChecked(c.categoryId, date) : undefined
+                                    }
+                                    className={
+                                      isMine
+                                        ? "w-4 h-4 accent-green-600 cursor-pointer"
+                                        : "w-4 h-4 accent-gray-300 opacity-60 cursor-not-allowed"
+                                    }
+                                  />
+                                </td>
+                              );
+                            })}
+                            <td
+                              className={`text-center border border-gray-300 font-semibold ${
+                                isMine ? "text-green-700" : "text-gray-400"
+                              }`}
+                            >
+                              {count > 0 ? count : ""}
+                            </td>
+                          </tr>
                         );
                       })}
-                      <td className="text-center border border-gray-300 font-semibold text-green-700">
-                        {count > 0 ? count : ""}
-                      </td>
-                    </tr>
+                    </Fragment>
                   );
                 })
               )}
