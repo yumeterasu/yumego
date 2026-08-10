@@ -395,29 +395,34 @@ export async function clearAttendance(
   });
   const rows = existing.data.values ?? [];
 
-  const rowOffset = rows.findIndex(
-    (row) => (row[0] ?? "") === date && (row[2] ?? "") === studentId
-  );
-  if (rowOffset === -1) return; // already blank, nothing to do
+  // Delete every row for this date+student, not just the first — a stray
+  // duplicate (e.g. from a retried submission) left behind would otherwise
+  // make the cell look un-cleared after this "successfully" runs.
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[0] ?? "") === date && (row[2] ?? "") === studentId)
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return; // already blank, nothing to do
 
   const sheetId = await getSheetIdByTitle(sheets, "Attendance");
-  const rowNum = rowOffset + 2; // 1-based, +1 for header
+
+  // Highest row index first so deleting one doesn't shift the indices of
+  // the requests still queued after it in this same batch.
+  rowNums.sort((a, b) => b - a);
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SHEET_ID,
     requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId,
-              dimension: "ROWS",
-              startIndex: rowNum - 1, // 0-based, inclusive
-              endIndex: rowNum, // 0-based, exclusive
-            },
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: {
+            sheetId,
+            dimension: "ROWS",
+            startIndex: rowNum - 1, // 0-based, inclusive
+            endIndex: rowNum, // 0-based, exclusive
           },
         },
-      ],
+      })),
     },
   });
 }

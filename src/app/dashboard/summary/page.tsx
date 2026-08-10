@@ -112,19 +112,29 @@ export default function SummaryPage() {
 
   if (!loaded || !selectedClass) return null;
 
+  // Collapse to one status per student+date first (mirrors the monthly
+  // Dashboard's per-day Map) — otherwise a stray duplicate row for the same
+  // day would be counted twice here even though the monthly view only ever
+  // shows/counts it once, making the two pages disagree.
+  const dedupedByStudentDate = new Map<string, AttendanceStatus>();
+  for (const r of records) {
+    dedupedByStudentDate.set(`${r.studentId}|${r.date}`, r.status);
+  }
+
   // studentId -> monthIndex(0-11, Apr..Mar) -> present day count
   const counts = new Map<string, number[]>();
   for (const s of students) counts.set(s.studentId, new Array(12).fill(0));
 
-  for (const r of records) {
-    if (!countsAsPresent(r.status)) continue;
-    const y = Number(r.date.slice(0, 4));
-    const m = Number(r.date.slice(5, 7));
+  for (const [key, status] of dedupedByStudentDate) {
+    if (!countsAsPresent(status)) continue;
+    const [studentId, date] = key.split("|");
+    const y = Number(date.slice(0, 4));
+    const m = Number(date.slice(5, 7));
     const monthIndex = FISCAL_MONTHS.findIndex(
       (fm) => fm.monthNum === m && fiscalYearStart + fm.yearOffset === y
     );
     if (monthIndex === -1) continue;
-    const arr = counts.get(r.studentId);
+    const arr = counts.get(studentId);
     if (arr) arr[monthIndex]++;
   }
 

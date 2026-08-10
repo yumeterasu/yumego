@@ -460,21 +460,30 @@ export default function DashboardPage() {
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  // recordMap[studentId][day] = status
+  // recordMap[studentId][day] = status, reasonMap[studentId][day] = reason.
+  // Both keyed by day (not just pushed from the raw records array) so a
+  // stray duplicate row for the same day only ever counts once — matching
+  // what's actually shown in that day's cell.
   const recordMap = new Map<string, Map<number, AttendanceStatus>>();
+  const reasonMap = new Map<string, Map<number, string>>();
   for (const r of records) {
     const day = Number(r.date.slice(8, 10));
     if (!recordMap.has(r.studentId)) recordMap.set(r.studentId, new Map());
     recordMap.get(r.studentId)!.set(day, r.status);
+    if (r.reason) {
+      if (!reasonMap.has(r.studentId)) reasonMap.set(r.studentId, new Map());
+      reasonMap.get(r.studentId)!.set(day, r.reason);
+    }
   }
 
   // reasonCountMap[studentId] = "reason label" -> number of days that month
   const reasonCountMap = new Map<string, Map<string, number>>();
-  for (const r of records) {
-    if (!r.reason) continue;
-    if (!reasonCountMap.has(r.studentId)) reasonCountMap.set(r.studentId, new Map());
-    const counts = reasonCountMap.get(r.studentId)!;
-    counts.set(r.reason, (counts.get(r.reason) ?? 0) + 1);
+  for (const [studentId, dayReasons] of reasonMap) {
+    const counts = new Map<string, number>();
+    for (const reason of dayReasons.values()) {
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+    reasonCountMap.set(studentId, counts);
   }
 
   // how many students were present (出/遅/早) on each day of the month
