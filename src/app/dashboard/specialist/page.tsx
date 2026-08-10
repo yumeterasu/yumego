@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
@@ -20,7 +20,13 @@ function pad2(n: number) {
 export default function SpecialistCoachPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
-  const branchGrade = selectedClass ? classNameToBranchGrade(selectedClass) : null;
+  // classNameToBranchGrade returns a fresh object every call — memoize so
+  // the effect below (which depends on it) doesn't see a "new" value and
+  // refetch on every render, which was causing an infinite fetch loop.
+  const branchGrade = useMemo(
+    () => (selectedClass ? classNameToBranchGrade(selectedClass) : null),
+    [selectedClass]
+  );
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
