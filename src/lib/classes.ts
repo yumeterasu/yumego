@@ -28,3 +28,8 @@ export function classNameToBranchGrade(
   if (grade !== "長" && grade !== "中" && grade !== "少") return null;
   return { branch, grade };
 }
+
+/** Inverse of classNameToBranchGrade: { プロンポン, 長 } -> "プロンポン　年長". */
+export function branchGradeToClassName(branch: Branch, grade: GradeShort): ClassName {
+  return `${branch}　年${grade}` as ClassName;
+}

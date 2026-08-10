@@ -683,3 +683,127 @@ export async function setSpecialistChecked(
     },
   });
 }
+
+// 専門コーチ参加人数 — a separate daily record (distinct from the
+// checklist above) of how many kids actually joined each 専門コーチ
+// category that day, out of however many attended school. Rows share
+// SpecialistCategories, keyed the same way as SpecialistAttendance but
+// carry a count instead of just existing.
+export type SpecialistParticipationCell = {
+  categoryId: string;
+  grade: string; // "長" | "中" | "少"
+  date: string; // "YYYY-MM-DD"
+  count: number;
+};
+
+export async function getSpecialistParticipation(
+  branch: string,
+  yearMonth: string // "2026-08"
+): Promise<SpecialistParticipationCell[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistParticipation!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      categoryId: (row[2] ?? "").toString(),
+      grade: (row[3] ?? "").toString(),
+      count: Number(row[4] ?? 0),
+    }))
+    .filter(
+      (r) =>
+        r.branch === branch &&
+        r.date.startsWith(yearMonth) &&
+        r.categoryId &&
+        Number.isFinite(r.count)
+    )
+    .map((r) => ({
+      categoryId: r.categoryId,
+      grade: r.grade,
+      date: r.date,
+      count: r.count,
+    }));
+}
+
+/**
+ * Set (or clear, with count === null) a day's participant count for one
+ * category+grade. Same defensive "delete every matching row, not just the
+ * first" shape as clearAttendance/setSpecialistChecked.
+ */
+export async function setSpecialistParticipationCount(
+  branch: string,
+  categoryId: string,
+  grade: string,
+  date: string,
+  count: number | null
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistParticipation!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+  const matchingRowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(
+      ({ row }) =>
+        (row[0] ?? "") === date &&
+        (row[1] ?? "") === branch &&
+        (row[2] ?? "") === categoryId &&
+        (row[3] ?? "") === grade
+    )
+    .map(({ rowNum }) => rowNum);
+
+  if (count !== null) {
+    if (matchingRowNums.length > 0) {
+      // update the first, delete any stray extras
+      const [keep, ...extra] = matchingRowNums;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `SpecialistParticipation!E${keep}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [[count]] },
+      });
+      if (extra.length > 0) {
+        const sheetId = await getSheetIdByTitle(sheets, "SpecialistParticipation");
+        extra.sort((a, b) => b - a);
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          requestBody: {
+            requests: extra.map((rowNum) => ({
+              deleteDimension: {
+                range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+              },
+            })),
+          },
+        });
+      }
+      return;
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "SpecialistParticipation!A:E",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[date, branch, categoryId, grade, count]] },
+    });
+    return;
+  }
+
+  if (matchingRowNums.length === 0) return; // already cleared
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistParticipation");
+  matchingRowNums.sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: matchingRowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+}
