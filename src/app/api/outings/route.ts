@@ -33,12 +33,23 @@ type Payload = {
   className?: unknown;
   headcount?: unknown;
   departureTime?: unknown;
+  departureSign?: unknown;
   returnTime?: unknown;
+  returnSign?: unknown;
   description?: unknown;
 };
 
 function validatePayload(body: Payload) {
-  const { date, className, headcount, departureTime, returnTime, description } = body;
+  const {
+    date,
+    className,
+    headcount,
+    departureTime,
+    departureSign,
+    returnTime,
+    returnSign,
+    description,
+  } = body;
   if (
     typeof date !== "string" ||
     typeof className !== "string" ||
@@ -46,9 +57,16 @@ function validatePayload(body: Payload) {
     !Number.isFinite(headcount) ||
     headcount < 0 ||
     typeof departureTime !== "string" ||
+    typeof departureSign !== "string" ||
     typeof returnTime !== "string" ||
+    typeof returnSign !== "string" ||
     typeof description !== "string"
   ) {
+    return null;
+  }
+  // returnTime and returnSign are a pair — either both filled (confirmed
+  // back) or both blank (not back yet), never just one.
+  if ((returnTime === "") !== (returnSign === "")) {
     return null;
   }
   return {
@@ -56,12 +74,14 @@ function validatePayload(body: Payload) {
     className,
     headcount: Math.floor(headcount),
     departureTime,
+    departureSign,
     returnTime,
+    returnSign,
     description,
   };
 }
 
-// POST /api/outings  { date, className, headcount, departureTime, returnTime, description }
+// POST /api/outings  { date, className, headcount, departureTime, departureSign, returnTime, returnSign, description }
 export async function POST(req: NextRequest) {
   const body = (await req.json()) ?? {};
   const fields = validatePayload(body);

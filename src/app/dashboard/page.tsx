@@ -526,7 +526,7 @@ export default function DashboardPage() {
             href="/dashboard/outings"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
-            外出記録
+            入退出記録
           </Link>
           <Link
             href="/attendance"

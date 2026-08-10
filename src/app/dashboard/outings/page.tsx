@@ -15,22 +15,49 @@ function todayDateString() {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+function nowTimeString() {
+  const d = new Date();
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+type FormMode = "add" | "return" | "edit";
+
 type FormState = {
-  id?: string; // present when editing an existing entry
+  mode: FormMode;
+  id?: string;
   date: string;
   headcount: string; // kept as text while editing, parsed on submit
   departureTime: string;
+  departureSign: string;
   returnTime: string;
+  returnSign: string;
   description: string;
 };
 
-function blankForm(): FormState {
+function blankAddForm(): FormState {
   return {
+    mode: "add",
     date: todayDateString(),
     headcount: "",
-    departureTime: "",
+    departureTime: nowTimeString(),
+    departureSign: "",
     returnTime: "",
+    returnSign: "",
     description: "",
+  };
+}
+
+function toEditForm(entry: OutingLog, mode: FormMode): FormState {
+  return {
+    mode,
+    id: entry.id,
+    date: entry.date,
+    headcount: String(entry.headcount),
+    departureTime: entry.departureTime,
+    departureSign: entry.departureSign,
+    returnTime: mode === "return" ? nowTimeString() : entry.returnTime,
+    returnSign: entry.returnSign,
+    description: entry.description,
   };
 }
 
@@ -99,31 +126,38 @@ export default function OutingsPage() {
 
   function openAddForm() {
     setFormError(null);
-    setForm(blankForm());
+    setForm(blankAddForm());
+  }
+
+  function openReturnForm(entry: OutingLog) {
+    setFormError(null);
+    setForm(toEditForm(entry, "return"));
   }
 
   function openEditForm(entry: OutingLog) {
     setFormError(null);
-    setForm({
-      id: entry.id,
-      date: entry.date,
-      headcount: String(entry.headcount),
-      departureTime: entry.departureTime,
-      returnTime: entry.returnTime,
-      description: entry.description,
-    });
+    setForm(toEditForm(entry, "edit"));
   }
 
   async function submitForm() {
     if (!form || !selectedClass) return;
     const headcountNum = Number(form.headcount);
-    if (!form.date || !form.departureTime) {
-      setFormError("日付と出発時刻は必須です");
-      return;
+
+    if (form.mode === "add" || form.mode === "edit") {
+      if (!form.date || !form.departureTime || !form.departureSign.trim()) {
+        setFormError("日付・退室時間・退室確認サインは必須です");
+        return;
+      }
+      if (!Number.isFinite(headcountNum) || headcountNum < 0) {
+        setFormError("人数を正しく入力してください");
+        return;
+      }
     }
-    if (!Number.isFinite(headcountNum) || headcountNum < 0) {
-      setFormError("人数を正しく入力してください");
-      return;
+    if (form.mode === "return") {
+      if (!form.returnTime || !form.returnSign.trim()) {
+        setFormError("入室時間と入室確認サインを入力してください");
+        return;
+      }
     }
 
     setSaving(true);
@@ -133,12 +167,14 @@ export default function OutingsPage() {
       className: selectedClass,
       headcount: Math.floor(headcountNum),
       departureTime: form.departureTime,
+      departureSign: form.departureSign.trim(),
       returnTime: form.returnTime,
+      returnSign: form.returnSign.trim(),
       description: form.description,
     };
     try {
       const res = await fetch("/api/outings", {
-        method: form.id ? "PATCH" : "POST",
+        method: form.mode === "add" ? "POST" : "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form.id ? { id: form.id, ...payload } : payload),
       });
@@ -156,7 +192,7 @@ export default function OutingsPage() {
     const label = entry.description ? `（${entry.description}）` : "";
     if (
       !window.confirm(
-        `${entry.date} ${entry.departureTime} 出発の記録${label}を削除しますか？`
+        `${entry.date} ${entry.departureTime} 退室の記録${label}を削除しますか？`
       )
     ) {
       return;
@@ -179,7 +215,7 @@ export default function OutingsPage() {
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">{selectedClass} 外出記録</h1>
+          <h1 className="text-xl font-bold">{selectedClass} 入退出記録</h1>
           <p className="text-sm text-gray-500">
             外出先は自由記入です（専門コーチの項目に限りません）
           </p>
@@ -218,7 +254,7 @@ export default function OutingsPage() {
         onClick={openAddForm}
         className="self-center rounded-full bg-black text-white px-5 py-2.5 text-sm font-semibold"
       >
-        ＋ 記録を追加
+        ＋ 退室を記録
       </button>
 
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
@@ -227,41 +263,63 @@ export default function OutingsPage() {
         <p className="text-gray-500 text-sm text-center">読み込み中...</p>
       ) : entries.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">
-          この月の外出記録はまだありません
+          この月の記録はまだありません
         </p>
       ) : (
         <div className="flex flex-col gap-2 max-w-2xl w-full mx-auto">
-          {entries.map((entry) => (
-            <div
-              key={entry.id}
-              className="border border-gray-300 rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap"
-            >
-              <div>
-                <p className="font-semibold">
-                  {entry.date}　{entry.departureTime}
-                  {entry.returnTime ? `〜${entry.returnTime}` : "〜（未帰園）"}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {entry.headcount}人
-                  {entry.description ? `　${entry.description}` : ""}
-                </p>
+          {entries.map((entry) => {
+            const isBack = entry.returnTime !== "";
+            return (
+              <div
+                key={entry.id}
+                className={`border rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap ${
+                  isBack ? "border-gray-300" : "border-amber-400 bg-amber-50/50"
+                }`}
+              >
+                <div>
+                  <p className="font-semibold">
+                    {entry.date}　{entry.headcount}人
+                    {entry.description ? `　${entry.description}` : ""}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    退室 {entry.departureTime}
+                    {entry.departureSign ? `（${entry.departureSign}）` : ""}
+                    {"　"}
+                    {isBack ? (
+                      <>
+                        入室 {entry.returnTime}
+                        {entry.returnSign ? `（${entry.returnSign}）` : ""}
+                      </>
+                    ) : (
+                      <span className="text-amber-700 font-semibold">未入室</span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!isBack && (
+                    <button
+                      onClick={() => openReturnForm(entry)}
+                      className="rounded-full bg-amber-500 text-white px-3 py-1.5 text-xs font-semibold"
+                    >
+                      入室を記録
+                    </button>
+                  )}
+                  <button
+                    onClick={() => openEditForm(entry)}
+                    className="rounded-full border border-gray-300 text-gray-700 px-3 py-1.5 text-xs font-semibold"
+                  >
+                    編集
+                  </button>
+                  <button
+                    onClick={() => handleDelete(entry)}
+                    className="rounded-full border border-red-300 text-red-600 px-3 py-1.5 text-xs font-semibold"
+                  >
+                    削除
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => openEditForm(entry)}
-                  className="rounded-full border border-gray-300 text-gray-700 px-3 py-1.5 text-xs font-semibold"
-                >
-                  編集
-                </button>
-                <button
-                  onClick={() => handleDelete(entry)}
-                  className="rounded-full border border-red-300 text-red-600 px-3 py-1.5 text-xs font-semibold"
-                >
-                  削除
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -275,70 +333,105 @@ export default function OutingsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-bold text-lg">
-              {form.id ? "記録を編集" : "外出記録を追加"}
+              {form.mode === "add" && "退室を記録"}
+              {form.mode === "return" && "入室を記録"}
+              {form.mode === "edit" && "記録を編集"}
             </h2>
 
-            <label className="flex flex-col gap-1 text-sm">
-              日付
-              <input
-                type="date"
-                value={form.date}
-                onChange={(e) => setForm((f) => (f ? { ...f, date: e.target.value } : f))}
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </label>
+            {form.mode !== "return" && (
+              <>
+                <label className="flex flex-col gap-1 text-sm">
+                  日付
+                  <input
+                    type="date"
+                    value={form.date}
+                    onChange={(e) => setForm((f) => (f ? { ...f, date: e.target.value } : f))}
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                </label>
 
-            <label className="flex flex-col gap-1 text-sm">
-              人数
-              <input
-                type="number"
-                min={0}
-                value={form.headcount}
-                onChange={(e) =>
-                  setForm((f) => (f ? { ...f, headcount: e.target.value } : f))
-                }
-                placeholder="例：15"
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  人数
+                  <input
+                    type="number"
+                    min={0}
+                    value={form.headcount}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, headcount: e.target.value } : f))
+                    }
+                    placeholder="例：15"
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                </label>
 
-            <div className="flex gap-3">
-              <label className="flex flex-col gap-1 text-sm flex-1">
-                出発時刻
-                <input
-                  type="time"
-                  value={form.departureTime}
-                  onChange={(e) =>
-                    setForm((f) => (f ? { ...f, departureTime: e.target.value } : f))
-                  }
-                  className="border border-gray-300 rounded-lg px-3 py-2"
-                />
-              </label>
-              <label className="flex flex-col gap-1 text-sm flex-1">
-                帰園時刻（任意）
-                <input
-                  type="time"
-                  value={form.returnTime}
-                  onChange={(e) =>
-                    setForm((f) => (f ? { ...f, returnTime: e.target.value } : f))
-                  }
-                  className="border border-gray-300 rounded-lg px-3 py-2"
-                />
-              </label>
-            </div>
+                <div className="flex gap-3">
+                  <label className="flex flex-col gap-1 text-sm flex-1">
+                    退室時間
+                    <input
+                      type="time"
+                      value={form.departureTime}
+                      onChange={(e) =>
+                        setForm((f) => (f ? { ...f, departureTime: e.target.value } : f))
+                      }
+                      className="border border-gray-300 rounded-lg px-3 py-2"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-sm flex-1">
+                    退室確認サイン
+                    <input
+                      type="text"
+                      value={form.departureSign}
+                      onChange={(e) =>
+                        setForm((f) => (f ? { ...f, departureSign: e.target.value } : f))
+                      }
+                      placeholder="名前"
+                      className="border border-gray-300 rounded-lg px-3 py-2"
+                    />
+                  </label>
+                </div>
 
-            <label className="flex flex-col gap-1 text-sm">
-              行き先・内容（任意）
-              <input
-                type="text"
-                value={form.description}
-                onChange={(e) =>
-                  setForm((f) => (f ? { ...f, description: e.target.value } : f))
-                }
-                placeholder="例：近所の公園"
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-            </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  行き先・内容（任意）
+                  <input
+                    type="text"
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, description: e.target.value } : f))
+                    }
+                    placeholder="例：近所の公園"
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                </label>
+              </>
+            )}
+
+            {(form.mode === "return" || form.mode === "edit") && (
+              <div className="flex gap-3">
+                <label className="flex flex-col gap-1 text-sm flex-1">
+                  入室時間
+                  <input
+                    type="time"
+                    value={form.returnTime}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, returnTime: e.target.value } : f))
+                    }
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm flex-1">
+                  入室確認サイン
+                  <input
+                    type="text"
+                    value={form.returnSign}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, returnSign: e.target.value } : f))
+                    }
+                    placeholder="名前"
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                </label>
+              </div>
+            )}
 
             {formError && <p className="text-red-600 text-sm">{formError}</p>}
 

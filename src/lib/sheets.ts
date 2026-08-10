@@ -818,9 +818,11 @@ export type OutingLog = {
   date: string; // "YYYY-MM-DD"
   className: string;
   headcount: number;
-  departureTime: string; // "HH:MM"
-  returnTime: string; // "HH:MM", may be "" if not back yet
-  description: string; // free text, optional
+  departureTime: string; // "HH:MM" (退室時間)
+  departureSign: string; // name of whoever confirmed the departure (退室確認サイン)
+  returnTime: string; // "HH:MM" (入室時間), "" until they're back
+  returnSign: string; // name of whoever confirmed the return (入室確認サイン), "" until they're back
+  description: string; // free text, optional — where/what
 };
 
 export async function getOutingLogs(
@@ -830,7 +832,7 @@ export async function getOutingLogs(
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "OutingLog!A2:H",
+    range: "OutingLog!A2:J",
   });
   const rows = res.data.values ?? [];
   return rows
@@ -840,8 +842,10 @@ export async function getOutingLogs(
       className: (row[2] ?? "").toString(),
       headcount: Number(row[3] ?? 0),
       departureTime: (row[4] ?? "").toString(),
-      returnTime: (row[5] ?? "").toString(),
-      description: (row[6] ?? "").toString(),
+      departureSign: (row[5] ?? "").toString(),
+      returnTime: (row[6] ?? "").toString(),
+      returnSign: (row[7] ?? "").toString(),
+      description: (row[8] ?? "").toString(),
     }))
     .filter(
       (r) => r.id && r.className === className && r.date.startsWith(yearMonth)
@@ -853,7 +857,7 @@ export async function addOutingLog(entry: OutingLog): Promise<void> {
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "OutingLog!A:H",
+    range: "OutingLog!A:J",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -863,7 +867,9 @@ export async function addOutingLog(entry: OutingLog): Promise<void> {
           entry.className,
           entry.headcount,
           entry.departureTime,
+          entry.departureSign,
           entry.returnTime,
+          entry.returnSign,
           entry.description,
           new Date().toISOString(),
         ],
@@ -889,7 +895,7 @@ export async function updateOutingLog(
   const rowNum = rowOffset + 2;
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `OutingLog!B${rowNum}:H${rowNum}`,
+    range: `OutingLog!B${rowNum}:J${rowNum}`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -898,7 +904,9 @@ export async function updateOutingLog(
           fields.className,
           fields.headcount,
           fields.departureTime,
+          fields.departureSign,
           fields.returnTime,
+          fields.returnSign,
           fields.description,
           new Date().toISOString(),
         ],
