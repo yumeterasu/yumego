@@ -2,17 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   addStudent,
   getStudentsByClass,
+  getAllStudentsByClass,
   updateStudentRemark,
   updateStudentCheck,
+  setStudentActive,
   CheckColumn,
 } from "@/lib/sheets";
 import { randomUUID } from "crypto";
 
 const CHECK_COLUMNS: CheckColumn[] = ["check1", "check2", "check3"];
 
-// GET /api/students?class=プロンポン　年長
+// GET /api/students?class=プロンポン　年長[&includeInactive=true]
 export async function GET(req: NextRequest) {
   const className = req.nextUrl.searchParams.get("class");
+  const includeInactive = req.nextUrl.searchParams.get("includeInactive") === "true";
 
   if (!className) {
     return NextResponse.json(
@@ -22,7 +25,9 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const students = await getStudentsByClass(className);
+    const students = includeInactive
+      ? await getAllStudentsByClass(className)
+      : await getStudentsByClass(className);
     return NextResponse.json({ students });
   } catch (err) {
     console.error(err);
@@ -64,10 +69,11 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH /api/students  { studentId, remark? } or { studentId, column, value }
+// or { studentId, active } to withdraw/graduate (false) or restore (true).
 // column is one of "check1"/"check2"/"check3", value is boolean.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, remark, column, value } = body ?? {};
+  const { studentId, remark, column, value, active } = body ?? {};
 
   if (!studentId) {
     return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
@@ -88,8 +94,13 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    if (typeof active === "boolean") {
+      await setStudentActive(studentId, active);
+      return NextResponse.json({ ok: true });
+    }
+
     return NextResponse.json(
-      { error: "Missing remark, or column/value" },
+      { error: "Missing remark, column/value, or active" },
       { status: 400 }
     );
   } catch (err) {

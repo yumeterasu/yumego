@@ -59,3 +59,23 @@ export function branchToEnglish(branch: Branch): string {
 export function gradeToEnglish(grade: GradeShort): string {
   return GRADE_EN[grade];
 }
+
+// 少 (youngest) -> 中 -> 長 (oldest) -> graduates (no next class).
+const NEXT_GRADE: Record<GradeShort, GradeShort | null> = {
+  少: "中",
+  中: "長",
+  長: null,
+};
+
+/**
+ * "プロンポン　年少" -> "プロンポン　年中" (same branch, next grade up).
+ * Returns null for 年長 — there's no next class, promoting means graduating
+ * (deactivate) instead of moving to a new class.
+ */
+export function nextGradeClassName(className: string): ClassName | null {
+  const bg = classNameToBranchGrade(className);
+  if (!bg) return null;
+  const nextGrade = NEXT_GRADE[bg.grade];
+  if (!nextGrade) return null;
+  return branchGradeToClassName(bg.branch, nextGrade);
+}

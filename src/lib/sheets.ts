@@ -151,6 +151,62 @@ export async function addStudent(
   });
 }
 
+/**
+ * Append many new student rows in a single request — used by the bulk
+ * "paste one name per line" add tool so registering a whole new intake
+ * doesn't mean N separate round trips (and N chances to hit quota).
+ */
+export async function addStudentsBulk(
+  students: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3">[]
+): Promise<void> {
+  if (students.length === 0) return;
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A:I",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: students.map((s) => [
+        s.studentId,
+        s.nameKanji,
+        s.nameEnglish,
+        s.className,
+        "TRUE",
+        "",
+        "FALSE",
+        "FALSE",
+        "FALSE",
+      ]),
+    },
+  });
+}
+
+/**
+ * Read every student in a class, active or not — used for the "withdrawn/
+ * graduated" list, which getStudentsByClass deliberately excludes.
+ */
+export async function getAllStudentsByClass(className: string): Promise<Student[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:I",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): Student => ({
+      studentId: row[0] ?? "",
+      nameKanji: row[1] ?? "",
+      nameEnglish: row[2] ?? "",
+      className: row[3] ?? "",
+      active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
+      remark: row[5] ?? "",
+      check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
+      check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
+      check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
+    }))
+    .filter((s) => s.studentId && s.className === className);
+}
+
 async function findStudentRowNumber(
   sheets: ReturnType<typeof getSheetsClient>,
   studentId: string
@@ -198,6 +254,69 @@ export async function updateStudentCheck(
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[value ? "TRUE" : "FALSE"]] },
   });
+}
+
+/**
+ * Mark a student active/inactive (withdrawn or graduated). Soft-delete only
+ * — the row and all their past attendance history stay in the sheet, they
+ * just stop showing up in the active roster / class-locked pages.
+ */
+export async function setStudentActive(studentId: string, active: boolean): Promise<void> {
+  const sheets = getSheetsClient();
+  const rowNum = await findStudentRowNumber(sheets, studentId);
+  if (rowNum === null) return;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Students!E${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[active ? "TRUE" : "FALSE"]] },
+  });
+}
+
+export type PromoteResult = { studentId: string; nameKanji: string }[];
+
+/**
+ * Bulk term-change action: move every active student in `fromClassName` to
+ * `toClassName` (e.g. 年少 -> 年中), or — when `toClassName` is null (the
+ * oldest grade has nowhere to go) — mark them all graduated (inactive)
+ * instead. Either way this is one batched write, not N, so promoting a
+ * whole class of 30 doesn't risk hitting Sheets API quota.
+ */
+export async function promoteClassStudents(
+  fromClassName: string,
+  toClassName: string | null
+): Promise<PromoteResult> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:I",
+  });
+  const rows = res.data.values ?? [];
+
+  const targets = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(
+      ({ row }) =>
+        (row[0] ?? "") &&
+        (row[3] ?? "") === fromClassName &&
+        (row[4] ?? "").toString().toUpperCase() === "TRUE"
+    );
+
+  if (targets.length === 0) return [];
+
+  const updates = targets.map(({ rowNum }) =>
+    toClassName !== null
+      ? { range: `Students!D${rowNum}`, values: [[toClassName]] }
+      : { range: `Students!E${rowNum}`, values: [["FALSE"]] }
+  );
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: { valueInputOption: "USER_ENTERED", data: updates },
+  });
+
+  return targets.map(({ row }) => ({ studentId: row[0] ?? "", nameKanji: row[1] ?? "" }));
 }
 
 /**
