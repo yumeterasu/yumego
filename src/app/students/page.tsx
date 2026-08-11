@@ -52,6 +52,10 @@ export default function StudentsPage() {
   const [loadingInactive, setLoadingInactive] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
+  const [showRemoveAllModal, setShowRemoveAllModal] = useState(false);
+  const [removingAll, setRemovingAll] = useState(false);
+  const [removeAllError, setRemoveAllError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
@@ -174,6 +178,26 @@ export default function StudentsPage() {
       setError("更新に失敗しました / Failed to update");
     } finally {
       setWithdrawingId(null);
+    }
+  }
+
+  async function handleRemoveAll() {
+    if (!selectedClass) return;
+    setRemovingAll(true);
+    setRemoveAllError(null);
+    try {
+      const res = await fetch("/api/students/remove-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className: selectedClass }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setStudents([]);
+      setShowRemoveAllModal(false);
+    } catch {
+      setRemoveAllError("削除に失敗しました / Failed to remove");
+    } finally {
+      setRemovingAll(false);
     }
   }
 
@@ -320,12 +344,26 @@ export default function StudentsPage() {
       </div>
 
       <div>
-        <h2 className="font-semibold mb-2">
-          現在の生徒一覧 {!loading && `(${students.length}名)`}
-          <span className="block text-xs font-normal text-gray-500">
-            Current student list{!loading && ` (${students.length})`}
-          </span>
-        </h2>
+        <div className="flex items-center justify-between mb-2 gap-2">
+          <h2 className="font-semibold">
+            現在の生徒一覧 {!loading && `(${students.length}名)`}
+            <span className="block text-xs font-normal text-gray-500">
+              Current student list{!loading && ` (${students.length})`}
+            </span>
+          </h2>
+          {students.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setRemoveAllError(null);
+                setShowRemoveAllModal(true);
+              }}
+              className="shrink-0 rounded-full border border-red-300 text-red-600 px-3 py-1 text-xs font-semibold"
+            >
+              全員削除 / Remove all
+            </button>
+          )}
+        </div>
         {loading ? (
           <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
         ) : students.length === 0 ? (
@@ -402,6 +440,64 @@ export default function StudentsPage() {
         )}
       </div>
 
+      {showRemoveAllModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !removingAll && setShowRemoveAllModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-center text-red-600">
+              全員削除の確認
+              <span className="block text-sm font-normal text-gray-500">
+                Confirm remove all
+              </span>
+            </h2>
+
+            <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象クラス / Class</span>
+                <span className="font-semibold">{selectedClass}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象人数 / Students</span>
+                <span className="font-semibold">{students.length}名 / {students.length}</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-400 text-center">
+              このクラスの生徒{students.length}名を全員一覧から削除します。過去の出席記録は残ります。よろしいですか？
+              <span className="block">
+                Removes all {students.length} students in this class from the roster. Past
+                attendance stays intact. Continue?
+              </span>
+            </p>
+
+            {removeAllError && (
+              <p className="text-red-600 text-sm text-center">{removeAllError}</p>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowRemoveAllModal(false)}
+                disabled={removingAll}
+                className="rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={handleRemoveAll}
+                disabled={removingAll}
+                className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+              >
+                {removingAll ? "削除中... / Removing..." : "全員削除する / Remove all"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

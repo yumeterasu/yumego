@@ -275,6 +275,47 @@ export async function setStudentActive(studentId: string, active: boolean): Prom
 }
 
 /**
+ * Soft-delete every currently active student in a class at once (e.g. to
+ * quickly undo a bulk-add that went into the wrong class) — one batched
+ * write, not N, same reasoning as the old promoteClassStudents. Still
+ * fully recoverable one-by-one from the "removed students" list.
+ */
+export async function deactivateAllStudents(
+  className: string
+): Promise<{ studentId: string; nameKanji: string }[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:I",
+  });
+  const rows = res.data.values ?? [];
+
+  const targets = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(
+      ({ row }) =>
+        (row[0] ?? "") &&
+        (row[3] ?? "") === className &&
+        (row[4] ?? "").toString().toUpperCase() === "TRUE"
+    );
+
+  if (targets.length === 0) return [];
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: targets.map(({ rowNum }) => ({
+        range: `Students!E${rowNum}`,
+        values: [["FALSE"]],
+      })),
+    },
+  });
+
+  return targets.map(({ row }) => ({ studentId: row[0] ?? "", nameKanji: row[1] ?? "" }));
+}
+
+/**
  * Present-student count per class for a single date, across every class
  * in the sheet. Classes with no rows at all for that date are omitted —
  * that's how the caller tells "not checked in yet" apart from "checked
