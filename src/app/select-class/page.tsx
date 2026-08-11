@@ -85,15 +85,15 @@ export default function SelectClassPage() {
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 p-6">
       <h1 className="text-2xl font-bold text-center">
         <Bi
-          ja="このタブレットのクラスを選んでください"
-          en="Please choose this tablet's class"
+          ja="この端末のクラスを選んでください"
+          en="Please choose this device's class"
           enClassName="block text-sm font-normal text-gray-500 mt-1"
         />
       </h1>
       <p className="text-sm text-gray-500 text-center -mt-6">
-        一度選ぶと、このタブレットではそのクラスが記憶されます
+        一度選ぶと、この端末ではそのクラスが記憶されます
         <span className="block text-xs opacity-70">
-          Once chosen, this tablet remembers that class
+          Once chosen, this device remembers that class
         </span>
       </p>
 

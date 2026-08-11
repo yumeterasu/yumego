@@ -236,7 +236,7 @@ export default function SpecialistCoachPage() {
     // from 年中/年少 of the same branch, not just this screen.
     if (
       !window.confirm(
-        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年のタブレットからも見えなくなります）。過去のチェック記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少 (other tablets in this branch will no longer see it). Past checkmarks stay in the sheet but will be hidden.`
+        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年の画面からも見えなくなります）。過去のチェック記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少 (other grades will no longer see it either). Past checkmarks stay in the sheet but will be hidden.`
       )
     ) {
       return;
