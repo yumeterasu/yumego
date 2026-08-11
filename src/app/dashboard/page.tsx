@@ -523,6 +523,15 @@ export default function DashboardPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link
+            href="/students"
+            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+          >
+            生徒管理
+            <span className="block text-[10px] font-normal opacity-70">
+              Manage Students
+            </span>
+          </Link>
+          <Link
             href="/dashboard/summary"
             className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
           >
@@ -860,10 +869,6 @@ export default function DashboardPage() {
           </table>
         </div>
       )}
-
-      <Link href="/students" className="text-xs text-gray-400 underline">
-        生徒一覧の管理 / Manage student list
-      </Link>
 
       {editingCell && (
         <div
