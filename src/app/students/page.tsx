@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import { classNameToEnglish, nextGradeClassName } from "@/lib/classes";
+import { classNameToEnglish } from "@/lib/classes";
 import type { Student } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
@@ -51,12 +51,6 @@ export default function StudentsPage() {
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
   const [loadingInactive, setLoadingInactive] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
-
-  // Still used to word the individual withdraw button correctly (卒園 for
-  // 年長, since there's no next class to move up to; 退会 otherwise) — the
-  // bulk "promote whole class" tool itself was removed.
-  const nextClassName = selectedClass ? nextGradeClassName(selectedClass) : null;
-  const isGraduatingClass = selectedClass !== null && nextClassName === null;
 
   useEffect(() => {
     if (!loaded) return;
@@ -159,10 +153,9 @@ export default function StudentsPage() {
   }
 
   async function handleWithdraw(student: Student) {
-    const verb = isGraduatingClass ? "卒園" : "退会";
     if (
       !window.confirm(
-        `${student.nameKanji} を${verb}扱いにしますか？\n\n一覧から見えなくなりますが、過去の出席記録は残ります。\n\nMark ${student.nameKanji} as ${isGraduatingClass ? "graduated" : "withdrawn"}? They'll disappear from the roster, but past attendance stays intact.`
+        `${student.nameKanji} を削除しますか？（卒園・退会・登録ミスなど理由は問いません）\n\n一覧から見えなくなりますが、過去の出席記録は残ります。\n\nRemove ${student.nameKanji}? (For any reason — graduated, withdrew, entered by mistake, etc.) They'll disappear from the roster, but past attendance stays intact.`
       )
     ) {
       return;
@@ -357,7 +350,7 @@ export default function StudentsPage() {
                   disabled={withdrawingId === s.studentId}
                   className="shrink-0 text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
                 >
-                  {isGraduatingClass ? "卒園にする" : "退会にする"}
+                  削除する / Remove
                 </button>
               </li>
             ))}
@@ -371,7 +364,7 @@ export default function StudentsPage() {
           onClick={toggleShowInactive}
           className="text-xs text-gray-400 underline"
         >
-          {showInactive ? "非表示の生徒を隠す" : "退会・卒園した生徒を表示"} / {showInactive ? "Hide" : "Show"} withdrawn/graduated students
+          {showInactive ? "非表示の生徒を隠す" : "削除した生徒を表示"} / {showInactive ? "Hide" : "Show"} removed students
         </button>
         {showInactive && (
           <div className="mt-2">
@@ -379,7 +372,7 @@ export default function StudentsPage() {
               <p className="text-gray-400 text-xs">読み込み中... / Loading...</p>
             ) : inactiveStudents.length === 0 ? (
               <p className="text-gray-400 text-xs">
-                退会・卒園した生徒はいません / No withdrawn or graduated students
+                削除した生徒はいません / No removed students
               </p>
             ) : (
               <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
