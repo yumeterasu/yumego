@@ -39,13 +39,14 @@ const BRANCH_EN: Record<Branch, string> = {
   トンロー: "Thong Lo",
 };
 
+// Age-based, not K-grade-based — this school doesn't use "K1/K2/K3".
 const GRADE_EN: Record<GradeShort, string> = {
-  長: "Older Class (K3)",
-  中: "Middle Class (K2)",
-  少: "Younger Class (K1)",
+  長: "Older Class (5 Years Old)",
+  中: "Middle Class (4 Years Old)",
+  少: "Younger Class (3 Years Old)",
 };
 
-/** "プロンポン　年長" -> "Phrom Phong · Older Class (K3)", for the English gloss under class names. */
+/** "プロンポン　年長" -> "Phrom Phong · Older Class (5 Years Old)", for the English gloss under class names. */
 export function classNameToEnglish(className: string): string {
   const bg = classNameToBranchGrade(className);
   if (!bg) return "";
