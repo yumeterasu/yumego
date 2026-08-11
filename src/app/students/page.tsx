@@ -207,17 +207,31 @@ export default function StudentsPage() {
 
   return (
     <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
           <p className="text-xs text-gray-500">
             {classNameToEnglish(selectedClass)} · Student Management
           </p>
         </div>
-        <Link href="/attendance" className="text-sm text-blue-600 underline text-right">
-          出席へ戻る
-          <span className="block text-xs">Back to attendance</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+          >
+            ← 出席簿に戻る
+            <span className="block text-[10px] font-normal opacity-70">
+              Back to attendance
+            </span>
+          </Link>
+          <Link
+            href="/select-class"
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+          >
+            🏠 トップページ
+            <span className="block text-[10px] font-normal opacity-70">Home</span>
+          </Link>
+        </div>
       </div>
 
       <div className="border rounded-xl p-4 flex flex-col gap-3">
