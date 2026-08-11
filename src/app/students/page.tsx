@@ -9,18 +9,23 @@ import type { Student } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
 
-/** Parses the bulk-add textarea: one student per line, "漢字,English" (English optional). */
+/**
+ * Parses the bulk-add textarea: one student per line. Accepts either a
+ * straight paste of two adjacent spreadsheet columns (kanji + English,
+ * which browsers paste as tab-separated) or manually typed "漢字,English"
+ * (English optional either way).
+ */
 function parseBulkNames(text: string): { nameKanji: string; nameEnglish: string }[] {
   return text
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => {
-      const commaIdx = line.indexOf(",");
-      if (commaIdx === -1) return { nameKanji: line, nameEnglish: "" };
+      const sepIdx = line.includes("\t") ? line.indexOf("\t") : line.indexOf(",");
+      if (sepIdx === -1) return { nameKanji: line, nameEnglish: "" };
       return {
-        nameKanji: line.slice(0, commaIdx).trim(),
-        nameEnglish: line.slice(commaIdx + 1).trim(),
+        nameKanji: line.slice(0, sepIdx).trim(),
+        nameEnglish: line.slice(sepIdx + 1).trim(),
       };
     })
     .filter((s) => s.nameKanji.length > 0);
@@ -275,9 +280,11 @@ export default function StudentsPage() {
         ) : (
           <div className="flex flex-col gap-3">
             <label className="flex flex-col gap-1 text-sm">
-              1行に1人ずつ貼り付けてください
+              1行に1人ずつ貼り付けてください（表計算ソフトの2列をそのまま貼り付けてもOK）
               <span className="text-xs font-normal text-gray-500">
-                Paste one student per line — &quot;漢字,English&quot; (English optional)
+                Paste one student per line — works with two spreadsheet columns pasted
+                directly (kanji + English), or manually typed &quot;漢字,English&quot;
+                (English optional either way)
               </span>
               <textarea
                 value={bulkText}
