@@ -47,10 +47,9 @@ export default function StudentsPage() {
   const [loadingInactive, setLoadingInactive] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
-  const [showPromoteModal, setShowPromoteModal] = useState(false);
-  const [promoting, setPromoting] = useState(false);
-  const [promoteError, setPromoteError] = useState<string | null>(null);
-
+  // Still used to word the individual withdraw button correctly (卒園 for
+  // 年長, since there's no next class to move up to; 退会 otherwise) — the
+  // bulk "promote whole class" tool itself was removed.
   const nextClassName = selectedClass ? nextGradeClassName(selectedClass) : null;
   const isGraduatingClass = selectedClass !== null && nextClassName === null;
 
@@ -199,26 +198,6 @@ export default function StudentsPage() {
     }
   }
 
-  async function handlePromote() {
-    if (!selectedClass) return;
-    setPromoting(true);
-    setPromoteError(null);
-    try {
-      const res = await fetch("/api/students/promote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromClassName: selectedClass, toClassName: nextClassName }),
-      });
-      if (!res.ok) throw new Error("failed");
-      setShowPromoteModal(false);
-      await loadStudents(selectedClass);
-    } catch {
-      setPromoteError("進級処理に失敗しました / Failed to promote the class");
-    } finally {
-      setPromoting(false);
-    }
-  }
-
   if (!loaded || !selectedClass) return null;
 
   return (
@@ -326,36 +305,6 @@ export default function StudentsPage() {
         {error && <p className="text-red-600 text-sm">{error}</p>}
       </div>
 
-      <div className="border border-purple-300 bg-purple-50 rounded-xl p-4 flex flex-col gap-2">
-        <p className="text-sm font-semibold text-purple-900">
-          {isGraduatingClass ? "学年末：卒園処理" : "学年末：進級処理"}
-          <span className="block text-xs font-normal text-purple-700">
-            {isGraduatingClass ? "End of year: graduate this class" : "End of year: promote this class"}
-          </span>
-        </p>
-        <p className="text-xs text-purple-800">
-          {isGraduatingClass
-            ? "在籍中の生徒全員をまとめて卒園（非表示）にします"
-            : `在籍中の生徒全員を「${nextClassName}」へまとめて移動します`}
-          <span className="block">
-            {isGraduatingClass
-              ? "Marks every currently enrolled student as graduated (hidden) at once"
-              : `Moves every currently enrolled student to "${nextClassName}" at once`}
-          </span>
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setPromoteError(null);
-            setShowPromoteModal(true);
-          }}
-          disabled={students.length === 0}
-          className="self-start rounded-full border border-purple-400 bg-white text-purple-800 px-4 py-1.5 text-sm font-semibold disabled:opacity-40"
-        >
-          {isGraduatingClass ? "卒園処理を開始 / Start graduating" : "進級処理を開始 / Start promoting"}
-        </button>
-      </div>
-
       <div>
         <h2 className="font-semibold mb-2">
           現在の生徒一覧 {!loading && `(${students.length}名)`}
@@ -439,67 +388,6 @@ export default function StudentsPage() {
         )}
       </div>
 
-      {showPromoteModal && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
-          onClick={() => !promoting && setShowPromoteModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-bold text-center">
-              {isGraduatingClass ? "卒園処理の確認" : "進級処理の確認"}
-              <span className="block text-sm font-normal text-gray-500">
-                {isGraduatingClass ? "Confirm graduation" : "Confirm promotion"}
-              </span>
-            </h2>
-
-            <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">対象クラス / From</span>
-                <span className="font-semibold">{selectedClass}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">移動先 / To</span>
-                <span className="font-semibold">
-                  {isGraduatingClass ? "卒園（非表示） / Graduated" : nextClassName}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">対象人数 / Students</span>
-                <span className="font-semibold">{students.length}名 / {students.length}</span>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-400 text-center">
-              この操作は在籍中の生徒{students.length}名全員に適用されます。よろしいですか？
-              <span className="block">
-                This applies to all {students.length} currently enrolled students. Continue?
-              </span>
-            </p>
-
-            {promoteError && <p className="text-red-600 text-sm text-center">{promoteError}</p>}
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setShowPromoteModal(false)}
-                disabled={promoting}
-                className="rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
-              >
-                キャンセル / Cancel
-              </button>
-              <button
-                onClick={handlePromote}
-                disabled={promoting}
-                className="rounded-full bg-purple-700 text-white py-3 font-semibold disabled:opacity-40"
-              >
-                {promoting ? "処理中... / Processing..." : "実行する / Execute"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

@@ -274,51 +274,6 @@ export async function setStudentActive(studentId: string, active: boolean): Prom
   });
 }
 
-export type PromoteResult = { studentId: string; nameKanji: string }[];
-
-/**
- * Bulk term-change action: move every active student in `fromClassName` to
- * `toClassName` (e.g. 年少 -> 年中), or — when `toClassName` is null (the
- * oldest grade has nowhere to go) — mark them all graduated (inactive)
- * instead. Either way this is one batched write, not N, so promoting a
- * whole class of 30 doesn't risk hitting Sheets API quota.
- */
-export async function promoteClassStudents(
-  fromClassName: string,
-  toClassName: string | null
-): Promise<PromoteResult> {
-  const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: "Students!A2:I",
-  });
-  const rows = res.data.values ?? [];
-
-  const targets = rows
-    .map((row, i) => ({ row, rowNum: i + 2 }))
-    .filter(
-      ({ row }) =>
-        (row[0] ?? "") &&
-        (row[3] ?? "") === fromClassName &&
-        (row[4] ?? "").toString().toUpperCase() === "TRUE"
-    );
-
-  if (targets.length === 0) return [];
-
-  const updates = targets.map(({ rowNum }) =>
-    toClassName !== null
-      ? { range: `Students!D${rowNum}`, values: [[toClassName]] }
-      : { range: `Students!E${rowNum}`, values: [["FALSE"]] }
-  );
-
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: SHEET_ID,
-    requestBody: { valueInputOption: "USER_ENTERED", data: updates },
-  });
-
-  return targets.map(({ row }) => ({ studentId: row[0] ?? "", nameKanji: row[1] ?? "" }));
-}
-
 /**
  * Present-student count per class for a single date, across every class
  * in the sheet. Classes with no rows at all for that date are omitted —
