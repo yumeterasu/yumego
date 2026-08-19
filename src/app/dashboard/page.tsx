@@ -581,10 +581,17 @@ export default function DashboardPage() {
             🏠 トップページ
             <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
+          <button
+            onClick={() => window.print()}
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+          >
+            🖨️ 印刷
+            <span className="block text-[10px] font-normal opacity-70">Print</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={goPrevMonth}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
@@ -604,7 +611,11 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      <p className="text-xs text-gray-400 text-center">
+      <p className="text-lg font-bold text-center hidden print:block">
+        {year}年{month}月
+      </p>
+
+      <p className="text-xs text-gray-400 text-center print:hidden">
         過去の日付、または登録済みの未来日のマスをタップすると修正メニューが開きます（出/欠/遅/早/出停）
         <span className="block">
           Tap a past date, or a future date that already has data, to open the edit menu
@@ -613,7 +624,7 @@ export default function DashboardPage() {
 
       <button
         onClick={openBulkModal}
-        className="self-center rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold"
+        className="self-center rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold print:hidden"
       >
         📅 期間で登録（未来日もOK）
         <span className="block text-[10px] font-normal opacity-70">
@@ -621,7 +632,7 @@ export default function DashboardPage() {
         </span>
       </button>
 
-      {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+      {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
       {loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
@@ -632,7 +643,7 @@ export default function DashboardPage() {
         </p>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
-          <table className="text-sm border-collapse min-w-max">
+          <table className="text-sm border-collapse min-w-max print-table-monthly">
             <thead>
               <tr>
                 <th

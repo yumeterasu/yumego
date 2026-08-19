@@ -171,10 +171,17 @@ export default function SummaryPage() {
             🏠 トップページ
             <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
+          <button
+            onClick={() => window.print()}
+            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+          >
+            🖨️ 印刷
+            <span className="block text-[10px] font-normal opacity-70">Print</span>
+          </button>
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={() => setFiscalYearStart((y) => y - 1)}
           className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
@@ -194,14 +201,18 @@ export default function SummaryPage() {
         </button>
       </div>
 
-      <p className="text-xs text-gray-400 text-center">
+      <p className="text-lg font-bold text-center hidden print:block">
+        {fiscalYearStart}年度
+      </p>
+
+      <p className="text-xs text-gray-400 text-center print:hidden">
         各月の出席した日数（{fiscalYearStart}年4月〜{fiscalYearStart + 1}年3月）
         <span className="block">
           Present days per month (Apr {fiscalYearStart} – Mar {fiscalYearStart + 1})
         </span>
       </p>
 
-      {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+      {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
       {loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
@@ -212,7 +223,7 @@ export default function SummaryPage() {
         </p>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
-          <table className="text-sm border-collapse min-w-max">
+          <table className="text-sm border-collapse min-w-max print-table-annual">
             <thead>
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">

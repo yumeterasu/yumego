@@ -24,3 +24,57 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Print support for the monthly Dashboard and annual まとめ tables.
+   Both wrap their <table> in the same "overflow-x-auto" Tailwind combo,
+   which would otherwise clip the (very wide) table to the on-screen
+   scroll width when printed — reset it so the full table renders. */
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .overflow-x-auto {
+    overflow: visible !important;
+    width: auto !important;
+  }
+
+  /* position: sticky columns don't reliably print correctly */
+  .sticky {
+    position: static !important;
+  }
+
+  .print-table-monthly {
+    font-size: 7px;
+  }
+  .print-table-monthly th,
+  .print-table-monthly td {
+    padding: 1px 2px !important;
+  }
+
+  .print-table-monthly input[type="text"] {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+
+  .print-table-annual {
+    font-size: 10px;
+  }
+  .print-table-annual th,
+  .print-table-annual td {
+    padding: 2px 4px !important;
+  }
+
+  .print-table-annual input {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+}
