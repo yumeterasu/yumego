@@ -588,6 +588,17 @@ export default function DashboardPage() {
             🖨️ 印刷
             <span className="block text-[10px] font-normal opacity-70">Print</span>
           </button>
+          <button
+            onClick={() =>
+              (window.location.href = `/api/export/monthly?class=${encodeURIComponent(
+                selectedClass
+              )}&month=${yearMonth}`)
+            }
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+          >
+            📊 Excel
+            <span className="block text-[10px] font-normal opacity-70">Export</span>
+          </button>
         </div>
       </div>
 
