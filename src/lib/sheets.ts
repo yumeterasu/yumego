@@ -430,6 +430,32 @@ export async function getAttendanceForFiscalYear(
 }
 
 /**
+ * Every attendance row ever recorded for a class, no date bound at all —
+ * used only for the end-of-term Reset backup export, right before the
+ * roster is wiped, so nothing is lost even from years before the current
+ * fiscal year.
+ */
+export async function getAllAttendanceForClass(className: string): Promise<AttendanceRow[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:F",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      className: (row[1] ?? "").toString(),
+      studentId: (row[2] ?? "").toString(),
+      status: parseStatus((row[3] ?? "").toString()),
+      reason: (row[5] ?? "").toString(),
+    }))
+    .filter((r) => r.className === className && r.studentId)
+    .map((r) => ({ date: r.date, studentId: r.studentId, status: r.status, reason: r.reason }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
  * Write attendance rows, updating any existing row for the same
  * date+student in place instead of appending a duplicate. This is what
  * lets both the daily check-in flow and the dashboard's per-cell edits
@@ -799,6 +825,72 @@ export async function setSpecialistChecked(
   });
 }
 
+/**
+ * Every checked cell ever recorded for one grade within a branch, no date
+ * bound — used by the end-of-term Reset backup export. Categories are
+ * branch-wide (shared across all 3 grades), so this only ever reads the
+ * one grade being reset, never touching the other two.
+ */
+export async function getAllSpecialistAttendanceForGrade(
+  branch: string,
+  grade: string
+): Promise<SpecialistCheckedCell[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistAttendance!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      categoryId: (row[2] ?? "").toString(),
+      grade: (row[3] ?? "").toString(),
+    }))
+    .filter((r) => r.branch === branch && r.grade === grade && r.categoryId)
+    .map((r) => ({ categoryId: r.categoryId, grade: r.grade, date: r.date }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * Deletes every checked cell for one grade within a branch, regardless of
+ * date or category — the "Coach Schedule" half of the end-of-term Reset.
+ * Not recoverable, unlike the student roster's soft-delete, which is why
+ * the caller must only run this after the backup export has already
+ * succeeded. Returns how many rows were removed, for the confirmation UI.
+ */
+export async function deleteSpecialistAttendanceForGrade(
+  branch: string,
+  grade: string
+): Promise<number> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistAttendance!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[1] ?? "") === branch && (row[3] ?? "") === grade)
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return 0;
+
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistAttendance");
+  rowNums.sort((a, b) => b - a); // highest index first, see clearAttendance
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+  return rowNums.length;
+}
+
 // 専門コーチ参加人数 — a separate daily record (distinct from the
 // checklist above) of how many kids actually joined each 専門コーチ
 // category that day, out of however many attended school. Rows share
@@ -921,6 +1013,64 @@ export async function setSpecialistParticipationCount(
       })),
     },
   });
+}
+
+/** Same shape as getAllSpecialistAttendanceForGrade, for the headcount sheet. */
+export async function getAllSpecialistParticipationForGrade(
+  branch: string,
+  grade: string
+): Promise<SpecialistParticipationCell[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistParticipation!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      categoryId: (row[2] ?? "").toString(),
+      grade: (row[3] ?? "").toString(),
+      count: Number(row[4] ?? 0),
+    }))
+    .filter(
+      (r) => r.branch === branch && r.grade === grade && r.categoryId && Number.isFinite(r.count)
+    )
+    .map((r) => ({ categoryId: r.categoryId, grade: r.grade, date: r.date, count: r.count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Same shape/reasoning as deleteSpecialistAttendanceForGrade, for the headcount sheet. */
+export async function deleteSpecialistParticipationForGrade(
+  branch: string,
+  grade: string
+): Promise<number> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistParticipation!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[1] ?? "") === branch && (row[3] ?? "") === grade)
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return 0;
+
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistParticipation");
+  rowNums.sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+  return rowNums.length;
 }
 
 // 外出記録 — a free-form log of the class going out somewhere (not tied

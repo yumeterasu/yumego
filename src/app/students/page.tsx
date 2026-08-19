@@ -56,6 +56,19 @@ export default function StudentsPage() {
   const [removingAll, setRemovingAll] = useState(false);
   const [removeAllError, setRemoveAllError] = useState<string | null>(null);
 
+  // End-of-term Reset: two-step confirm, then backup-download-then-delete.
+  const [showResetModal1, setShowResetModal1] = useState(false);
+  const [showResetModal2, setShowResetModal2] = useState(false);
+  const [resetStage, setResetStage] = useState<
+    "idle" | "backing-up" | "deleting" | "done" | "error"
+  >("idle");
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<{
+    studentsRemoved: number;
+    scheduleRowsDeleted: number;
+    headcountRowsDeleted: number;
+  } | null>(null);
+
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
@@ -198,6 +211,55 @@ export default function StudentsPage() {
       setRemoveAllError("削除に失敗しました / Failed to remove");
     } finally {
       setRemovingAll(false);
+    }
+  }
+
+  // Step 1: fetch the backup as a blob and trigger a real local download —
+  // only once that fetch genuinely succeeds (HTTP 200, non-empty body) do
+  // we move on to the permanent-delete step. A plain `window.location.href`
+  // navigation (used by the print/Excel buttons elsewhere) can't be
+  // awaited or checked this way, which is why this flow uses fetch+blob
+  // instead, even though the end result — a file landing in Downloads —
+  // looks the same to the user.
+  async function handleReset() {
+    if (!selectedClass) return;
+    setResetStage("backing-up");
+    setResetError(null);
+    try {
+      const backupRes = await fetch(
+        `/api/export/reset-backup?class=${encodeURIComponent(selectedClass)}`
+      );
+      if (!backupRes.ok) throw new Error("backup failed");
+      const blob = await backupRes.blob();
+      if (blob.size === 0) throw new Error("empty backup");
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedClass.replace(/\s+/g, "_")}_reset-backup_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setResetStage("deleting");
+      const resetRes = await fetch("/api/students/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className: selectedClass }),
+      });
+      if (!resetRes.ok) throw new Error("reset failed");
+      const data = await resetRes.json();
+      setResetResult(data);
+      setResetStage("done");
+      setStudents([]);
+    } catch {
+      setResetStage("error");
+      setResetError(
+        "処理に失敗しました。バックアップが保存されていない場合、生徒やコーチの記録は削除されていません / Failed — if the backup wasn't saved, nothing was deleted"
+      );
     }
   }
 
@@ -440,6 +502,31 @@ export default function StudentsPage() {
         )}
       </div>
 
+      <div className="border-2 border-red-300 rounded-xl p-4 flex flex-col gap-2 bg-red-50/40">
+        <h2 className="font-semibold text-red-700">
+          学期末リセット
+          <span className="block text-xs font-normal text-red-500">End-of-term reset</span>
+        </h2>
+        <p className="text-xs text-gray-500">
+          バックアップを保存してから、このクラスの生徒と専門コーチの記録をまとめてリセットします
+          <span className="block">
+            Backs up this class, then clears its roster and Coach Schedule/Headcount records
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setResetStage("idle");
+            setResetError(null);
+            setResetResult(null);
+            setShowResetModal1(true);
+          }}
+          className="self-start rounded-full bg-red-600 text-white px-4 py-2 text-sm font-semibold"
+        >
+          🔄 リセット / Reset
+        </button>
+      </div>
+
       {showRemoveAllModal && (
         <div
           className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
@@ -495,6 +582,190 @@ export default function StudentsPage() {
                 {removingAll ? "削除中... / Removing..." : "全員削除する / Remove all"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset step 1/2 — explains exactly what will happen before asking for final confirmation. */}
+      {showResetModal1 && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => setShowResetModal1(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-center text-red-600">
+              学期末リセットの確認（1/2）
+              <span className="block text-sm font-normal text-gray-500">
+                Confirm reset (1/2)
+              </span>
+            </h2>
+
+            <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象クラス / Class</span>
+                <span className="font-semibold">{selectedClass}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象人数 / Students</span>
+                <span className="font-semibold">
+                  {students.length}名 / {students.length}
+                </span>
+              </div>
+            </div>
+
+            <ul className="text-xs text-gray-600 list-disc pl-4 flex flex-col gap-2">
+              <li>
+                まずこのクラスの記録をバックアップとしてダウンロードします（生徒名簿・出席記録・コーチスケジュール・コーチ人数）
+                <span className="block text-gray-400">
+                  First, downloads a backup (roster, attendance, Coach Schedule, Coach Headcount)
+                </span>
+              </li>
+              <li>
+                生徒{students.length}名を一覧から削除します（後で「削除した生徒を表示」から復帰できます）
+                <span className="block text-gray-400">
+                  Removes all {students.length} students (recoverable later via &quot;show
+                  removed students&quot;)
+                </span>
+              </li>
+              <li className="text-red-600 font-semibold">
+                このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、復元できません
+                <span className="block text-red-400 font-normal">
+                  This class&apos;s Coach Schedule/Headcount records are permanently deleted —
+                  cannot be undone
+                </span>
+              </li>
+              <li>
+                専門コーチの種目リスト自体は削除しません（他の学年でも使うため）
+                <span className="block text-gray-400">
+                  The Coach category list itself is kept (other grades still use it)
+                </span>
+              </li>
+            </ul>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowResetModal1(false)}
+                className="rounded-full border border-gray-300 py-3 font-semibold"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowResetModal1(false);
+                  setShowResetModal2(true);
+                }}
+                className="rounded-full bg-red-600 text-white py-3 font-semibold"
+              >
+                次へ / Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset step 2/2 — final confirmation, then shows live progress and the result. */}
+      {showResetModal2 && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => resetStage === "idle" && setShowResetModal2(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {resetStage === "done" ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  完了しました
+                  <span className="block text-sm font-normal text-gray-500">Done</span>
+                </h2>
+                <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">削除した生徒 / Students removed</span>
+                    <span className="font-semibold">{resetResult?.studentsRemoved}名</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">
+                      削除したスケジュール記録 / Schedule rows deleted
+                    </span>
+                    <span className="font-semibold">{resetResult?.scheduleRowsDeleted}件</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">
+                      削除した人数記録 / Headcount rows deleted
+                    </span>
+                    <span className="font-semibold">{resetResult?.headcountRowsDeleted}件</span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 text-center">
+                  バックアップファイルはダウンロードフォルダに保存されました
+                  <span className="block">
+                    The backup file was saved to your downloads folder
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowResetModal2(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  学期末リセットの確認（2/2）
+                  <span className="block text-sm font-normal text-gray-500">
+                    Confirm reset (2/2)
+                  </span>
+                </h2>
+
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                  <p className="text-sm text-red-800 font-semibold text-center">
+                    ⚠ まずバックアップを保存します。保存が終わり次第、このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、二度と元に戻せません
+                    <span className="block text-xs font-normal mt-1">
+                      We&apos;ll back up the data first. Once that&apos;s done, this class&apos;s
+                      Coach Schedule/Headcount records are permanently deleted — there is no undo.
+                    </span>
+                  </p>
+                </div>
+
+                {resetStage === "backing-up" && (
+                  <p className="text-sm text-center text-gray-600">
+                    📥 バックアップを保存中... / Saving backup...
+                  </p>
+                )}
+                {resetStage === "deleting" && (
+                  <p className="text-sm text-center text-gray-600">
+                    🗑 削除中... / Deleting...
+                  </p>
+                )}
+                {resetStage === "error" && resetError && (
+                  <p className="text-red-600 text-sm text-center">{resetError}</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowResetModal2(false)}
+                    disabled={resetStage === "backing-up" || resetStage === "deleting"}
+                    className="rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    disabled={resetStage === "backing-up" || resetStage === "deleting"}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {resetStage === "backing-up" || resetStage === "deleting"
+                      ? "処理中... / Processing..."
+                      : "リセットする / Reset"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
