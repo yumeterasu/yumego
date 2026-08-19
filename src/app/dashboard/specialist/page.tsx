@@ -228,32 +228,26 @@ export default function SpecialistCoachPage() {
     }
     setBusyCellKey(countKey);
     setError(null);
+
+    // Sequenced, not parallel: the checkbox is the source of truth, and
+    // the count-clear is a follow-up consequence of it, not an independent
+    // action. Firing both at once meant a network hiccup on ONLY the
+    // count-clear call would fail the combined check and revert the
+    // checkbox back to "checked" in the UI — even though the server had
+    // already genuinely unchecked it — leaving the UI showing stale data
+    // out of sync with the server, and the orphaned count able to resurface
+    // ("ghost data") if that cell got checked again before ever reloading.
     try {
-      const attendanceReq = fetch("/api/specialist/attendance", {
+      const attendanceRes = await fetch("/api/specialist/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branch, categoryId, grade: myGrade, date, checked: next }),
       });
-      const participationReq =
-        !next && existingCount !== undefined
-          ? fetch("/api/specialist/participation", {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                branch,
-                categoryId,
-                grade: myGrade,
-                date,
-                count: null,
-              }),
-            })
-          : null;
-      const results = await Promise.all([attendanceReq, participationReq]);
-      if (!results[0].ok || (results[1] && !results[1].ok)) throw new Error("failed");
-      if (!next) delete savedCountsRef.current[countKey];
+      if (!attendanceRes.ok) throw new Error("failed");
     } catch {
       setError("保存に失敗しました / Failed to save");
-      // revert both the checkbox and the count
+      // the checkbox itself never actually changed server-side — revert it
+      // (and the count draft, which was only ever an optimistic guess).
       setCheckedDates((prev) => {
         const copy = { ...prev };
         const set = new Set(copy[key] ?? []);
@@ -266,9 +260,29 @@ export default function SpecialistCoachPage() {
         ...prev,
         [countKey]: existingCount !== undefined ? String(existingCount) : "",
       }));
-    } finally {
       setBusyCellKey(null);
+      return;
     }
+
+    // Checkbox is now confirmed saved. If we also need to clear a count,
+    // that's a second, separate step — its failure must NOT revert the
+    // checkbox above, since that really did succeed.
+    if (!next && existingCount !== undefined) {
+      try {
+        const participationRes = await fetch("/api/specialist/participation", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch, categoryId, grade: myGrade, date, count: null }),
+        });
+        if (!participationRes.ok) throw new Error("failed");
+        delete savedCountsRef.current[countKey];
+      } catch {
+        setError(
+          "チェックは外しましたが、参加人数の削除に失敗しました。もう一度チェックを付けて外すか、再読み込みしてください / Unchecked, but couldn't clear the saved count — check it and uncheck it again, or reload"
+        );
+      }
+    }
+    setBusyCellKey(null);
   }
 
   async function commitCount(categoryId: string, date: string, rawValue: string, total: number) {
