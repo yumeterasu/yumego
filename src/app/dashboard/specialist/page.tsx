@@ -286,7 +286,10 @@ export default function SpecialistCoachPage() {
     }
     if (parsed !== null) {
       parsed = Math.floor(parsed);
-      if (parsed > total) parsed = total; // can't have more participants than kids present
+      // Only cap when we actually know the real attendance total for that
+      // day — total===0 usually means it just hasn't been recorded yet,
+      // not that zero kids are allowed, so don't silently clamp to 0.
+      if (total > 0 && parsed > total) parsed = total;
     }
 
     if (parsed === (original ?? null)) {
@@ -639,7 +642,12 @@ export default function SpecialistCoachPage() {
                               }
 
                               const draft = draftCounts[countKey] ?? "";
-                              const countDisabled = !isChecked || total === 0 || isBusy;
+                              // Only gated on checked/busy, NOT on total — the
+                              // attendance count for that day might not be
+                              // recorded yet (or ever, if taken independently),
+                              // and the input shouldn't look "broken" just
+                              // because that denominator happens to be 0.
+                              const countDisabled = !isChecked || isBusy;
 
                               return (
                                 <td
@@ -661,10 +669,10 @@ export default function SpecialistCoachPage() {
                                         <input
                                           type="number"
                                           min={0}
-                                          max={total}
+                                          max={total > 0 ? total : undefined}
                                           value={draft}
                                           disabled={countDisabled}
-                                          placeholder={total === 0 ? "-" : "0"}
+                                          placeholder="0"
                                           onChange={(e) =>
                                             setDraftCounts((prev) => ({
                                               ...prev,
