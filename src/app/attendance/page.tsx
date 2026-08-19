@@ -17,6 +17,23 @@ function todayDateString() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function addDays(dateStr: string, delta: number) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+
+function formatDateLabel(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${y}年${m}月${d}日(${WEEKDAY_LABELS[dow]})`;
+}
+
 type Absence = { status: AbsenceBucket | "late" | "early_leave"; reason: string };
 
 export default function AttendancePage() {
@@ -44,7 +61,11 @@ export default function AttendancePage() {
   const [otherText, setOtherText] = useState("");
   const [otherStatus, setOtherStatus] = useState<AbsenceBucket>("absent");
 
-  const date = useMemo(() => todayDateString(), []);
+  const today = useMemo(() => todayDateString(), []);
+  // Defaults to today, but can be navigated back to backfill a day that
+  // was missed entirely (see the ◀/▶ nav below). Never allowed past today.
+  const [date, setDate] = useState(today);
+  const isToday = date === today;
 
   const refreshPendingCount = useCallback(() => {
     setPendingCount(getQueue().length);
@@ -66,9 +87,9 @@ export default function AttendancePage() {
       router.replace("/select-class");
       return;
     }
-    load(selectedClass);
+    load(selectedClass, date);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, selectedClass]);
+  }, [loaded, selectedClass, date]);
 
   // Try to flush any queued submissions on load and whenever the device
   // comes back online.
@@ -79,25 +100,48 @@ export default function AttendancePage() {
     return () => window.removeEventListener("online", syncPending);
   }, [refreshPendingCount, syncPending]);
 
-  async function load(className: string) {
+  async function load(className: string, forDate: string) {
     setLoading(true);
     setError(null);
     const cacheKey = `yumego.studentsCache.${className}`;
     try {
-      const res = await fetch(
-        `/api/students?class=${encodeURIComponent(className)}`
-      );
-      if (!res.ok) throw new Error("failed");
-      const data = await res.json();
-      setStudents(data.students ?? []);
-      localStorage.setItem(cacheKey, JSON.stringify(data.students ?? []));
-      setAbsences(new Map());
+      const yearMonth = forDate.slice(0, 7);
+      const [studentsRes, attendanceRes] = await Promise.all([
+        fetch(`/api/students?class=${encodeURIComponent(className)}`),
+        fetch(
+          `/api/attendance?class=${encodeURIComponent(className)}&month=${yearMonth}`
+        ),
+      ]);
+      if (!studentsRes.ok) throw new Error("failed");
+      const data = await studentsRes.json();
+      const loadedStudents: Student[] = data.students ?? [];
+      setStudents(loadedStudents);
+      localStorage.setItem(cacheKey, JSON.stringify(loadedStudents));
+
+      // Prefill from whatever's already recorded for this exact date —
+      // e.g. a half-finished backfill — instead of wiping it back to
+      // "everyone present" every time the date changes.
+      const existing = new Map<string, Absence>();
+      if (attendanceRes.ok) {
+        const attendanceData = await attendanceRes.json();
+        const records: { date: string; studentId: string; status: AttendanceStatus; reason: string }[] =
+          attendanceData.records ?? [];
+        for (const r of records) {
+          if (r.date !== forDate || r.status === "present") continue;
+          existing.set(r.studentId, {
+            status: r.status as Absence["status"],
+            reason: r.reason ?? "",
+          });
+        }
+      }
+      setAbsences(existing);
       setSubmitted(false);
       setQueuedOffline(false);
     } catch {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         setStudents(JSON.parse(cached));
+        setAbsences(new Map());
         setError(
           "オフラインです。前回保存した生徒一覧を表示しています / Offline — showing the last saved student list"
         );
@@ -200,7 +244,10 @@ export default function AttendancePage() {
       setSubmitted(true);
       setQueuedOffline(false);
       setShowConfirmModal(false);
-      router.push("/dashboard");
+      // For today, jump straight to the dashboard as before. For a
+      // backfilled past date, stay put so ◀ can keep walking back through
+      // other missed days without re-navigating here each time.
+      if (date === today) router.push("/dashboard");
     } catch {
       // Network failure (offline) or the request never reached the server —
       // save it locally and retry automatically once the connection returns.
@@ -209,7 +256,7 @@ export default function AttendancePage() {
       setSubmitted(true);
       setQueuedOffline(true);
       setShowConfirmModal(false);
-      router.push("/dashboard");
+      if (date === today) router.push("/dashboard");
     } finally {
       setSubmitting(false);
     }
@@ -261,6 +308,45 @@ export default function AttendancePage() {
           </Link>
         </div>
       </div>
+
+      <div className="flex items-center justify-center gap-4">
+        <button
+          onClick={() => setDate((d) => addDays(d, -1))}
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+          aria-label="前日 / Previous day"
+        >
+          ◀
+        </button>
+        <p className="text-lg font-bold w-48 text-center">{formatDateLabel(date)}</p>
+        <button
+          onClick={() => setDate((d) => (d < today ? addDays(d, 1) : d))}
+          disabled={isToday}
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center disabled:opacity-30"
+          aria-label="翌日 / Next day"
+        >
+          ▶
+        </button>
+        {!isToday && (
+          <button
+            onClick={() => setDate(today)}
+            className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold"
+          >
+            今日に戻る
+            <span className="block text-[9px] font-normal opacity-70">Back to today</span>
+          </button>
+        )}
+      </div>
+
+      {!isToday && (
+        <div className="bg-orange-50 border border-orange-300 rounded-xl px-4 py-3">
+          <p className="text-sm text-orange-800 font-semibold">
+            ⚠ {formatDateLabel(date)} の出席を記録しています（本日ではありません）
+            <span className="block text-xs font-normal">
+              Recording attendance for {formatDateLabel(date)} — not today
+            </span>
+          </p>
+        </div>
+      )}
 
       {pendingCount > 0 && (
         <div className="flex items-center justify-between gap-3 bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-3">
@@ -504,10 +590,21 @@ export default function AttendancePage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
             <h2 className="text-lg font-bold text-center">
-              本日の出席状況
-              <span className="block text-sm font-normal text-gray-500">
-                Today&apos;s attendance
-              </span>
+              {isToday ? (
+                <>
+                  本日の出席状況
+                  <span className="block text-sm font-normal text-gray-500">
+                    Today&apos;s attendance
+                  </span>
+                </>
+              ) : (
+                <>
+                  {formatDateLabel(date)}の出席状況
+                  <span className="block text-sm font-normal text-orange-600">
+                    ⚠ Not today — {date}
+                  </span>
+                </>
+              )}
             </h2>
             <div className="flex justify-around text-center">
               <div>
