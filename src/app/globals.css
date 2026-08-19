@@ -52,6 +52,8 @@ body {
 
   .print-table-monthly {
     font-size: 7px;
+    width: 100% !important;
+    min-width: 0 !important;
   }
   .print-table-monthly th,
   .print-table-monthly td {
@@ -65,7 +67,9 @@ body {
   }
 
   .print-table-annual {
-    font-size: 10px;
+    font-size: 12px;
+    width: 100% !important;
+    min-width: 0 !important;
   }
   .print-table-annual th,
   .print-table-annual td {
