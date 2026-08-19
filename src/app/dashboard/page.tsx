@@ -542,18 +542,9 @@ export default function DashboardPage() {
             href="/dashboard/specialist"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
-            専門コーチ予定
+            専門コーチ
             <span className="block text-[10px] font-normal opacity-70">
-              Coach Schedule
-            </span>
-          </Link>
-          <Link
-            href="/dashboard/specialist-count"
-            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-          >
-            専門コーチ人数
-            <span className="block text-[10px] font-normal opacity-70">
-              Coach Headcount
+              Specialist Coach
             </span>
           </Link>
           <Link

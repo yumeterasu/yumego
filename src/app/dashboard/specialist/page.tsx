@@ -1,11 +1,15 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import { classNameToBranchGrade, type GradeShort } from "@/lib/classes";
-import type { SpecialistCategory } from "@/lib/sheets";
+import {
+  classNameToBranchGrade,
+  branchGradeToClassName,
+  type GradeShort,
+} from "@/lib/classes";
+import type { AttendanceStatus, SpecialistCategory } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const GRADES: GradeShort[] = ["長", "中", "少"];
@@ -18,10 +22,19 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function cellKey(categoryId: string, grade: string) {
-  return `${categoryId}|${grade}`;
+function countsAsPresent(status: AttendanceStatus): boolean {
+  return status === "present" || status === "late" || status === "early_leave";
 }
 
+function cellKey(categoryId: string, grade: string, date?: string) {
+  return date ? `${categoryId}|${grade}|${date}` : `${categoryId}|${grade}`;
+}
+
+// Combines what used to be two separate pages (専門コーチ予定 / 専門コーチ人数)
+// into one table: each day cell has a checkbox, plus — only once checked —
+// an optional participant-count input right under it. Unchecking always
+// clears any count that cell had too, so "unchecked" and "no number" never
+// drift apart the way they could when these lived on separate pages.
 export default function SpecialistCoachPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
@@ -39,13 +52,19 @@ export default function SpecialistCoachPage() {
 
   const [categories, setCategories] = useState<SpecialistCategory[]>([]);
   // "categoryId|grade" -> Set of checked "YYYY-MM-DD" dates, this branch+month.
-  // All 3 grades are loaded (not just this tablet's own) so the table can
-  // show the whole branch's picture — only this tablet's own grade row is
-  // editable, the rest are shown read-only/grayed out for context.
   const [checkedDates, setCheckedDates] = useState<Record<string, Set<string>>>({});
+  // "categoryId|grade" -> total present that day, for every grade in the
+  // branch (needed to show/cap against every row, not just this tablet's).
+  const [presentTotals, setPresentTotals] = useState<Record<string, Record<string, number>>>({});
+  // "categoryId|grade|date" -> participant count, last confirmed saved.
+  const savedCountsRef = useRef<Record<string, number>>({});
+  // Same shape, but the live input text (may be mid-edit, unsaved).
+  const [draftCounts, setDraftCounts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [savingKey, setSavingKey] = useState<string | null>(null);
+  // A cell being toggled (checkbox) or committed (count) — either one
+  // disables just that cell's inputs while its request is in flight.
+  const [busyCellKey, setBusyCellKey] = useState<string | null>(null);
 
   // Live-edited category names, kept separate from `categories` (which
   // only updates once a rename is confirmed saved) — comparing a draft to
@@ -66,15 +85,34 @@ export default function SpecialistCoachPage() {
     setLoading(true);
     setError(null);
     try {
-      const [categoriesRes, attendanceRes] = await Promise.all([
-        fetch(`/api/specialist/categories?branch=${encodeURIComponent(branch)}`),
-        fetch(
-          `/api/specialist/attendance?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
-        ),
-      ]);
-      if (!categoriesRes.ok || !attendanceRes.ok) throw new Error("failed");
+      const [categoriesRes, attendanceRes, participationRes, ...classAttendanceResList] =
+        await Promise.all([
+          fetch(`/api/specialist/categories?branch=${encodeURIComponent(branch)}`),
+          fetch(
+            `/api/specialist/attendance?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
+          ),
+          fetch(
+            `/api/specialist/participation?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
+          ),
+          ...GRADES.map((g) =>
+            fetch(
+              `/api/attendance?class=${encodeURIComponent(
+                branchGradeToClassName(branch as "プロンポン" | "トンロー", g)
+              )}&month=${yearMonth}`
+            )
+          ),
+        ]);
+      if (
+        !categoriesRes.ok ||
+        !attendanceRes.ok ||
+        !participationRes.ok ||
+        classAttendanceResList.some((r) => !r.ok)
+      ) {
+        throw new Error("failed");
+      }
       const categoriesData = await categoriesRes.json();
       const attendanceData = await attendanceRes.json();
+      const participationData = await participationRes.json();
       const loadedCategories: SpecialistCategory[] = categoriesData.categories ?? [];
       setCategories(loadedCategories);
       setNameDrafts(
@@ -90,6 +128,34 @@ export default function SpecialistCoachPage() {
         next[key].add(cell.date);
       }
       setCheckedDates(next);
+
+      // Present totals per grade+date, from the real attendance sheet.
+      const totals: Record<string, Record<string, number>> = {};
+      for (let i = 0; i < GRADES.length; i++) {
+        const g = GRADES[i];
+        const data = await classAttendanceResList[i].json();
+        const records: { date: string; status: AttendanceStatus }[] = data.records ?? [];
+        const byDate: Record<string, number> = {};
+        for (const r of records) {
+          if (!countsAsPresent(r.status)) continue;
+          byDate[r.date] = (byDate[r.date] ?? 0) + 1;
+        }
+        totals[g] = byDate;
+      }
+      setPresentTotals(totals);
+
+      const participationCells: {
+        categoryId: string;
+        grade: string;
+        date: string;
+        count: number;
+      }[] = participationData.cells ?? [];
+      const saved: Record<string, number> = {};
+      for (const cell of participationCells) {
+        saved[cellKey(cell.categoryId, cell.grade, cell.date)] = cell.count;
+      }
+      savedCountsRef.current = saved;
+      setDraftCounts(Object.fromEntries(Object.entries(saved).map(([k, v]) => [k, String(v)])));
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -127,26 +193,27 @@ export default function SpecialistCoachPage() {
 
   async function toggleChecked(categoryId: string, date: string) {
     const key = cellKey(categoryId, myGrade);
+    const countKey = cellKey(categoryId, myGrade, date);
     const isChecked = checkedDates[key]?.has(date) ?? false;
     const next = !isChecked;
-    const savingId = `${key}|${date}`;
+    const existingCount = savedCountsRef.current[countKey];
 
-    // Removing a checkmark is easy to do by accident and this page is
-    // usually only opened once a month, so a mistaken uncheck could sit
-    // unnoticed for weeks — confirm before actually removing it. Adding a
-    // new checkmark stays a single tap, no confirm needed.
+    // Unchecking is confirmed every single time, whether or not a count was
+    // ever entered — it's easy to tap by accident, this page is usually
+    // only opened a few times a month, and unchecking also silently clears
+    // any participant count already saved for that day.
     if (isChecked) {
       const categoryName = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
       if (
         !window.confirm(
-          `「${categoryName}」${date} のチェックを外しますか？\nRemove the checkmark for "${categoryName}" on ${date}?`
+          `「${categoryName}」${date} のチェックを外しますか？\n入力していた参加人数があれば、それも削除されます。\n\nRemove the checkmark for "${categoryName}" on ${date}? Any participant count entered for that day will be deleted too.`
         )
       ) {
         return;
       }
     }
 
-    // optimistic update
+    // optimistic update — checkbox
     setCheckedDates((prev) => {
       const copy = { ...prev };
       const set = new Set(copy[key] ?? []);
@@ -155,18 +222,38 @@ export default function SpecialistCoachPage() {
       copy[key] = set;
       return copy;
     });
-    setSavingKey(savingId);
+    // optimistic update — clear the count too when unchecking
+    if (!next) {
+      setDraftCounts((prev) => ({ ...prev, [countKey]: "" }));
+    }
+    setBusyCellKey(countKey);
     setError(null);
     try {
-      const res = await fetch("/api/specialist/attendance", {
+      const attendanceReq = fetch("/api/specialist/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ branch, categoryId, grade: myGrade, date, checked: next }),
       });
-      if (!res.ok) throw new Error("failed");
+      const participationReq =
+        !next && existingCount !== undefined
+          ? fetch("/api/specialist/participation", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                branch,
+                categoryId,
+                grade: myGrade,
+                date,
+                count: null,
+              }),
+            })
+          : null;
+      const results = await Promise.all([attendanceReq, participationReq]);
+      if (!results[0].ok || (results[1] && !results[1].ok)) throw new Error("failed");
+      if (!next) delete savedCountsRef.current[countKey];
     } catch {
       setError("保存に失敗しました / Failed to save");
-      // revert
+      // revert both the checkbox and the count
       setCheckedDates((prev) => {
         const copy = { ...prev };
         const set = new Set(copy[key] ?? []);
@@ -175,8 +262,78 @@ export default function SpecialistCoachPage() {
         copy[key] = set;
         return copy;
       });
+      setDraftCounts((prev) => ({
+        ...prev,
+        [countKey]: existingCount !== undefined ? String(existingCount) : "",
+      }));
     } finally {
-      setSavingKey(null);
+      setBusyCellKey(null);
+    }
+  }
+
+  async function commitCount(categoryId: string, date: string, rawValue: string, total: number) {
+    const key = cellKey(categoryId, myGrade, date);
+    const original = savedCountsRef.current[key];
+
+    const trimmed = rawValue.trim();
+    let parsed: number | null = trimmed === "" ? null : Number(trimmed);
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
+      setDraftCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+      return;
+    }
+    if (parsed !== null) {
+      parsed = Math.floor(parsed);
+      if (parsed > total) parsed = total; // can't have more participants than kids present
+    }
+
+    if (parsed === (original ?? null)) {
+      setDraftCounts((prev) => ({ ...prev, [key]: parsed === null ? "" : String(parsed) }));
+      return;
+    }
+
+    // Number inputs misfire easily (scroll wheel, stray taps on the
+    // up/down arrows) — confirm before actually writing a real change.
+    const categoryName = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
+    const fromLabel = original === undefined ? "未入力" : String(original);
+    const toLabel = parsed === null ? "未入力" : String(parsed);
+    if (
+      !window.confirm(
+        `「${categoryName}」${date} の参加人数を ${fromLabel} → ${toLabel} に変更しますか？\nChange the participant count for "${categoryName}" on ${date} from ${fromLabel} to ${toLabel}?`
+      )
+    ) {
+      setDraftCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+      return;
+    }
+
+    setBusyCellKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/specialist/participation", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch, categoryId, grade: myGrade, date, count: parsed }),
+      });
+      if (!res.ok) throw new Error("failed");
+      if (parsed === null) {
+        delete savedCountsRef.current[key];
+      } else {
+        savedCountsRef.current[key] = parsed;
+      }
+      setDraftCounts((prev) => ({ ...prev, [key]: parsed === null ? "" : String(parsed) }));
+    } catch {
+      setError("保存に失敗しました / Failed to save");
+      setDraftCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+    } finally {
+      setBusyCellKey(null);
     }
   }
 
@@ -236,7 +393,7 @@ export default function SpecialistCoachPage() {
     // from 年中/年少 of the same branch, not just this screen.
     if (
       !window.confirm(
-        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年の画面からも見えなくなります）。過去のチェック記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少 (other grades will no longer see it either). Past checkmarks stay in the sheet but will be hidden.`
+        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年の画面からも見えなくなります）。過去の記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少 (other grades will no longer see it either). Past records stay in the sheet but will be hidden.`
       )
     ) {
       return;
@@ -264,14 +421,12 @@ export default function SpecialistCoachPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
-          <p className="text-xs text-gray-400">
-            {branch} Specialist Coach Schedule
-          </p>
+          <p className="text-xs text-gray-400">{branch} Specialist Coach</p>
           <p className="text-sm text-gray-500">
-            編集できるのは{myGrade}の行だけです（{selectedClass}）。他の学年はグレー表示（閲覧のみ）
+            編集できるのは{myGrade}の行だけです（{selectedClass}）。チェックした日だけ人数を入力できます
             <span className="block text-xs">
-              Only the {myGrade} row is editable ({selectedClass}). Other grades are shown
-              read-only (grayed out)
+              Only the {myGrade} row is editable ({selectedClass}). The count can only be
+              entered on days that are checked
             </span>
           </p>
         </div>
@@ -330,7 +485,7 @@ export default function SpecialistCoachPage() {
                   return (
                     <th
                       key={day}
-                      className={`border border-gray-300 px-1 py-1 text-center w-8 ${
+                      className={`border border-gray-300 px-1 py-1 text-center w-11 ${
                         isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
                       }`}
                     >
@@ -343,7 +498,17 @@ export default function SpecialistCoachPage() {
                 })}
                 <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-14 whitespace-nowrap">
                   回数
-                  <span className="block text-[9px] font-normal">Count</span>
+                  <span className="block text-[9px] font-normal">Days</span>
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-14 whitespace-nowrap">
+                  人数計
+                  <span className="block text-[9px] font-normal">Total</span>
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-emerald-100 text-emerald-900 w-16 whitespace-nowrap">
+                  全学年
+                  <br />
+                  合計
+                  <span className="block text-[9px] font-normal">All Grades</span>
                 </th>
               </tr>
             </thead>
@@ -351,7 +516,7 @@ export default function SpecialistCoachPage() {
               {categories.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={dayNumbers.length + 3}
+                    colSpan={dayNumbers.length + 5}
                     className="text-center text-gray-400 text-sm py-6 border border-gray-300"
                   >
                     まだ項目がありません。下から追加してください。
@@ -361,13 +526,37 @@ export default function SpecialistCoachPage() {
               ) : (
                 categories.map((c, ci) => {
                   const zebra = ci % 2 === 1;
+
+                  // Precompute each grade's monthly participant total up
+                  // front (not just "my" grade) so they can be summed into
+                  // a single combined 長+中+少 total for this category alone.
+                  const gradeCountTotals: Record<GradeShort, number> = { 長: 0, 中: 0, 少: 0 };
+                  for (const g of GRADES) {
+                    for (const day of dayNumbers) {
+                      const date = `${year}-${pad2(month)}-${pad2(day)}`;
+                      const key = cellKey(c.categoryId, g, date);
+                      if (g === myGrade) {
+                        const draft = draftCounts[key] ?? "";
+                        if (draft !== "") gradeCountTotals[g] += Number(draft) || 0;
+                      } else {
+                        const saved = savedCountsRef.current[key];
+                        if (saved !== undefined) gradeCountTotals[g] += saved;
+                      }
+                    }
+                  }
+                  const categoryCountTotal = GRADES.reduce(
+                    (sum, g) => sum + gradeCountTotals[g],
+                    0
+                  );
+
                   return (
                     <Fragment key={c.categoryId}>
                       {GRADES.map((g, gi) => {
                         const isMine = g === myGrade;
                         const key = cellKey(c.categoryId, g);
                         const dates = checkedDates[key] ?? new Set<string>();
-                        const count = dates.size;
+                        const daysCount = dates.size;
+                        const countTotal = gradeCountTotals[g];
                         return (
                           <tr
                             key={`${c.categoryId}-${g}`}
@@ -419,28 +608,85 @@ export default function SpecialistCoachPage() {
                               const dow = new Date(year, month - 1, day).getDay();
                               const isWeekend = dow === 0 || dow === 6;
                               const isChecked = dates.has(date);
-                              const savingId = `${key}|${date}`;
-                              const isSaving = savingKey === savingId;
+                              const total = presentTotals[g]?.[date] ?? 0;
+                              const countKey = cellKey(c.categoryId, g, date);
+                              const isBusy = busyCellKey === countKey;
+
+                              if (!isMine) {
+                                const saved = savedCountsRef.current[countKey];
+                                return (
+                                  <td
+                                    key={day}
+                                    className={`text-center border border-gray-300 py-1 ${
+                                      isWeekend ? "bg-orange-50/40" : ""
+                                    }`}
+                                  >
+                                    <div className="flex flex-col items-center gap-0.5 opacity-70">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        disabled
+                                        className="w-3.5 h-3.5 accent-gray-300 cursor-not-allowed"
+                                      />
+                                      {isChecked && (
+                                        <span className="text-[9px] text-gray-400">
+                                          {saved !== undefined ? saved : ""}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                );
+                              }
+
+                              const draft = draftCounts[countKey] ?? "";
+                              const countDisabled = !isChecked || total === 0 || isBusy;
+
                               return (
                                 <td
                                   key={day}
                                   className={`text-center border border-gray-300 py-1 ${
-                                    isWeekend && isMine ? "bg-orange-50/60" : ""
+                                    isWeekend ? "bg-orange-50/60" : ""
                                   }`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    disabled={!isMine || isSaving}
-                                    onChange={
-                                      isMine ? () => toggleChecked(c.categoryId, date) : undefined
-                                    }
-                                    className={
-                                      isMine
-                                        ? "w-4 h-4 accent-green-600 cursor-pointer"
-                                        : "w-4 h-4 accent-gray-300 opacity-60 cursor-not-allowed"
-                                    }
-                                  />
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      disabled={isBusy}
+                                      onChange={() => toggleChecked(c.categoryId, date)}
+                                      className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
+                                    />
+                                    {isChecked && (
+                                      <div className="flex items-center gap-0.5 whitespace-nowrap">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={total}
+                                          value={draft}
+                                          disabled={countDisabled}
+                                          placeholder={total === 0 ? "-" : "0"}
+                                          onChange={(e) =>
+                                            setDraftCounts((prev) => ({
+                                              ...prev,
+                                              [countKey]: e.target.value,
+                                            }))
+                                          }
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") e.currentTarget.blur();
+                                          }}
+                                          onBlur={(e) =>
+                                            commitCount(c.categoryId, date, e.target.value, total)
+                                          }
+                                          className="w-6 bg-transparent text-center text-[11px] outline-none focus:bg-white/60 rounded disabled:text-gray-300"
+                                        />
+                                        {total > 0 && (
+                                          <span className="text-gray-400 text-[9px]">
+                                            /{total}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </td>
                               );
                             })}
@@ -449,8 +695,23 @@ export default function SpecialistCoachPage() {
                                 isMine ? "text-green-700" : "text-gray-400"
                               }`}
                             >
-                              {count > 0 ? count : ""}
+                              {daysCount > 0 ? daysCount : ""}
                             </td>
+                            <td
+                              className={`text-center border border-gray-300 font-semibold ${
+                                isMine ? "text-green-700" : "text-gray-400"
+                              }`}
+                            >
+                              {countTotal > 0 ? countTotal : ""}
+                            </td>
+                            {gi === 0 && (
+                              <td
+                                rowSpan={GRADES.length}
+                                className="text-center border border-gray-300 font-bold text-emerald-800 bg-emerald-50 align-middle"
+                              >
+                                {categoryCountTotal > 0 ? categoryCountTotal : ""}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
