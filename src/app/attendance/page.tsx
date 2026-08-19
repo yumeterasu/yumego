@@ -17,7 +17,7 @@ function todayDateString() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-type Absence = { status: AbsenceBucket | "late"; reason: string };
+type Absence = { status: AbsenceBucket | "late" | "early_leave"; reason: string };
 
 export default function AttendancePage() {
   const router = useRouter();
@@ -152,6 +152,19 @@ export default function AttendancePage() {
     setReasonPickerFor(null);
   }
 
+  // 早退 (early leave) — also still "present" for the day, just leaving
+  // early. Often known in advance too (a parent calls ahead), so it
+  // belongs in this same picker alongside 遅刻.
+  function pickEarlyLeave() {
+    if (!reasonPickerFor) return;
+    setAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(reasonPickerFor.studentId, { status: "early_leave", reason: "" });
+      return next;
+    });
+    setReasonPickerFor(null);
+  }
+
   function applyOtherReason() {
     if (!reasonPickerFor || !otherText.trim()) return;
     setAbsences((prev) => {
@@ -204,18 +217,22 @@ export default function AttendancePage() {
 
   if (!loaded || !selectedClass) return null;
 
-  // Late counts toward present, not absent — same rule as everywhere
-  // else in the app.
+  // Late and early-leave count toward present, not absent — same rule
+  // as everywhere else in the app.
   const lateStudents = students.filter(
     (s) => absences.get(s.studentId)?.status === "late"
   );
+  const earlyLeaveStudents = students.filter(
+    (s) => absences.get(s.studentId)?.status === "early_leave"
+  );
   const absentStudents = students.filter((s) => {
     const a = absences.get(s.studentId);
-    return a && a.status !== "late";
+    return a && a.status !== "late" && a.status !== "early_leave";
   });
   const presentCount = students.length - absentStudents.length;
   const absentCount = absentStudents.length;
   const lateCount = lateStudents.length;
+  const earlyLeaveCount = earlyLeaveStudents.length;
 
   return (
     <main className="min-h-screen p-6 max-w-lg md:max-w-4xl lg:max-w-6xl mx-auto flex flex-col gap-6">
@@ -294,6 +311,7 @@ export default function AttendancePage() {
               const isSuspended = absence?.status === "suspended";
               const isAbsent = absence?.status === "absent";
               const isLate = absence?.status === "late";
+              const isEarlyLeave = absence?.status === "early_leave";
               return (
                 <button
                   key={s.studentId}
@@ -305,7 +323,9 @@ export default function AttendancePage() {
                         ? "bg-red-50 border-red-500 text-red-800"
                         : isLate
                           ? "bg-amber-50 border-amber-500 text-amber-800"
-                          : "bg-green-50 border-green-400 text-green-800"
+                          : isEarlyLeave
+                            ? "bg-blue-50 border-blue-500 text-blue-800"
+                            : "bg-green-50 border-green-400 text-green-800"
                   }`}
                 >
                   <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
@@ -314,7 +334,7 @@ export default function AttendancePage() {
                   {label}
                   {absence && (
                     <span className="block text-[10px] font-normal mt-0.5">
-                      {absence.reason || (isLate ? "遅刻" : "")}
+                      {absence.reason || (isLate ? "遅刻" : isEarlyLeave ? "早退" : "")}
                     </span>
                   )}
                 </button>
@@ -325,10 +345,12 @@ export default function AttendancePage() {
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm">
               出席: <span className="font-bold">{presentCount}</span> / 遅刻:{" "}
-              <span className="font-bold">{lateCount}</span> / 欠席:{" "}
+              <span className="font-bold">{lateCount}</span> / 早退:{" "}
+              <span className="font-bold">{earlyLeaveCount}</span> / 欠席:{" "}
               <span className="font-bold">{absentCount}</span>
               <span className="block text-xs text-gray-400">
-                Present: {presentCount} / Late: {lateCount} / Absent: {absentCount}
+                Present: {presentCount} / Late: {lateCount} / Early leave: {earlyLeaveCount} /
+                Absent: {absentCount}
               </span>
             </p>
             <button
@@ -388,6 +410,13 @@ export default function AttendancePage() {
                 >
                   遅刻
                   <span className="block text-[10px] font-normal opacity-70">Late</span>
+                </button>
+                <button
+                  onClick={pickEarlyLeave}
+                  className="rounded-full border py-3 font-semibold bg-blue-50 border-blue-400 text-blue-800"
+                >
+                  早退
+                  <span className="block text-[10px] font-normal opacity-70">Early leave</span>
                 </button>
                 {REASON_OPTIONS.map((opt) => (
                   <button
@@ -500,6 +529,15 @@ export default function AttendancePage() {
                 </p>
               </div>
               <div>
+                <p className="text-3xl font-bold text-blue-600">
+                  {earlyLeaveCount}
+                </p>
+                <p className="text-sm text-gray-500">
+                  早退
+                  <span className="block text-xs">Early leave</span>
+                </p>
+              </div>
+              <div>
                 <p className="text-3xl font-bold text-red-600">
                   {absentCount}
                 </p>
@@ -509,6 +547,21 @@ export default function AttendancePage() {
                 </p>
               </div>
             </div>
+            {earlyLeaveStudents.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">早退の生徒: / Early-leave students:</p>
+                <ul className="flex flex-wrap gap-2">
+                  {earlyLeaveStudents.map((s) => (
+                    <li
+                      key={s.studentId}
+                      className="text-xs bg-blue-50 text-blue-800 rounded-full px-3 py-1"
+                    >
+                      {s.nameEnglish || s.nameKanji}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {lateStudents.length > 0 && (
               <div>
                 <p className="text-xs text-gray-500 mb-1">遅刻の生徒: / Late students:</p>
