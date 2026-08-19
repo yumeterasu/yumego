@@ -17,7 +17,7 @@ function todayDateString() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-type Absence = { status: AbsenceBucket; reason: string };
+type Absence = { status: AbsenceBucket | "late"; reason: string };
 
 export default function AttendancePage() {
   const router = useRouter();
@@ -111,7 +111,9 @@ export default function AttendancePage() {
 
   function handleStudentClick(studentId: string, label: string) {
     if (absences.has(studentId)) {
-      // Already marked absent — tapping again undoes it back to present.
+      // Already marked absent/late — tapping again undoes it back to
+      // present immediately (no popup), since sometimes you know right away
+      // you tapped the wrong thing.
       setAbsences((prev) => {
         const next = new Map(prev);
         next.delete(studentId);
@@ -130,6 +132,21 @@ export default function AttendancePage() {
     setAbsences((prev) => {
       const next = new Map(prev);
       next.set(reasonPickerFor.studentId, { status, reason: label });
+      return next;
+    });
+    setReasonPickerFor(null);
+  }
+
+  // Late is still "present", just delayed, so no absence reason applies.
+  // Knowable right at check-in time, unlike early-leave which only
+  // happens later in the day and stays a Dashboard-only edit. Tapping an
+  // already-late student later reverts straight back to present via the
+  // same generic handleStudentClick check below (no separate undo needed).
+  function pickLate() {
+    if (!reasonPickerFor) return;
+    setAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(reasonPickerFor.studentId, { status: "late", reason: "" });
       return next;
     });
     setReasonPickerFor(null);
@@ -187,9 +204,18 @@ export default function AttendancePage() {
 
   if (!loaded || !selectedClass) return null;
 
-  const presentCount = students.length - absences.size;
-  const absentStudents = students.filter((s) => absences.has(s.studentId));
+  // Late counts toward present, not absent — same rule as everywhere
+  // else in the app.
+  const lateStudents = students.filter(
+    (s) => absences.get(s.studentId)?.status === "late"
+  );
+  const absentStudents = students.filter((s) => {
+    const a = absences.get(s.studentId);
+    return a && a.status !== "late";
+  });
+  const presentCount = students.length - absentStudents.length;
   const absentCount = absentStudents.length;
+  const lateCount = lateStudents.length;
 
   return (
     <main className="min-h-screen p-6 max-w-lg md:max-w-4xl lg:max-w-6xl mx-auto flex flex-col gap-6">
@@ -267,6 +293,7 @@ export default function AttendancePage() {
               const absence = absences.get(s.studentId);
               const isSuspended = absence?.status === "suspended";
               const isAbsent = absence?.status === "absent";
+              const isLate = absence?.status === "late";
               return (
                 <button
                   key={s.studentId}
@@ -276,7 +303,9 @@ export default function AttendancePage() {
                       ? "bg-purple-50 border-purple-500 text-purple-800"
                       : isAbsent
                         ? "bg-red-50 border-red-500 text-red-800"
-                        : "bg-green-50 border-green-400 text-green-800"
+                        : isLate
+                          ? "bg-amber-50 border-amber-500 text-amber-800"
+                          : "bg-green-50 border-green-400 text-green-800"
                   }`}
                 >
                   <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
@@ -285,7 +314,7 @@ export default function AttendancePage() {
                   {label}
                   {absence && (
                     <span className="block text-[10px] font-normal mt-0.5">
-                      {absence.reason}
+                      {absence.reason || (isLate ? "遅刻" : "")}
                     </span>
                   )}
                 </button>
@@ -295,10 +324,11 @@ export default function AttendancePage() {
 
           <div className="flex items-center justify-between border-t pt-4">
             <p className="text-sm">
-              出席: <span className="font-bold">{presentCount}</span> / 欠席:{" "}
+              出席: <span className="font-bold">{presentCount}</span> / 遅刻:{" "}
+              <span className="font-bold">{lateCount}</span> / 欠席:{" "}
               <span className="font-bold">{absentCount}</span>
               <span className="block text-xs text-gray-400">
-                Present: {presentCount} / Absent: {absentCount}
+                Present: {presentCount} / Late: {lateCount} / Absent: {absentCount}
               </span>
             </p>
             <button
@@ -346,12 +376,19 @@ export default function AttendancePage() {
           >
             <p className="font-bold text-center">{reasonPickerFor.label}</p>
             <p className="text-xs text-gray-500 text-center mb-1">
-              理由を選んでください
-              <span className="block">Please choose a reason</span>
+              状況を選んでください
+              <span className="block">Please choose an option</span>
             </p>
 
             {!showOtherInput ? (
               <div className="flex flex-col gap-2">
+                <button
+                  onClick={pickLate}
+                  className="rounded-full border py-3 font-semibold bg-amber-50 border-amber-400 text-amber-800"
+                >
+                  遅刻
+                  <span className="block text-[10px] font-normal opacity-70">Late</span>
+                </button>
                 {REASON_OPTIONS.map((opt) => (
                   <button
                     key={opt.label}
@@ -454,6 +491,15 @@ export default function AttendancePage() {
                 </p>
               </div>
               <div>
+                <p className="text-3xl font-bold text-amber-600">
+                  {lateCount}
+                </p>
+                <p className="text-sm text-gray-500">
+                  遅刻
+                  <span className="block text-xs">Late</span>
+                </p>
+              </div>
+              <div>
                 <p className="text-3xl font-bold text-red-600">
                   {absentCount}
                 </p>
@@ -463,6 +509,21 @@ export default function AttendancePage() {
                 </p>
               </div>
             </div>
+            {lateStudents.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">遅刻の生徒: / Late students:</p>
+                <ul className="flex flex-wrap gap-2">
+                  {lateStudents.map((s) => (
+                    <li
+                      key={s.studentId}
+                      className="text-xs bg-amber-50 text-amber-800 rounded-full px-3 py-1"
+                    >
+                      {s.nameEnglish || s.nameKanji}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {absentStudents.length > 0 && (
               <div>
                 <p className="text-xs text-gray-500 mb-1">欠席の生徒: / Absent students:</p>
