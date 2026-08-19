@@ -485,7 +485,7 @@ export default function SpecialistCoachPage() {
                   return (
                     <th
                       key={day}
-                      className={`border border-gray-300 px-1 py-1 text-center w-11 ${
+                      className={`border border-gray-300 px-1 py-1 text-center w-12 ${
                         isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
                       }`}
                     >
@@ -629,7 +629,7 @@ export default function SpecialistCoachPage() {
                                         className="w-3.5 h-3.5 accent-gray-300 cursor-not-allowed"
                                       />
                                       {isChecked && (
-                                        <span className="text-[9px] text-gray-400">
+                                        <span className="text-xs text-gray-400">
                                           {saved !== undefined ? saved : ""}
                                         </span>
                                       )}
@@ -682,10 +682,10 @@ export default function SpecialistCoachPage() {
                                           onBlur={(e) =>
                                             commitCount(c.categoryId, date, e.target.value, total)
                                           }
-                                          className="w-6 bg-transparent text-center text-[11px] outline-none focus:bg-white/60 rounded disabled:text-gray-300"
+                                          className="w-7 bg-transparent text-center text-sm font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300"
                                         />
                                         {total > 0 && (
-                                          <span className="text-gray-400 text-[9px]">
+                                          <span className="text-gray-400 text-[10px]">
                                             /{total}
                                           </span>
                                         )}
