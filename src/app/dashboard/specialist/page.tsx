@@ -286,10 +286,7 @@ export default function SpecialistCoachPage() {
     }
     if (parsed !== null) {
       parsed = Math.floor(parsed);
-      // Only cap when we actually know the real attendance total for that
-      // day — total===0 usually means it just hasn't been recorded yet,
-      // not that zero kids are allowed, so don't silently clamp to 0.
-      if (total > 0 && parsed > total) parsed = total;
+      if (parsed > total) parsed = total; // can't have more participants than kids present
     }
 
     if (parsed === (original ?? null)) {
@@ -642,12 +639,12 @@ export default function SpecialistCoachPage() {
                               }
 
                               const draft = draftCounts[countKey] ?? "";
-                              // Only gated on checked/busy, NOT on total — the
-                              // attendance count for that day might not be
-                              // recorded yet (or ever, if taken independently),
-                              // and the input shouldn't look "broken" just
-                              // because that denominator happens to be 0.
-                              const countDisabled = !isChecked || isBusy;
+                              // Deliberately also disabled when total===0 (no
+                              // 出席 recorded for this class/date yet) — the
+                              // headcount is "participants out of kids
+                              // present," so it can't mean anything until
+                              // today's attendance has actually been taken.
+                              const countDisabled = !isChecked || total === 0 || isBusy;
 
                               return (
                                 <td
@@ -669,10 +666,10 @@ export default function SpecialistCoachPage() {
                                         <input
                                           type="number"
                                           min={0}
-                                          max={total > 0 ? total : undefined}
+                                          max={total}
                                           value={draft}
                                           disabled={countDisabled}
-                                          placeholder="0"
+                                          placeholder={total === 0 ? "-" : "0"}
                                           onChange={(e) =>
                                             setDraftCounts((prev) => ({
                                               ...prev,
