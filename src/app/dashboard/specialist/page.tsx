@@ -278,7 +278,7 @@ export default function SpecialistCoachPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
             <span className="block text-[10px] font-normal opacity-70">
@@ -291,7 +291,7 @@ export default function SpecialistCoachPage() {
       <div className="flex items-center justify-center gap-4">
         <button
           onClick={goPrevMonth}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="前の月 / Previous month"
         >
           ◀
@@ -301,7 +301,7 @@ export default function SpecialistCoachPage() {
         </p>
         <button
           onClick={goNextMonth}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="次の月 / Next month"
         >
           ▶
@@ -478,7 +478,7 @@ export default function SpecialistCoachPage() {
         <button
           onClick={addCategory}
           disabled={addingCategory || !newCategoryName.trim()}
-          className="rounded-full bg-black text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+          className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
         >
           ＋ 追加 / Add
         </button>

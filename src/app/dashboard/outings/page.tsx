@@ -234,7 +234,7 @@ export default function OutingsPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
             <span className="block text-[10px] font-normal opacity-70">
@@ -247,7 +247,7 @@ export default function OutingsPage() {
       <div className="flex items-center justify-center gap-4">
         <button
           onClick={goPrevMonth}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="前の月 / Previous month"
         >
           ◀
@@ -257,7 +257,7 @@ export default function OutingsPage() {
         </p>
         <button
           onClick={goNextMonth}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="次の月 / Next month"
         >
           ▶
@@ -266,7 +266,7 @@ export default function OutingsPage() {
 
       <button
         onClick={openAddForm}
-        className="self-center rounded-full bg-black text-white px-5 py-2.5 text-sm font-semibold"
+        className="self-center rounded-full bg-green-600 text-white px-5 py-2.5 text-sm font-semibold"
       >
         ＋ 退室を記録
         <span className="block text-[10px] font-normal opacity-70">Record departure</span>
@@ -325,7 +325,7 @@ export default function OutingsPage() {
                   )}
                   <button
                     onClick={() => openEditForm(entry)}
-                    className="rounded-full border border-gray-300 text-gray-700 px-3 py-1.5 text-xs font-semibold"
+                    className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold"
                   >
                     編集 / Edit
                   </button>
@@ -484,14 +484,14 @@ export default function OutingsPage() {
               <button
                 onClick={() => setForm(null)}
                 disabled={saving}
-                className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+                className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
               >
                 キャンセル / Cancel
               </button>
               <button
                 onClick={submitForm}
                 disabled={saving}
-                className="rounded-full bg-black text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+                className="rounded-full bg-green-600 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
               >
                 {saving ? "保存中... / Saving..." : "保存する / Save"}
               </button>

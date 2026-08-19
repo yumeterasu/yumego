@@ -157,7 +157,7 @@ export default function SummaryPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
             <span className="block text-[10px] font-normal opacity-70">
@@ -166,14 +166,14 @@ export default function SummaryPage() {
           </Link>
           <Link
             href="/select-class"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             🏠 トップページ
             <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
           <button
             onClick={() => window.print()}
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             🖨️ 印刷
             <span className="block text-[10px] font-normal opacity-70">Print</span>
@@ -184,7 +184,7 @@ export default function SummaryPage() {
       <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={() => setFiscalYearStart((y) => y - 1)}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="前年度 / Previous fiscal year"
         >
           ◀
@@ -194,7 +194,7 @@ export default function SummaryPage() {
         </p>
         <button
           onClick={() => setFiscalYearStart((y) => y + 1)}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="翌年度 / Next fiscal year"
         >
           ▶

@@ -234,7 +234,7 @@ export default function StudentsPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             ← 出席簿に戻る
             <span className="block text-[10px] font-normal opacity-70">
@@ -243,7 +243,7 @@ export default function StudentsPage() {
           </Link>
           <Link
             href="/select-class"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             🏠 トップページ
             <span className="block text-[10px] font-normal opacity-70">Home</span>
@@ -256,10 +256,10 @@ export default function StudentsPage() {
           <button
             type="button"
             onClick={() => setAddMode("single")}
-            className={`flex-1 rounded-full py-1.5 text-sm font-semibold border ${
+            className={`flex-1 rounded-full py-1.5 text-sm font-semibold ${
               addMode === "single"
-                ? "bg-black text-white border-black"
-                : "border-gray-300 text-gray-500"
+                ? "bg-green-600 text-white"
+                : "bg-gray-100 text-gray-500"
             }`}
           >
             1人ずつ追加 / One at a time
@@ -267,10 +267,10 @@ export default function StudentsPage() {
           <button
             type="button"
             onClick={() => setAddMode("bulk")}
-            className={`flex-1 rounded-full py-1.5 text-sm font-semibold border ${
+            className={`flex-1 rounded-full py-1.5 text-sm font-semibold ${
               addMode === "bulk"
-                ? "bg-black text-white border-black"
-                : "border-gray-300 text-gray-500"
+                ? "bg-green-600 text-white"
+                : "bg-gray-100 text-gray-500"
             }`}
           >
             まとめて追加 / Add many at once
@@ -303,7 +303,7 @@ export default function StudentsPage() {
             <button
               type="submit"
               disabled={saving || !nameKanji.trim()}
-              className="rounded-full bg-black text-white py-2 disabled:opacity-40"
+              className="rounded-full bg-green-600 text-white py-2 disabled:opacity-40"
             >
               {saving ? "追加中... / Adding..." : "生徒を追加 / Add student"}
             </button>
@@ -332,7 +332,7 @@ export default function StudentsPage() {
               type="button"
               onClick={handleAddBulk}
               disabled={saving || bulkParsed.length === 0}
-              className="rounded-full bg-black text-white py-2 disabled:opacity-40"
+              className="rounded-full bg-green-600 text-white py-2 disabled:opacity-40"
             >
               {saving
                 ? "追加中... / Adding..."

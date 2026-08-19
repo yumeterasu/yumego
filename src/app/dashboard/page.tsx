@@ -524,7 +524,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <Link
             href="/students"
-            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
             生徒管理
             <span className="block text-[10px] font-normal opacity-70">
@@ -533,14 +533,14 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/dashboard/summary"
-            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
             年間まとめ
             <span className="block text-[10px] font-normal opacity-70">Annual Summary</span>
           </Link>
           <Link
             href="/dashboard/specialist"
-            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
             専門コーチ予定
             <span className="block text-[10px] font-normal opacity-70">
@@ -549,7 +549,7 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/dashboard/specialist-count"
-            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
             専門コーチ人数
             <span className="block text-[10px] font-normal opacity-70">
@@ -558,7 +558,7 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/dashboard/outings"
-            className="rounded-full border border-gray-300 text-gray-700 px-5 py-2.5 font-semibold text-sm"
+            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
             入退出記録
             <span className="block text-[10px] font-normal opacity-70">
@@ -567,7 +567,7 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/attendance"
-            className="rounded-full bg-black text-white px-5 py-2.5 font-semibold text-sm"
+            className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
           >
             出席確認
             <span className="block text-[10px] font-normal opacity-70">
@@ -576,14 +576,14 @@ export default function DashboardPage() {
           </Link>
           <Link
             href="/select-class"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             🏠 トップページ
             <span className="block text-[10px] font-normal opacity-70">Home</span>
           </Link>
           <button
             onClick={() => window.print()}
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             🖨️ 印刷
             <span className="block text-[10px] font-normal opacity-70">Print</span>
@@ -594,7 +594,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={goPrevMonth}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="前の月 / Previous month"
         >
           ◀
@@ -604,7 +604,7 @@ export default function DashboardPage() {
         </p>
         <button
           onClick={goNextMonth}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="次の月 / Next month"
         >
           ▶
@@ -941,7 +941,7 @@ export default function DashboardPage() {
                   ))}
                   <button
                     onClick={() => setShowOtherInput(true)}
-                    className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm"
+                    className="rounded-full bg-gray-100 text-gray-600 font-semibold py-2.5 text-sm"
                   >
                     その他
                     <span className="block text-[10px] font-normal opacity-70">Other</span>
@@ -1001,7 +1001,7 @@ export default function DashboardPage() {
                 <button
                   onClick={() => applyEdit(otherStatus, otherText.trim())}
                   disabled={!otherText.trim()}
-                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
                 >
                   適用する / Apply
                 </button>
@@ -1100,7 +1100,7 @@ export default function DashboardPage() {
                 <button
                   onClick={confirmBulk}
                   disabled={bulkApplying}
-                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
                 >
                   {bulkApplying ? "登録中... / Registering..." : "登録する / Register"}
                 </button>
@@ -1208,7 +1208,7 @@ export default function DashboardPage() {
                   <button
                     onClick={() => setBulkShowOtherInput(true)}
                     disabled={!bulkStudentId}
-                    className="rounded-full border border-gray-300 text-gray-700 font-semibold py-2.5 text-sm disabled:opacity-40"
+                    className="rounded-full bg-gray-100 text-gray-600 font-semibold py-2.5 text-sm disabled:opacity-40"
                   >
                     その他
                     <span className="block text-[10px] font-normal opacity-70">Other</span>
@@ -1263,7 +1263,7 @@ export default function DashboardPage() {
                     selectBulkChoice(bulkOtherStatus, bulkOtherText.trim(), bulkOtherText.trim())
                   }
                   disabled={!bulkOtherText.trim()}
-                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
                 >
                   次へ / Next
                 </button>

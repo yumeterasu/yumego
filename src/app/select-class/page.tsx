@@ -100,7 +100,7 @@ export default function SelectClassPage() {
       <div className="flex items-center gap-4">
         <button
           onClick={() => setSelectedDate((d) => addDays(d, -1))}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
           aria-label="前の日 / Previous day"
         >
           ◀
@@ -119,7 +119,7 @@ export default function SelectClassPage() {
         <button
           onClick={() => setSelectedDate((d) => addDays(d, 1))}
           disabled={selectedDate >= today}
-          className="rounded-full border border-gray-300 w-9 h-9 flex items-center justify-center disabled:opacity-30"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center disabled:opacity-30"
           aria-label="次の日 / Next day"
         >
           ▶

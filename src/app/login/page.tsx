@@ -52,7 +52,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={submitting || !password}
-          className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+          className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
         >
           {submitting ? (
             <Bi ja="確認中..." en="Checking..." />

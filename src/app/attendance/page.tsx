@@ -245,7 +245,7 @@ export default function AttendancePage() {
         <div className="flex items-center gap-2">
           <Link
             href="/dashboard"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold"
           >
             ← 出席簿に戻る
             <span className="block text-[10px] font-normal opacity-70">
@@ -254,7 +254,7 @@ export default function AttendancePage() {
           </Link>
           <Link
             href="/select-class"
-            className="rounded-full border border-gray-300 text-gray-700 px-4 py-2 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold"
           >
             🏠 トップページ
             <span className="block text-[10px] font-normal opacity-70">Home</span>
@@ -356,7 +356,7 @@ export default function AttendancePage() {
             <button
               onClick={() => setShowConfirmModal(true)}
               disabled={submitting}
-              className="rounded-full bg-black text-white px-6 py-3 font-semibold disabled:opacity-40"
+              className="rounded-full bg-green-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
             >
               確定する
               <span className="block text-[10px] font-normal opacity-70">Confirm</span>
@@ -434,7 +434,7 @@ export default function AttendancePage() {
                 ))}
                 <button
                   onClick={() => setShowOtherInput(true)}
-                  className="rounded-full border border-gray-300 text-gray-700 font-semibold py-3"
+                  className="rounded-full bg-gray-100 text-gray-600 font-semibold py-3"
                 >
                   その他
                   <span className="block text-[10px] font-normal opacity-70">Other</span>
@@ -484,7 +484,7 @@ export default function AttendancePage() {
                 <button
                   onClick={applyOtherReason}
                   disabled={!otherText.trim()}
-                  className="rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
                 >
                   適用する / Apply
                 </button>
@@ -612,7 +612,7 @@ export default function AttendancePage() {
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="flex-1 rounded-full bg-black text-white py-3 font-semibold disabled:opacity-40"
+                className="flex-1 rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
               >
                 {submitting ? "送信中... / Sending..." : "送信する / Submit"}
               </button>
