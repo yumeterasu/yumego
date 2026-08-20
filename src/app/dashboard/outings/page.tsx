@@ -241,6 +241,13 @@ export default function OutingsPage() {
               Back to attendance
             </span>
           </Link>
+          <Link
+            href="/select-class"
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="トップページ / Home"
+          >
+            🏠
+          </Link>
         </div>
       </div>
 

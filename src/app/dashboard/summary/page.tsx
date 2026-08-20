@@ -166,17 +166,18 @@ export default function SummaryPage() {
           </Link>
           <Link
             href="/select-class"
-            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="トップページ / Home"
           >
-            🏠 トップページ
-            <span className="block text-[10px] font-normal opacity-70">Home</span>
+            🏠
           </Link>
+          <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
           <button
             onClick={() => window.print()}
-            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="印刷 / Print"
           >
-            🖨️ 印刷
-            <span className="block text-[10px] font-normal opacity-70">Print</span>
+            🖨️
           </button>
           <button
             onClick={() =>
@@ -184,10 +185,10 @@ export default function SummaryPage() {
                 selectedClass
               )}&fiscalYear=${fiscalYearStart}`)
             }
-            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="Excelエクスポート / Excel Export"
           >
-            📊 Excel
-            <span className="block text-[10px] font-normal opacity-70">Export</span>
+            📊
           </button>
         </div>
       </div>
