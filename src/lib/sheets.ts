@@ -325,12 +325,22 @@ export async function getAttendanceSummaryForDate(
   date: string // "2026-08-06"
 ): Promise<Record<string, number>> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SHEET_ID,
-    range: "Attendance!A2:F",
-  });
+  const [attendanceRes, studentsRes] = await Promise.all([
+    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Attendance!A2:F" }),
+    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Students!A2:E" }),
+  ]);
 
-  const rows = res.data.values ?? [];
+  // Only count rows for students still on the active roster — otherwise a
+  // withdrawn/reset student's old attendance row keeps inflating this
+  // live "who's checked in today" badge forever, even for a class with
+  // zero active students (e.g. right after the end-of-term Reset).
+  const activeStudentIds = new Set(
+    (studentsRes.data.values ?? [])
+      .filter((row) => (row[4] ?? "").toString().toUpperCase() === "TRUE")
+      .map((row) => (row[0] ?? "").toString())
+  );
+
+  const rows = attendanceRes.data.values ?? [];
   const summary: Record<string, number> = {};
 
   for (const row of rows) {
@@ -338,6 +348,8 @@ export async function getAttendanceSummaryForDate(
     if (rowDate !== date) continue;
     const className = (row[1] ?? "").toString();
     if (!className) continue;
+    const studentId = (row[2] ?? "").toString();
+    if (!activeStudentIds.has(studentId)) continue;
     const status = parseStatus((row[3] ?? "").toString());
     if (!(className in summary)) summary[className] = 0;
     if (countsAsPresent(status)) summary[className]++;
