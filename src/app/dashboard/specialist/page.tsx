@@ -436,7 +436,7 @@ export default function SpecialistCoachPage() {
         <div>
           <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
           <p className="text-xs text-gray-400">{branch} Specialist Coach</p>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-gray-500 print:hidden">
             編集できるのは{myGrade}の行だけです（{selectedClass}）。チェックした日だけ人数を入力できます
             <span className="block text-xs">
               Only the {myGrade} row is editable ({selectedClass}). The count can only be
@@ -461,10 +461,29 @@ export default function SpecialistCoachPage() {
           >
             🏠
           </Link>
+          <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
+          <button
+            onClick={() => window.print()}
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="印刷 / Print"
+          >
+            🖨️
+          </button>
+          <button
+            onClick={() =>
+              (window.location.href = `/api/export/specialist?branch=${encodeURIComponent(
+                branch
+              )}&month=${yearMonth}`)
+            }
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="Excelエクスポート / Excel Export"
+          >
+            📊
+          </button>
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={goPrevMonth}
           className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
@@ -484,13 +503,17 @@ export default function SpecialistCoachPage() {
         </button>
       </div>
 
+      <p className="text-lg font-bold text-center hidden print:block">
+        {branch} {year}年{month}月
+      </p>
+
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
-          <table className="text-sm border-collapse min-w-max">
+          <table className="text-sm border-collapse min-w-max print-table-specialist">
             <thead>
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-28">
@@ -610,7 +633,7 @@ export default function SpecialistCoachPage() {
                                   <button
                                     onClick={() => deleteCategory(c.categoryId, c.name)}
                                     aria-label={`${c.name}を削除`}
-                                    className="text-gray-300 hover:text-red-500 text-xs px-1"
+                                    className="text-gray-300 hover:text-red-500 text-xs px-1 print:hidden"
                                   >
                                     ✕
                                   </button>
@@ -750,7 +773,7 @@ export default function SpecialistCoachPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 self-center">
+      <div className="flex items-center gap-2 self-center print:hidden">
         <input
           type="text"
           value={newCategoryName}

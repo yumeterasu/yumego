@@ -81,4 +81,24 @@ body {
     background: transparent !important;
     padding: 0 !important;
   }
+
+  .print-table-specialist {
+    font-size: 7px;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .print-table-specialist th,
+  .print-table-specialist td {
+    padding: 1px 2px !important;
+  }
+  .print-table-specialist input[type="text"],
+  .print-table-specialist input[type="number"] {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+  }
+  .print-table-specialist input[type="checkbox"] {
+    width: 8px !important;
+    height: 8px !important;
+  }
 }
