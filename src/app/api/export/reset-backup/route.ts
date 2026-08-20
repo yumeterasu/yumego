@@ -3,19 +3,13 @@ import ExcelJS from "exceljs";
 import {
   getAllStudentsByClass,
   getAllAttendanceForClass,
+  getClassCheckLabels,
   getSpecialistCategories,
   getAllSpecialistAttendanceForGrade,
   getAllSpecialistParticipationForGrade,
 } from "@/lib/sheets";
 import { classNameToBranchGrade } from "@/lib/classes";
-
-const STATUS_LABEL_JA: Record<string, string> = {
-  present: "出席",
-  absent: "欠席",
-  late: "遅刻",
-  early_leave: "早退",
-  suspended: "出席停止",
-};
+import { addMonthlySheet, addAnnualSheet, yearMonthToFiscalYearStart } from "@/lib/exportSheets";
 
 function headerRowStyle(row: ExcelJS.Row) {
   row.font = { bold: true };
@@ -27,9 +21,11 @@ function headerRowStyle(row: ExcelJS.Row) {
 
 // GET /api/export/reset-backup?class=...
 // Full-history backup for one class, generated right before the end-of-term
-// Reset button wipes its roster and its Coach Schedule/Headcount data. Not
-// scoped to a fiscal year like the other exports — everything ever
-// recorded, since after Reset the app itself won't show it anymore.
+// Reset button wipes its roster and its Coach Schedule/Headcount data. The
+// 年間まとめ and monthly sheets are built with the exact same layout as the
+// Dashboard's own 📊 Excel export buttons (see src/lib/exportSheets.ts) —
+// one sheet per fiscal year and per calendar month actually present in the
+// data, so nothing is lost even from years before the current one.
 export async function GET(req: NextRequest) {
   const className = req.nextUrl.searchParams.get("class");
   if (!className) {
@@ -42,15 +38,16 @@ export async function GET(req: NextRequest) {
   const { branch, grade } = branchGrade;
 
   try {
-    const [allStudents, attendance, categories, schedule, headcount] = await Promise.all([
-      getAllStudentsByClass(className),
-      getAllAttendanceForClass(className),
-      getSpecialistCategories(branch),
-      getAllSpecialistAttendanceForGrade(branch, grade),
-      getAllSpecialistParticipationForGrade(branch, grade),
-    ]);
+    const [allStudents, attendance, checkLabels, categories, schedule, headcount] =
+      await Promise.all([
+        getAllStudentsByClass(className),
+        getAllAttendanceForClass(className),
+        getClassCheckLabels(className),
+        getSpecialistCategories(branch),
+        getAllSpecialistAttendanceForGrade(branch, grade),
+        getAllSpecialistParticipationForGrade(branch, grade),
+      ]);
 
-    const nameById = new Map(allStudents.map((s) => [s.studentId, s]));
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
     const activeStudents = allStudents.filter((s) => s.active);
 
@@ -66,25 +63,44 @@ export async function GET(req: NextRequest) {
     });
     rosterSheet.columns = [{ width: 20 }, { width: 20 }, { width: 30 }];
 
-    // Sheet 2: every attendance row this class ever recorded, in full —
-    // not a monthly/annual summary, so nothing is lost even from before
-    // the current fiscal year.
-    const attendanceSheet = workbook.addWorksheet("出席記録");
-    headerRowStyle(attendanceSheet.addRow(["日付", "名前", "状態", "理由"]));
-    attendance.forEach((r) => {
-      const student = nameById.get(r.studentId);
-      const name = student
-        ? student.nameEnglish
-          ? `${student.nameKanji} (${student.nameEnglish})`
-          : student.nameKanji
-        : r.studentId;
-      attendanceSheet.addRow([r.date, name, STATUS_LABEL_JA[r.status] ?? r.status, r.reason]);
-    });
-    attendanceSheet.columns = [{ width: 12 }, { width: 24 }, { width: 10 }, { width: 24 }];
+    // The monthly/annual sheets use EVERY student who ever has an
+    // attendance row for this class — not just activeStudents — so a kid
+    // who left mid-year (individually removed before this Reset) still
+    // shows up in the historical record instead of silently dropping out.
+    const monthsPresent = Array.from(new Set(attendance.map((r) => r.date.slice(0, 7)))).sort();
+    const fiscalYearsPresent = Array.from(
+      new Set(monthsPresent.map((ym) => yearMonthToFiscalYearStart(ym)))
+    ).sort((a, b) => a - b);
 
-    // Sheet 3: 専門コーチスケジュール — every day this grade was checked
-    // off for each category. Categories themselves are branch-wide and
-    // NOT deleted (other grades in this branch may still use them).
+    // Sheets: 年間まとめ, one per fiscal year actually present.
+    for (const fiscalYearStart of fiscalYearsPresent) {
+      const startDate = `${fiscalYearStart}-04-01`;
+      const endDate = `${fiscalYearStart + 1}-03-31`;
+      const yearRecords = attendance.filter((r) => r.date >= startDate && r.date <= endDate);
+      addAnnualSheet(workbook, {
+        sheetName: `${fiscalYearStart}年度まとめ`,
+        fiscalYearStart,
+        students: allStudents,
+        records: yearRecords,
+      });
+    }
+
+    // Sheets: one per calendar month actually present, same day-by-day
+    // grid as the Dashboard's own monthly export.
+    for (const yearMonth of monthsPresent) {
+      const monthRecords = attendance.filter((r) => r.date.startsWith(yearMonth));
+      addMonthlySheet(workbook, {
+        sheetName: yearMonth,
+        yearMonth,
+        students: allStudents,
+        records: monthRecords,
+        checkLabels,
+      });
+    }
+
+    // 専門コーチスケジュール — every day this grade was checked off for
+    // each category. Categories themselves are branch-wide and NOT
+    // deleted (other grades in this branch may still use them).
     const scheduleSheet = workbook.addWorksheet("コーチスケジュール");
     headerRowStyle(scheduleSheet.addRow(["日付", "種目"]));
     schedule.forEach((r) => {
@@ -92,7 +108,7 @@ export async function GET(req: NextRequest) {
     });
     scheduleSheet.columns = [{ width: 12 }, { width: 20 }];
 
-    // Sheet 4: 専門コーチ人数 — participant counts per category per day.
+    // 専門コーチ人数 — participant counts per category per day.
     const headcountSheet = workbook.addWorksheet("コーチ人数");
     headerRowStyle(headcountSheet.addRow(["日付", "種目", "人数"]));
     headcount.forEach((r) => {
