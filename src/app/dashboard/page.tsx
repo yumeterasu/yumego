@@ -137,6 +137,23 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  // Brief corner notification when a チェック1/2/3 box gets unchecked —
+  // lighter-weight than a confirm dialog (these boxes get tapped many
+  // times a day and any mistake is immediately visible in the same
+  // table), but still surfaces that it happened.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback((message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast(message);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherText, setOtherText] = useState("");
@@ -250,8 +267,17 @@ export default function DashboardPage() {
   }
 
   async function toggleCheck(studentId: string, column: "check1" | "check2" | "check3") {
-    const current = students.find((s) => s.studentId === studentId)?.[column] ?? false;
+    const student = students.find((s) => s.studentId === studentId);
+    const current = student?.[column] ?? false;
     const next = !current;
+
+    if (!next && student) {
+      const label = student.nameEnglish || student.nameKanji;
+      const columnLabel =
+        checkLabels[`${column}Label` as const] ||
+        { check1: "チェック1", check2: "チェック2", check3: "チェック3" }[column];
+      showToast(`${label}：「${columnLabel}」のチェックを外しました`);
+    }
 
     // optimistic update
     setStudents((prev) =>
@@ -1368,6 +1394,14 @@ export default function DashboardPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 print:hidden">
+          <div className="bg-gray-900 text-white text-sm rounded-full px-4 py-2.5 shadow-lg">
+            {toast}
           </div>
         </div>
       )}
