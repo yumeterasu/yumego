@@ -297,6 +297,13 @@ export default function OutingsPage() {
         </div>
         <div className="flex items-center gap-2">
           <Link
+            href="/dashboard/outings/summary"
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+          >
+            入退出まとめ
+            <span className="block text-[10px] font-normal opacity-70">Summary</span>
+          </Link>
+          <Link
             href="/dashboard"
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
