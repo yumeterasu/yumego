@@ -2,11 +2,11 @@ export const CLASSES = [
   "プロンポン　年長",
   "プロンポン　年中",
   "プロンポン　年少",
-  "プロンポン　小学生",
+  "プロンポン　Summer",
   "トンロー　年長",
   "トンロー　年中",
   "トンロー　年少",
-  "トンロー　小学生",
+  "トンロー　Summer",
 ] as const;
 
 export type ClassName = (typeof CLASSES)[number];
@@ -53,12 +53,12 @@ export function classNameToEnglish(className: string): string {
   const bg = classNameToBranchGrade(className);
   if (bg) return `${BRANCH_EN[bg.branch]} · ${GRADE_EN[bg.grade]}`;
 
-  // 小学生 classes aren't part of the 長/中/少 continuum (no specialist-coach
-  // grade row, no promote/reset grade mapping) but still need an English
-  // gloss like every other class.
+  // Summer classes aren't part of the 長/中/少 continuum (no specialist-
+  // coach grade row, no promote/reset grade mapping) but still need an
+  // English gloss like every other class.
   const [branch, suffix] = className.split("　");
-  if ((branch === "プロンポン" || branch === "トンロー") && suffix === "小学生") {
-    return `${BRANCH_EN[branch]} · Elementary School`;
+  if ((branch === "プロンポン" || branch === "トンロー") && suffix === "Summer") {
+    return `${BRANCH_EN[branch]} · Summer Program`;
   }
   return "";
 }

@@ -126,7 +126,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
 
 /**
  * Every active student across all classes in one branch (all grades,
- * including 小学生) — used by 送迎管理, which is a whole-branch roster,
+ * including Summer) — used by 送迎管理, which is a whole-branch roster,
  * not scoped to a single locked-in class the way every other page is.
  */
 export async function getStudentsByBranch(branch: string): Promise<Student[]> {
