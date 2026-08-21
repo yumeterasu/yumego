@@ -124,6 +124,33 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
     .filter((s) => s.studentId && s.className === className && s.active);
 }
 
+/**
+ * Every active student across all classes in one branch (all grades,
+ * including 小学生) — used by 送迎管理, which is a whole-branch roster,
+ * not scoped to a single locked-in class the way every other page is.
+ */
+export async function getStudentsByBranch(branch: string): Promise<Student[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:I",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): Student => ({
+      studentId: row[0] ?? "",
+      nameKanji: row[1] ?? "",
+      nameEnglish: row[2] ?? "",
+      className: row[3] ?? "",
+      active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
+      remark: row[5] ?? "",
+      check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
+      check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
+      check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
+    }))
+    .filter((s) => s.studentId && s.active && s.className.startsWith(branch));
+}
+
 /** Append a new student row to the Students sheet. */
 export async function addStudent(
   student: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3">
@@ -1274,5 +1301,78 @@ export async function deleteOutingDestination(id: string): Promise<void> {
         },
       ],
     },
+  });
+}
+
+// 送迎表 — daily 登園 (arrival) / 降園 (departure) time per student, for
+// the whole-branch 送迎管理 roster. One row per date+student, same
+// upsert-in-place shape as Attendance so re-saving a day never
+// accumulates duplicate rows.
+export type PickupRecord = {
+  date: string; // "YYYY-MM-DD"
+  studentId: string;
+  arrivalTime: string; // "HH:MM", "" if not recorded yet
+  departureTime: string; // "HH:MM", "" if not recorded yet
+};
+
+/** Every PickupLog row for a given month, across all students/branches — callers filter to their branch's studentIds. */
+export async function getPickupRecordsForMonth(yearMonth: string): Promise<PickupRecord[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "PickupLog!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): PickupRecord => ({
+      date: (row[0] ?? "").toString(),
+      studentId: (row[1] ?? "").toString(),
+      arrivalTime: (row[2] ?? "").toString(),
+      departureTime: (row[3] ?? "").toString(),
+    }))
+    .filter((r) => r.date.startsWith(yearMonth) && r.studentId);
+}
+
+/**
+ * Set one student's 登園/降園 time for one day. Only the field(s) passed
+ * are changed — passing just arrivalTime leaves an existing departureTime
+ * (or vice versa) alone, since the two are usually recorded hours apart.
+ */
+export async function upsertPickupRecord(
+  date: string,
+  studentId: string,
+  fields: { arrivalTime?: string; departureTime?: string }
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "PickupLog!A2:D",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === date && (row[1] ?? "") === studentId
+  );
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "PickupLog!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[date, studentId, fields.arrivalTime ?? "", fields.departureTime ?? ""]],
+      },
+    });
+    return;
+  }
+
+  const rowNum = rowOffset + 2;
+  const current = rows[rowOffset];
+  const nextArrival = fields.arrivalTime ?? current[2] ?? "";
+  const nextDeparture = fields.departureTime ?? current[3] ?? "";
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `PickupLog!C${rowNum}:D${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[nextArrival, nextDeparture]] },
   });
 }
