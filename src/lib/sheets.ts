@@ -1353,11 +1353,15 @@ export async function upsertPickupRecord(
     (row) => (row[0] ?? "") === date && (row[1] ?? "") === studentId
   );
 
+  // RAW (not USER_ENTERED) specifically for the time columns — Sheets'
+  // auto-parsing recognizes "08:15" as a time value and re-serializes it
+  // without the leading zero ("8:15") on read, silently corrupting the
+  // format. RAW stores the literal string, no interpretation.
   if (rowOffset === -1) {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
       range: "PickupLog!A:D",
-      valueInputOption: "USER_ENTERED",
+      valueInputOption: "RAW",
       requestBody: {
         values: [[date, studentId, fields.arrivalTime ?? "", fields.departureTime ?? ""]],
       },
@@ -1372,7 +1376,7 @@ export async function upsertPickupRecord(
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
     range: `PickupLog!C${rowNum}:D${rowNum}`,
-    valueInputOption: "USER_ENTERED",
+    valueInputOption: "RAW",
     requestBody: { values: [[nextArrival, nextDeparture]] },
   });
 }
