@@ -7,9 +7,9 @@ import type { Student, PickupRecord } from "@/lib/sheets";
 import { branchToEnglish, type Branch } from "@/lib/classes";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
-// Display order for grouping the roster — Summer last, matching how it
-// was added onto the end of each branch's class list.
-const CLASS_ORDER = ["年長", "年中", "年少", "Summer"];
+// Display order for grouping the roster — 夏 (Summer) last, matching how
+// it was added onto the end of each branch's class list.
+const CLASS_ORDER = ["年長", "年中", "年少", "夏"];
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();

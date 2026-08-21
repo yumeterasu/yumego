@@ -8,13 +8,13 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { Bi } from "@/components/Bilingual";
 
 const PROMPONG_REGULAR = CLASSES.filter(
-  (c) => c.startsWith("プロンポン") && !c.endsWith("Summer")
+  (c) => c.startsWith("プロンポン") && !c.endsWith("夏")
 );
-const PROMPONG_SUMMER = CLASSES.filter((c) => c.startsWith("プロンポン") && c.endsWith("Summer"));
+const PROMPONG_SUMMER = CLASSES.filter((c) => c.startsWith("プロンポン") && c.endsWith("夏"));
 const THONGLOR_REGULAR = CLASSES.filter(
-  (c) => c.startsWith("トンロー") && !c.endsWith("Summer")
+  (c) => c.startsWith("トンロー") && !c.endsWith("夏")
 );
-const THONGLOR_SUMMER = CLASSES.filter((c) => c.startsWith("トンロー") && c.endsWith("Summer"));
+const THONGLOR_SUMMER = CLASSES.filter((c) => c.startsWith("トンロー") && c.endsWith("夏"));
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
