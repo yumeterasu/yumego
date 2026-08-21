@@ -285,7 +285,7 @@ export default function StudentsPage() {
   if (!loaded || !selectedClass) return null;
 
   // Reset deletes Coach Schedule/Headcount by branch+grade, which only
-  // exists for 長/中/少 classes — 夏 has no grade row there, so hide
+  // exists for 長/中/少 classes — 小学生 has no grade row there, so hide
   // the button rather than let it fail on a class it can't ever resolve.
   const hasBranchGrade = classNameToBranchGrade(selectedClass) !== null;
 

@@ -562,7 +562,7 @@ export default function DashboardPage() {
   if (!loaded || !selectedClass) return null;
 
   // 専門コーチ (and the Reset button on 生徒管理) are scoped to the
-  // 長/中/少 grade continuum — 夏 classes don't have a grade row there,
+  // 長/中/少 grade continuum — 小学生 classes don't have a grade row there,
   // so hide the button rather than let it silently bounce back from a
   // dead-end redirect.
   const hasBranchGrade = classNameToBranchGrade(selectedClass) !== null;

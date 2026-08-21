@@ -8,13 +8,17 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { Bi } from "@/components/Bilingual";
 
 const PROMPONG_REGULAR = CLASSES.filter(
-  (c) => c.startsWith("プロンポン") && !c.endsWith("夏")
+  (c) => c.startsWith("プロンポン") && !c.endsWith("小学生")
 );
-const PROMPONG_SUMMER = CLASSES.filter((c) => c.startsWith("プロンポン") && c.endsWith("夏"));
+const PROMPONG_ELEMENTARY = CLASSES.filter(
+  (c) => c.startsWith("プロンポン") && c.endsWith("小学生")
+);
 const THONGLOR_REGULAR = CLASSES.filter(
-  (c) => c.startsWith("トンロー") && !c.endsWith("夏")
+  (c) => c.startsWith("トンロー") && !c.endsWith("小学生")
 );
-const THONGLOR_SUMMER = CLASSES.filter((c) => c.startsWith("トンロー") && c.endsWith("夏"));
+const THONGLOR_ELEMENTARY = CLASSES.filter(
+  (c) => c.startsWith("トンロー") && c.endsWith("小学生")
+);
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -154,8 +158,10 @@ export default function SelectClassPage() {
         {[...PROMPONG_REGULAR, ...THONGLOR_REGULAR].map((name) => (
           <ClassButton key={name} name={name} />
         ))}
-        <div className="col-span-full border-t border-gray-200 my-1" />
-        {[...PROMPONG_SUMMER, ...THONGLOR_SUMMER].map((name) => (
+        {(PROMPONG_ELEMENTARY.length > 0 || THONGLOR_ELEMENTARY.length > 0) && (
+          <div className="col-span-full border-t border-gray-200 my-1" />
+        )}
+        {[...PROMPONG_ELEMENTARY, ...THONGLOR_ELEMENTARY].map((name) => (
           <ClassButton key={name} name={name} />
         ))}
       </div>
@@ -170,10 +176,14 @@ export default function SelectClassPage() {
           {PROMPONG_REGULAR.map((name) => (
             <ClassButton key={name} name={name} />
           ))}
-          <div className="border-t border-gray-200 my-1" />
-          {PROMPONG_SUMMER.map((name) => (
-            <ClassButton key={name} name={name} />
-          ))}
+          {PROMPONG_ELEMENTARY.length > 0 && (
+            <>
+              <div className="border-t border-gray-200 my-1" />
+              {PROMPONG_ELEMENTARY.map((name) => (
+                <ClassButton key={name} name={name} />
+              ))}
+            </>
+          )}
         </div>
         <div className="flex flex-col gap-3">
           <h2 className="text-lg font-bold text-center text-gray-700">
@@ -183,10 +193,14 @@ export default function SelectClassPage() {
           {THONGLOR_REGULAR.map((name) => (
             <ClassButton key={name} name={name} />
           ))}
-          <div className="border-t border-gray-200 my-1" />
-          {THONGLOR_SUMMER.map((name) => (
-            <ClassButton key={name} name={name} />
-          ))}
+          {THONGLOR_ELEMENTARY.length > 0 && (
+            <>
+              <div className="border-t border-gray-200 my-1" />
+              {THONGLOR_ELEMENTARY.map((name) => (
+                <ClassButton key={name} name={name} />
+              ))}
+            </>
+          )}
         </div>
       </div>
     </main>
