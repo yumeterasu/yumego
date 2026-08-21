@@ -291,15 +291,6 @@ export default function AttendancePage() {
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href="/dashboard"
-            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold"
-          >
-            ← 出席簿に戻る
-            <span className="block text-[10px] font-normal opacity-70">
-              Back to attendance
-            </span>
-          </Link>
-          <Link
             href="/select-class"
             className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
             aria-label="トップページ / Home"
@@ -439,14 +430,24 @@ export default function AttendancePage() {
                 Absent: {absentCount}
               </span>
             </p>
-            <button
-              onClick={() => setShowConfirmModal(true)}
-              disabled={submitting}
-              className="rounded-full bg-green-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
-            >
-              確定する
-              <span className="block text-[10px] font-normal opacity-70">Confirm</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push("/dashboard")}
+                disabled={submitting}
+                className="rounded-full bg-red-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
+              >
+                キャンセル
+                <span className="block text-[10px] font-normal opacity-70">Cancel</span>
+              </button>
+              <button
+                onClick={() => setShowConfirmModal(true)}
+                disabled={submitting}
+                className="rounded-full bg-green-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
+              >
+                確定する
+                <span className="block text-[10px] font-normal opacity-70">Confirm</span>
+              </button>
+            </div>
           </div>
 
           {submitted && !queuedOffline && (
