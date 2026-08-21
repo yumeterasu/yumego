@@ -1218,3 +1218,61 @@ export async function deleteOutingLog(id: string): Promise<void> {
     },
   });
 }
+
+// 外出先の登録リスト — a manageable list of common outing destinations,
+// separate from OutingLog itself. School-wide (not per-branch) since both
+// branches are close together and go to the same places. Deliberately
+// unrelated to SpecialistCategories — those are coach activities, not
+// destinations, and stay their own separate concept.
+export type OutingDestination = {
+  id: string;
+  name: string;
+};
+
+export async function getOutingDestinations(): Promise<OutingDestination[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "OutingDestinations!A2:B",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({ id: (row[0] ?? "").toString(), name: (row[1] ?? "").toString() }))
+    .filter((d) => d.id && d.name);
+}
+
+export async function addOutingDestination(id: string, name: string): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "OutingDestinations!A:B",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[id, name]] },
+  });
+}
+
+export async function deleteOutingDestination(id: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "OutingDestinations!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+
+  const sheetId = await getSheetIdByTitle(sheets, "OutingDestinations");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
+  });
+}
