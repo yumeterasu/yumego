@@ -47,6 +47,34 @@ function statusChangeLabel(status: AttendanceStatus | null, reason: string): str
   return reason || (status === "suspended" ? "出席停止" : "欠席");
 }
 
+// Which button in the edit popup matches the cell's CURRENT value — 欠
+// alone doesn't say whether it was 事故欠/病欠/インフルエンザ/etc, so the
+// popup highlights the exact one that's actually set (thick ring border).
+function isCurrentSelection(
+  cell: EditingCell,
+  status: AttendanceStatus | null,
+  reason: string = ""
+): boolean {
+  return cell.currentStatus === status && cell.currentReason === reason;
+}
+
+// True when the current value is a non-blank status/reason that doesn't
+// match any of the fixed buttons — i.e. it was set via a custom "その他"
+// reason, so that button is the one to highlight instead.
+function isCurrentOther(cell: EditingCell): boolean {
+  if (cell.currentStatus === null) return false;
+  if (
+    cell.currentStatus === "present" ||
+    cell.currentStatus === "late" ||
+    cell.currentStatus === "early_leave"
+  ) {
+    return false;
+  }
+  return !REASON_OPTIONS.some(
+    (o) => o.status === cell.currentStatus && o.label === cell.currentReason
+  );
+}
+
 // 遅刻/早退 count toward 出 (present); 出席停止 counts toward 欠 (absent).
 function countsAsPresent(status: AttendanceStatus): boolean {
   return status === "present" || status === "late" || status === "early_leave";
@@ -949,7 +977,9 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => applyEdit("present")}
-                    className="rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm"
+                    className={`rounded-full bg-green-50 border border-green-400 text-green-800 font-semibold py-2.5 text-sm ${
+                      isCurrentSelection(editingCell, "present") ? "ring-4 ring-green-600" : ""
+                    }`}
                   >
                     出席
                     <span className="block text-[10px] font-normal opacity-70">
@@ -958,7 +988,9 @@ export default function DashboardPage() {
                   </button>
                   <button
                     onClick={() => applyEdit("late")}
-                    className="rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm"
+                    className={`rounded-full bg-amber-50 border border-amber-400 text-amber-800 font-semibold py-2.5 text-sm ${
+                      isCurrentSelection(editingCell, "late") ? "ring-4 ring-amber-600" : ""
+                    }`}
                   >
                     遅刻
                     <span className="block text-[10px] font-normal opacity-70">
@@ -967,7 +999,9 @@ export default function DashboardPage() {
                   </button>
                   <button
                     onClick={() => applyEdit("early_leave")}
-                    className="rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm"
+                    className={`rounded-full bg-blue-50 border border-blue-400 text-blue-800 font-semibold py-2.5 text-sm ${
+                      isCurrentSelection(editingCell, "early_leave") ? "ring-4 ring-blue-600" : ""
+                    }`}
                   >
                     早退
                     <span className="block text-[10px] font-normal opacity-70">
@@ -982,6 +1016,12 @@ export default function DashboardPage() {
                         opt.status === "suspended"
                           ? "bg-purple-50 border-purple-400 text-purple-800"
                           : "bg-red-50 border-red-400 text-red-700"
+                      } ${
+                        isCurrentSelection(editingCell, opt.status, opt.label)
+                          ? opt.status === "suspended"
+                            ? "ring-4 ring-purple-600"
+                            : "ring-4 ring-red-600"
+                          : ""
                       }`}
                     >
                       {opt.label}
@@ -990,7 +1030,9 @@ export default function DashboardPage() {
                   ))}
                   <button
                     onClick={() => setShowOtherInput(true)}
-                    className="rounded-full bg-gray-100 text-gray-600 font-semibold py-2.5 text-sm"
+                    className={`rounded-full bg-gray-100 text-gray-600 font-semibold py-2.5 text-sm ${
+                      isCurrentOther(editingCell) ? "ring-4 ring-gray-600" : ""
+                    }`}
                   >
                     その他
                     <span className="block text-[10px] font-normal opacity-70">Other</span>
@@ -998,7 +1040,9 @@ export default function DashboardPage() {
                 </div>
                 <button
                   onClick={() => applyEdit(null)}
-                  className="rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3"
+                  className={`rounded-full bg-white border border-gray-200 text-gray-400 font-semibold py-3 ${
+                    isCurrentSelection(editingCell, null) ? "ring-4 ring-gray-400" : ""
+                  }`}
                 >
                   空欄にする（未確認）
                   <span className="block text-[10px] font-normal">
