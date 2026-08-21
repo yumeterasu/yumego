@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import { classNameToEnglish } from "@/lib/classes";
+import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
@@ -284,6 +284,11 @@ export default function StudentsPage() {
 
   if (!loaded || !selectedClass) return null;
 
+  // Reset deletes Coach Schedule/Headcount by branch+grade, which only
+  // exists for 長/中/少 classes — 小学生 has no grade row there, so hide
+  // the button rather than let it fail on a class it can't ever resolve.
+  const hasBranchGrade = classNameToBranchGrade(selectedClass) !== null;
+
   return (
     <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -502,30 +507,32 @@ export default function StudentsPage() {
         )}
       </div>
 
-      <div className="border-2 border-red-300 rounded-xl p-4 flex flex-col gap-2 bg-red-50/40">
-        <h2 className="font-semibold text-red-700">
-          学期末リセット
-          <span className="block text-xs font-normal text-red-500">End-of-term reset</span>
-        </h2>
-        <p className="text-xs text-gray-500">
-          バックアップを保存してから、このクラスの生徒と専門コーチの記録をまとめてリセットします
-          <span className="block">
-            Backs up this class, then clears its roster and Coach Schedule/Headcount records
-          </span>
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setResetStage("idle");
-            setResetError(null);
-            setResetResult(null);
-            setShowResetModal1(true);
-          }}
-          className="self-start rounded-full bg-red-600 text-white px-4 py-2 text-sm font-semibold"
-        >
-          🔄 リセット / Reset
-        </button>
-      </div>
+      {hasBranchGrade && (
+        <div className="border-2 border-red-300 rounded-xl p-4 flex flex-col gap-2 bg-red-50/40">
+          <h2 className="font-semibold text-red-700">
+            学期末リセット
+            <span className="block text-xs font-normal text-red-500">End-of-term reset</span>
+          </h2>
+          <p className="text-xs text-gray-500">
+            バックアップを保存してから、このクラスの生徒と専門コーチの記録をまとめてリセットします
+            <span className="block">
+              Backs up this class, then clears its roster and Coach Schedule/Headcount records
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setResetStage("idle");
+              setResetError(null);
+              setResetResult(null);
+              setShowResetModal1(true);
+            }}
+            className="self-start rounded-full bg-red-600 text-white px-4 py-2 text-sm font-semibold"
+          >
+            🔄 リセット / Reset
+          </button>
+        </div>
+      )}
 
       {showRemoveAllModal && (
         <div

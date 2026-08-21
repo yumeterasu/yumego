@@ -2,9 +2,11 @@ export const CLASSES = [
   "プロンポン　年長",
   "プロンポン　年中",
   "プロンポン　年少",
+  "プロンポン　小学生",
   "トンロー　年長",
   "トンロー　年中",
   "トンロー　年少",
+  "トンロー　小学生",
 ] as const;
 
 export type ClassName = (typeof CLASSES)[number];
@@ -49,8 +51,16 @@ const GRADE_EN: Record<GradeShort, string> = {
 /** "プロンポン　年長" -> "Phrom Phong · Older Class (5 Years Old)", for the English gloss under class names. */
 export function classNameToEnglish(className: string): string {
   const bg = classNameToBranchGrade(className);
-  if (!bg) return "";
-  return `${BRANCH_EN[bg.branch]} · ${GRADE_EN[bg.grade]}`;
+  if (bg) return `${BRANCH_EN[bg.branch]} · ${GRADE_EN[bg.grade]}`;
+
+  // 小学生 classes aren't part of the 長/中/少 continuum (no specialist-coach
+  // grade row, no promote/reset grade mapping) but still need an English
+  // gloss like every other class.
+  const [branch, suffix] = className.split("　");
+  if ((branch === "プロンポン" || branch === "トンロー") && suffix === "小学生") {
+    return `${BRANCH_EN[branch]} · Elementary School`;
+  }
+  return "";
 }
 
 export function branchToEnglish(branch: Branch): string {

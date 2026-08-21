@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
-import { classNameToEnglish } from "@/lib/classes";
+import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
 
@@ -561,6 +561,12 @@ export default function DashboardPage() {
 
   if (!loaded || !selectedClass) return null;
 
+  // 専門コーチ (and the Reset button on 生徒管理) are scoped to the
+  // 長/中/少 grade continuum — 小学生 classes don't have a grade row there,
+  // so hide the button rather than let it silently bounce back from a
+  // dead-end redirect.
+  const hasBranchGrade = classNameToBranchGrade(selectedClass) !== null;
+
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
@@ -628,15 +634,17 @@ export default function DashboardPage() {
             年間まとめ
             <span className="block text-[10px] font-normal opacity-70">Annual Summary</span>
           </Link>
-          <Link
-            href="/dashboard/specialist"
-            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-          >
-            専門コーチ
-            <span className="block text-[10px] font-normal opacity-70">
-              Specialist Coach
-            </span>
-          </Link>
+          {hasBranchGrade && (
+            <Link
+              href="/dashboard/specialist"
+              className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+            >
+              専門コーチ
+              <span className="block text-[10px] font-normal opacity-70">
+                Specialist Coach
+              </span>
+            </Link>
+          )}
           <Link
             href="/dashboard/outings"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
