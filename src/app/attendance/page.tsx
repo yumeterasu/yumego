@@ -434,7 +434,7 @@ export default function AttendancePage() {
               <button
                 onClick={() => router.push("/dashboard")}
                 disabled={submitting}
-                className="rounded-full bg-red-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
+                className="rounded-full bg-gray-100 text-gray-600 px-6 py-3 font-semibold disabled:opacity-40"
               >
                 キャンセル
                 <span className="block text-[10px] font-normal opacity-70">Cancel</span>
