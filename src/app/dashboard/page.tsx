@@ -32,7 +32,20 @@ type EditingCell = {
   studentId: string;
   studentLabel: string;
   date: string;
+  currentStatus: AttendanceStatus | null;
+  currentReason: string;
 };
+
+// Friendly Japanese label for a status+reason pair, used in the
+// confirm-before-change dialog — prefers the specific reason text (e.g.
+// "病欠", "コロナ") over the generic 欠席/出席停止 when one was given.
+function statusChangeLabel(status: AttendanceStatus | null, reason: string): string {
+  if (status === null) return "空欄（未確認）";
+  if (status === "present") return "出席";
+  if (status === "late") return "遅刻";
+  if (status === "early_leave") return "早退";
+  return reason || (status === "suspended" ? "出席停止" : "欠席");
+}
 
 // 遅刻/早退 count toward 出 (present); 出席停止 counts toward 欠 (absent).
 function countsAsPresent(status: AttendanceStatus): boolean {
@@ -350,17 +363,40 @@ export default function DashboardPage() {
     }
   }
 
-  function openEditor(studentId: string, studentLabel: string, date: string) {
+  function openEditor(
+    studentId: string,
+    studentLabel: string,
+    date: string,
+    currentStatus: AttendanceStatus | null,
+    currentReason: string
+  ) {
     setShowOtherInput(false);
     setOtherText("");
     setOtherStatus("absent");
-    setEditingCell({ studentId, studentLabel, date });
+    setEditingCell({ studentId, studentLabel, date, currentStatus, currentReason });
   }
 
   async function applyEdit(next: AttendanceStatus | null, reason: string = "") {
     if (!selectedClass || !editingCell) return;
-    const { studentId, date } = editingCell;
+    const { studentId, date, currentStatus, currentReason } = editingCell;
     const key = `${studentId}|${date}`;
+
+    // Confirm before actually overwriting a cell that already had a
+    // different value — prevents a stray/accidental tap from silently
+    // changing real attendance data. Setting a still-blank cell, or
+    // re-picking the same value it already had, needs no confirmation.
+    const isRealChange = next !== currentStatus || reason !== currentReason;
+    if (currentStatus !== null && isRealChange) {
+      const fromLabel = statusChangeLabel(currentStatus, currentReason);
+      const toLabel = statusChangeLabel(next, reason);
+      if (
+        !window.confirm(
+          `${editingCell.studentLabel}　${date}\n「${fromLabel}」から「${toLabel}」に変更しますか？\n\nChange from "${fromLabel}" to "${toLabel}"?`
+        )
+      ) {
+        return; // leave the popup open so they can pick again
+      }
+    }
 
     setEditingCell(null);
 
@@ -791,6 +827,7 @@ export default function DashboardPage() {
                       const dow = new Date(year, month - 1, day).getDay();
                       const isWeekend = dow === 0 || dow === 6;
                       const status = dayMap.get(day);
+                      const reason = reasonMap.get(s.studentId)?.get(day) ?? "";
                       const display = status ? STATUS_DISPLAY[status] : null;
                       const date = `${year}-${pad2(month)}-${pad2(day)}`;
                       const isFuture = date > today;
@@ -806,7 +843,16 @@ export default function DashboardPage() {
                         <td
                           key={day}
                           onClick={
-                            isLocked ? undefined : () => openEditor(s.studentId, label, date)
+                            isLocked
+                              ? undefined
+                              : () =>
+                                  openEditor(
+                                    s.studentId,
+                                    label,
+                                    date,
+                                    status ?? null,
+                                    reason
+                                  )
                           }
                           className={`text-center border border-gray-300 py-1 select-none ${
                             isWeekend ? "bg-orange-50/60" : ""
