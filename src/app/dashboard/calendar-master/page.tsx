@@ -108,7 +108,9 @@ export default function MasterCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState<{ date: string; label: string } | null>(null);
+  const [editing, setEditing] = useState<{ date: string; label: string; isNew: boolean } | null>(
+    null
+  );
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -132,26 +134,14 @@ export default function MasterCalendarPage() {
 
   const holidayByDate = new Map(holidays.map((h) => [h.date, h.label]));
 
-  async function handleDayClick(date: string, currentLabel: string | undefined) {
+  function handleDayClick(date: string, currentLabel: string | undefined) {
     if (currentLabel === undefined) {
-      // quick-add as a holiday with a blank label
-      setError(null);
-      setHolidays((prev) => [...prev, { date, label: "" }]);
-      try {
-        const res = await fetch("/api/calendar/master", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, label: "" }),
-        });
-        if (!res.ok) throw new Error("failed");
-      } catch {
-        setError("保存に失敗しました / Failed to save");
-        setHolidays((prev) => prev.filter((h) => h.date !== date));
-      }
+      // not yet a holiday — open the popup to add one (label optional, OK with blank is fine)
+      setEditing({ date, label: "", isNew: true });
       return;
     }
     // already a holiday — open the manage popup (rename or remove)
-    setEditing({ date, label: currentLabel });
+    setEditing({ date, label: currentLabel, isNew: false });
   }
 
   async function saveLabel() {
@@ -166,7 +156,9 @@ export default function MasterCalendarPage() {
       });
       if (!res.ok) throw new Error("failed");
       setHolidays((prev) =>
-        prev.map((h) => (h.date === editing.date ? { ...h, label: editing.label } : h))
+        editing.isNew
+          ? [...prev, { date: editing.date, label: editing.label }]
+          : prev.map((h) => (h.date === editing.date ? { ...h, label: editing.label } : h))
       );
       setEditing(null);
     } catch {
@@ -275,11 +267,15 @@ export default function MasterCalendarPage() {
           >
             <h2 className="font-bold text-lg text-center">
               {editing.date}
-              <span className="block text-sm font-normal text-gray-500">祝日の編集 / Edit holiday</span>
+              <span className="block text-sm font-normal text-gray-500">
+                {editing.isNew ? "祝日として登録 / Add as holiday" : "祝日の編集 / Edit holiday"}
+              </span>
             </h2>
             <label className="flex flex-col gap-1 text-sm">
               名前（任意）
-              <span className="text-xs font-normal text-gray-500">Label (optional)</span>
+              <span className="text-xs font-normal text-gray-500">
+                Label (optional — leave blank and press OK is fine)
+              </span>
               <input
                 type="text"
                 value={editing.label}
@@ -302,16 +298,18 @@ export default function MasterCalendarPage() {
                 disabled={saving}
                 className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
               >
-                保存 / Save
+                OK
               </button>
             </div>
-            <button
-              onClick={removeHoliday}
-              disabled={saving}
-              className="rounded-full border border-red-300 text-red-600 py-2.5 font-semibold disabled:opacity-40"
-            >
-              この日を祝日から外す / Remove as holiday
-            </button>
+            {!editing.isNew && (
+              <button
+                onClick={removeHoliday}
+                disabled={saving}
+                className="rounded-full border border-red-300 text-red-600 py-2.5 font-semibold disabled:opacity-40"
+              >
+                この日を祝日から外す / Remove as holiday
+              </button>
+            )}
           </div>
         </div>
       )}
