@@ -93,6 +93,20 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
+// Sunday red, Saturday blue — the day-column header and its cells share
+// this same day-of-week -> color mapping, just at different opacity/text
+// weight for header vs. body cells.
+function weekendHeaderClasses(dow: number): string {
+  if (dow === 0) return "bg-red-50 text-red-700";
+  if (dow === 6) return "bg-blue-50 text-blue-700";
+  return "bg-gray-50";
+}
+function weekendCellClasses(dow: number): string {
+  if (dow === 0) return "bg-red-50/60";
+  if (dow === 6) return "bg-blue-50/60";
+  return "";
+}
+
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -193,6 +207,9 @@ export default function DashboardPage() {
   // also why the date picker is kept within that same month (see its
   // min/max below).
   const [showClearDayModal, setShowClearDayModal] = useState(false);
+  // Second, stronger confirm step — this delete is permanent (unlike
+  // withdrawing a student, there's no soft-delete/undo for it at all).
+  const [clearDayFinalStep, setClearDayFinalStep] = useState(false);
   const [clearDayDate, setClearDayDate] = useState(todayDateString());
   const [clearDayApplying, setClearDayApplying] = useState(false);
   const [clearDayError, setClearDayError] = useState<string | null>(null);
@@ -546,6 +563,7 @@ export default function DashboardPage() {
     // this same month (see its min/max) since the affected-record count
     // is derived from the month's already-loaded `records`, not a fetch.
     setClearDayDate(yearMonth === today.slice(0, 7) ? today : `${yearMonth}-01`);
+    setClearDayFinalStep(false);
     setClearDayError(null);
     setClearDayDone(null);
     setShowClearDayModal(true);
@@ -862,13 +880,10 @@ export default function DashboardPage() {
                 </th>
                 {dayNumbers.map((day) => {
                   const dow = new Date(year, month - 1, day).getDay();
-                  const isWeekend = dow === 0 || dow === 6;
                   return (
                     <th
                       key={day}
-                      className={`border border-gray-300 px-2 py-1 text-center w-9 ${
-                        isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
-                      }`}
+                      className={`border border-gray-300 px-2 py-1 text-center w-9 ${weekendHeaderClasses(dow)}`}
                     >
                       <div>{day}</div>
                       <div className="text-[10px] font-normal">
@@ -975,7 +990,6 @@ export default function DashboardPage() {
                     </td>
                     {dayNumbers.map((day) => {
                       const dow = new Date(year, month - 1, day).getDay();
-                      const isWeekend = dow === 0 || dow === 6;
                       const status = dayMap.get(day);
                       const reason = reasonMap.get(s.studentId)?.get(day) ?? "";
                       const display = status ? STATUS_DISPLAY[status] : null;
@@ -1004,9 +1018,7 @@ export default function DashboardPage() {
                                     reason
                                   )
                           }
-                          className={`text-center border border-gray-300 py-1 select-none ${
-                            isWeekend ? "bg-orange-50/60" : ""
-                          } ${
+                          className={`text-center border border-gray-300 py-1 select-none ${weekendCellClasses(dow)} ${
                             isLocked
                               ? ""
                               : "cursor-pointer hover:bg-blue-50 active:bg-blue-100"
@@ -1538,8 +1550,12 @@ export default function DashboardPage() {
                     value={clearDayDate}
                     min={`${yearMonth}-01`}
                     max={`${yearMonth}-${pad2(daysInMonth(year, month))}`}
-                    onChange={(e) => setClearDayDate(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-3 py-2"
+                    disabled={clearDayFinalStep}
+                    onChange={(e) => {
+                      setClearDayDate(e.target.value);
+                      setClearDayFinalStep(false); // re-confirm against the new date's count
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 disabled:opacity-60"
                   />
                 </label>
                 {(() => {
@@ -1562,35 +1578,65 @@ export default function DashboardPage() {
                     </div>
                   );
                 })()}
-                <p className="text-xs text-gray-400 text-center">
-                  {selectedClass} の {clearDayDate}
-                  の出席記録を全員分削除します。空欄（未確認）の状態に戻ります。よろしいですか？
-                  <span className="block">
-                    Deletes every student's attendance record for {selectedClass} on{" "}
-                    {clearDayDate}, back to blank (not checked). Continue?
-                  </span>
-                </p>
-                {clearDayError && (
-                  <p className="text-red-600 text-sm text-center">{clearDayError}</p>
+
+                {!clearDayFinalStep ? (
+                  <>
+                    <p className="text-xs text-gray-400 text-center">
+                      {selectedClass} の {clearDayDate}
+                      の出席記録を全員分削除します。空欄（未確認）の状態に戻ります。よろしいですか？
+                      <span className="block">
+                        Deletes every student's attendance record for {selectedClass} on{" "}
+                        {clearDayDate}, back to blank (not checked). Continue?
+                      </span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setShowClearDayModal(false)}
+                        className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold"
+                      >
+                        キャンセル / Cancel
+                      </button>
+                      <button
+                        onClick={() => setClearDayFinalStep(true)}
+                        disabled={records.filter((r) => r.date === clearDayDate).length === 0}
+                        className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                      >
+                        次へ / Next
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                      <p className="text-sm text-red-800 font-semibold text-center">
+                        ⚠ この削除は完全に永久的です。バックアップはなく、二度と復元できません
+                        <span className="block text-xs font-normal mt-1">
+                          This deletion is permanent — there is no backup and it can never be
+                          recovered.
+                        </span>
+                      </p>
+                    </div>
+                    {clearDayError && (
+                      <p className="text-red-600 text-sm text-center">{clearDayError}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setClearDayFinalStep(false)}
+                        disabled={clearDayApplying}
+                        className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
+                      >
+                        戻る / Back
+                      </button>
+                      <button
+                        onClick={handleClearDay}
+                        disabled={clearDayApplying}
+                        className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                      >
+                        {clearDayApplying ? "削除中... / Deleting..." : "本当に削除する / Really delete"}
+                      </button>
+                    </div>
+                  </>
                 )}
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setShowClearDayModal(false)}
-                    disabled={clearDayApplying}
-                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
-                  >
-                    キャンセル / Cancel
-                  </button>
-                  <button
-                    onClick={handleClearDay}
-                    disabled={
-                      clearDayApplying || records.filter((r) => r.date === clearDayDate).length === 0
-                    }
-                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
-                  >
-                    {clearDayApplying ? "削除中... / Deleting..." : "削除する / Delete"}
-                  </button>
-                </div>
               </>
             )}
           </div>
