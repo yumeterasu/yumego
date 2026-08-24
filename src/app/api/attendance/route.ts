@@ -3,6 +3,7 @@ import {
   upsertAttendance,
   getAttendanceForMonth,
   clearAttendance,
+  clearAttendanceForDate,
   AttendanceRecord,
   AttendanceStatus,
 } from "@/lib/sheets";
@@ -119,6 +120,32 @@ export async function PATCH(req: NextRequest) {
     console.error(err);
     return NextResponse.json(
       { error: "Failed to update attendance" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/attendance?class=...&date=2026-08-21
+// Clears EVERY student's row for that class+date at once — for undoing a
+// whole day that was checked in wrong, instead of clearing cells one by one.
+export async function DELETE(req: NextRequest) {
+  const className = req.nextUrl.searchParams.get("class");
+  const date = req.nextUrl.searchParams.get("date");
+
+  if (!className || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json(
+      { error: "Missing or invalid 'class'/'date' query params" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const count = await clearAttendanceForDate(className, date);
+    return NextResponse.json({ ok: true, count });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json(
+      { error: "Failed to clear attendance for that day" },
       { status: 500 }
     );
   }

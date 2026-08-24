@@ -186,6 +186,18 @@ export default function DashboardPage() {
     displayLabel: string;
   } | null>(null);
 
+  // "Clear a whole day" modal — undoes a day submitted wrong (e.g. checked
+  // in against the wrong date) without clearing each student one by one.
+  // The affected-record count is derived straight from the already-loaded
+  // `records` for the displayed month — no extra fetch needed, which is
+  // also why the date picker is kept within that same month (see its
+  // min/max below).
+  const [showClearDayModal, setShowClearDayModal] = useState(false);
+  const [clearDayDate, setClearDayDate] = useState(todayDateString());
+  const [clearDayApplying, setClearDayApplying] = useState(false);
+  const [clearDayError, setClearDayError] = useState<string | null>(null);
+  const [clearDayDone, setClearDayDone] = useState<number | null>(null);
+
   // Custom, per-class labels for the チェック1/2/3 header cells.
   const [checkLabels, setCheckLabels] = useState({
     check1Label: "",
@@ -528,6 +540,37 @@ export default function DashboardPage() {
     setShowBulkModal(true);
   }
 
+  function openClearDayModal() {
+    // Default to today if it falls within the month currently on screen,
+    // otherwise the 1st of that month — the date picker is kept within
+    // this same month (see its min/max) since the affected-record count
+    // is derived from the month's already-loaded `records`, not a fetch.
+    setClearDayDate(yearMonth === today.slice(0, 7) ? today : `${yearMonth}-01`);
+    setClearDayError(null);
+    setClearDayDone(null);
+    setShowClearDayModal(true);
+  }
+
+  async function handleClearDay() {
+    if (!selectedClass) return;
+    setClearDayApplying(true);
+    setClearDayError(null);
+    try {
+      const res = await fetch(
+        `/api/attendance?class=${encodeURIComponent(selectedClass)}&date=${clearDayDate}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setClearDayDone(data.count ?? 0);
+      await load();
+    } catch {
+      setClearDayError("削除に失敗しました / Failed to delete");
+    } finally {
+      setClearDayApplying(false);
+    }
+  }
+
   // Tapping a status button doesn't save anything yet — it just moves to
   // a confirmation screen showing who/when/what before writing anything.
   function selectBulkChoice(status: AttendanceStatus, reason: string, displayLabel: string) {
@@ -757,15 +800,26 @@ export default function DashboardPage() {
         </span>
       </p>
 
-      <button
-        onClick={openBulkModal}
-        className="self-center rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold print:hidden"
-      >
-        📅 期間で登録（未来日もOK）
-        <span className="block text-[10px] font-normal opacity-70">
-          Register a date range (future dates OK)
-        </span>
-      </button>
+      <div className="flex items-center justify-center gap-3 print:hidden">
+        <button
+          onClick={openBulkModal}
+          className="rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold"
+        >
+          📅 期間で登録（未来日もOK）
+          <span className="block text-[10px] font-normal opacity-70">
+            Register a date range (future dates OK)
+          </span>
+        </button>
+        <button
+          onClick={openClearDayModal}
+          className="rounded-full border border-red-300 text-red-600 bg-red-50 px-5 py-2 text-sm font-semibold"
+        >
+          🗑 特定の日を削除
+          <span className="block text-[10px] font-normal opacity-70">
+            Delete everyone's record for one day
+          </span>
+        </button>
+      </div>
 
       {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
@@ -1435,6 +1489,109 @@ export default function DashboardPage() {
                   戻る / Back
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showClearDayModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !clearDayApplying && setShowClearDayModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {clearDayDone !== null ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  削除しました
+                  <span className="block text-sm font-normal text-gray-500">Deleted</span>
+                </h2>
+                <p className="text-sm text-center text-gray-600">
+                  {clearDayDate} の記録 {clearDayDone}件を削除しました
+                  <span className="block text-xs">
+                    Removed {clearDayDone} record(s) for {clearDayDate}
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowClearDayModal(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  特定の日を削除
+                  <span className="block text-sm font-normal text-gray-500">
+                    Delete a specific day
+                  </span>
+                </h2>
+                <label className="flex flex-col gap-1 text-sm">
+                  日付
+                  <span className="text-xs font-normal text-gray-500">Date</span>
+                  <input
+                    type="date"
+                    value={clearDayDate}
+                    min={`${yearMonth}-01`}
+                    max={`${yearMonth}-${pad2(daysInMonth(year, month))}`}
+                    onChange={(e) => setClearDayDate(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2"
+                  />
+                </label>
+                {(() => {
+                  const affected = records.filter((r) => r.date === clearDayDate).length;
+                  return (
+                    <div
+                      className={`rounded-xl p-4 text-center ${
+                        affected > 0 ? "bg-red-50 border border-red-300" : "bg-gray-50"
+                      }`}
+                    >
+                      <p className={`text-2xl font-bold ${affected > 0 ? "text-red-600" : "text-gray-400"}`}>
+                        {affected}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {clearDayDate} の記録件数
+                        <span className="block text-[10px] text-gray-400">
+                          Records for {clearDayDate}
+                        </span>
+                      </p>
+                    </div>
+                  );
+                })()}
+                <p className="text-xs text-gray-400 text-center">
+                  {selectedClass} の {clearDayDate}
+                  の出席記録を全員分削除します。空欄（未確認）の状態に戻ります。よろしいですか？
+                  <span className="block">
+                    Deletes every student's attendance record for {selectedClass} on{" "}
+                    {clearDayDate}, back to blank (not checked). Continue?
+                  </span>
+                </p>
+                {clearDayError && (
+                  <p className="text-red-600 text-sm text-center">{clearDayError}</p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowClearDayModal(false)}
+                    disabled={clearDayApplying}
+                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={handleClearDay}
+                    disabled={
+                      clearDayApplying || records.filter((r) => r.date === clearDayDate).length === 0
+                    }
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {clearDayApplying ? "削除中... / Deleting..." : "削除する / Delete"}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

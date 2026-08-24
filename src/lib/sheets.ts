@@ -607,6 +607,45 @@ export async function clearAttendance(
   });
 }
 
+/**
+ * Clear every student's attendance row for one class+date at once — for
+ * undoing a whole day submitted wrong (e.g. checked in against the wrong
+ * date by mistake), instead of clearing each student's cell one at a
+ * time. Returns how many rows were removed, for the confirm UI.
+ */
+export async function clearAttendanceForDate(
+  className: string,
+  date: string
+): Promise<number> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:F",
+  });
+  const rows = existing.data.values ?? [];
+
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[0] ?? "") === date && (row[1] ?? "") === className)
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return 0;
+
+  const sheetId = await getSheetIdByTitle(sheets, "Attendance");
+  rowNums.sort((a, b) => b - a);
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+  return rowNums.length;
+}
+
 // Per-class, per-MONTH custom labels for the 3 generic checkbox columns
 // (チェック1/2/3) — a label typed in for August has no bearing on
 // September; each month starts blank. Columns:
