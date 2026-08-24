@@ -11,19 +11,20 @@ const LABEL_COLUMNS: (keyof ClassCheckLabels)[] = [
   "check3Label",
 ];
 
-// GET /api/class-settings?class=...
+// GET /api/class-settings?class=...&month=2026-08
 export async function GET(req: NextRequest) {
   const className = req.nextUrl.searchParams.get("class");
+  const month = req.nextUrl.searchParams.get("month");
 
-  if (!className) {
+  if (!className || !month || !/^\d{4}-\d{2}$/.test(month)) {
     return NextResponse.json(
-      { error: "Missing 'class' query param" },
+      { error: "Missing or invalid 'class'/'month' query params" },
       { status: 400 }
     );
   }
 
   try {
-    const labels = await getClassCheckLabels(className);
+    const labels = await getClassCheckLabels(className, month);
     return NextResponse.json({ labels });
   } catch (err) {
     console.error(err);
@@ -34,24 +35,26 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH /api/class-settings  { className, column, label }
+// PATCH /api/class-settings  { className, month, column, label }
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { className, column, label } = body ?? {};
+  const { className, month, column, label } = body ?? {};
 
   if (
     !className ||
+    !month ||
+    !/^\d{4}-\d{2}$/.test(month) ||
     typeof label !== "string" ||
     !LABEL_COLUMNS.includes(column)
   ) {
     return NextResponse.json(
-      { error: "Missing className, column, or label" },
+      { error: "Missing className, month, column, or label" },
       { status: 400 }
     );
   }
 
   try {
-    await updateClassCheckLabel(className, column, label);
+    await updateClassCheckLabel(className, month, column, label);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error(err);

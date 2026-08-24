@@ -4,6 +4,7 @@ import {
   getAllStudentsByClass,
   getAllAttendanceForClass,
   getClassCheckLabels,
+  getMonthlyChecks,
   getSpecialistCategories,
   getAllSpecialistAttendanceForGrade,
   getAllSpecialistParticipationForGrade,
@@ -38,15 +39,13 @@ export async function GET(req: NextRequest) {
   const { branch, grade } = branchGrade;
 
   try {
-    const [allStudents, attendance, checkLabels, categories, schedule, headcount] =
-      await Promise.all([
-        getAllStudentsByClass(className),
-        getAllAttendanceForClass(className),
-        getClassCheckLabels(className),
-        getSpecialistCategories(branch),
-        getAllSpecialistAttendanceForGrade(branch, grade),
-        getAllSpecialistParticipationForGrade(branch, grade),
-      ]);
+    const [allStudents, attendance, categories, schedule, headcount] = await Promise.all([
+      getAllStudentsByClass(className),
+      getAllAttendanceForClass(className),
+      getSpecialistCategories(branch),
+      getAllSpecialistAttendanceForGrade(branch, grade),
+      getAllSpecialistParticipationForGrade(branch, grade),
+    ]);
 
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
     const activeStudents = allStudents.filter((s) => s.active);
@@ -86,15 +85,22 @@ export async function GET(req: NextRequest) {
     }
 
     // Sheets: one per calendar month actually present, same day-by-day
-    // grid as the Dashboard's own monthly export.
+    // grid as the Dashboard's own monthly export. チェック1/2/3 labels and
+    // state are scoped per month now, so both are fetched per month here
+    // too — a label typed in for one month never bleeds into another.
     for (const yearMonth of monthsPresent) {
       const monthRecords = attendance.filter((r) => r.date.startsWith(yearMonth));
+      const [monthCheckLabels, monthChecks] = await Promise.all([
+        getClassCheckLabels(className, yearMonth),
+        getMonthlyChecks(className, yearMonth),
+      ]);
       addMonthlySheet(workbook, {
         sheetName: yearMonth,
         yearMonth,
         students: allStudents,
         records: monthRecords,
-        checkLabels,
+        checkLabels: monthCheckLabels,
+        monthlyChecks: new Map(monthChecks.map((c) => [c.studentId, c])),
       });
     }
 

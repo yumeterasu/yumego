@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { getStudentsByClass, getAttendanceForMonth, getClassCheckLabels } from "@/lib/sheets";
+import {
+  getStudentsByClass,
+  getAttendanceForMonth,
+  getClassCheckLabels,
+  getMonthlyChecks,
+} from "@/lib/sheets";
 import { addMonthlySheet } from "@/lib/exportSheets";
 
 // GET /api/export/monthly?class=...&month=2026-08
@@ -16,16 +21,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [students, records, checkLabels] = await Promise.all([
+    const [students, records, checkLabels, checks] = await Promise.all([
       getStudentsByClass(className),
       getAttendanceForMonth(className, yearMonth),
-      getClassCheckLabels(className),
+      getClassCheckLabels(className, yearMonth),
+      getMonthlyChecks(className, yearMonth),
     ]);
+    const monthlyChecks = new Map(checks.map((c) => [c.studentId, c]));
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Yumego";
     workbook.created = new Date();
-    addMonthlySheet(workbook, { sheetName: yearMonth, yearMonth, students, records, checkLabels });
+    addMonthlySheet(workbook, {
+      sheetName: yearMonth,
+      yearMonth,
+      students,
+      records,
+      checkLabels,
+      monthlyChecks,
+    });
 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `${className.replace(/\s+/g, "_")}_${yearMonth}.xlsx`;

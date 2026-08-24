@@ -132,6 +132,12 @@ export default function DashboardPage() {
 
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  // studentId -> this MONTH's check1/2/3 state — チェック1/2/3 are scoped
+  // per class+month now (checking one in August has no bearing on
+  // September), not a permanent property of the student.
+  const [monthlyChecks, setMonthlyChecks] = useState<
+    Record<string, { check1: boolean; check2: boolean; check3: boolean }>
+  >({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,12 +218,17 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [studentsRes, attendanceRes, settingsRes] = await Promise.all([
+      const [studentsRes, attendanceRes, settingsRes, checksRes] = await Promise.all([
         fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
         fetch(
           `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
         ),
-        fetch(`/api/class-settings?class=${encodeURIComponent(selectedClass)}`),
+        fetch(
+          `/api/class-settings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        ),
+        fetch(
+          `/api/monthly-checks?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        ),
       ]);
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
@@ -235,6 +246,16 @@ export default function DashboardPage() {
       setCheckLabels(labels);
       savedCheckLabelsRef.current = labels;
       dirtyLabelColumnsRef.current.clear();
+
+      type MonthlyCheckRecord = { studentId: string; check1: boolean; check2: boolean; check3: boolean };
+      const checks: MonthlyCheckRecord[] = checksRes.ok
+        ? ((await checksRes.json()).checks ?? [])
+        : [];
+      setMonthlyChecks(
+        Object.fromEntries(
+          checks.map((c) => [c.studentId, { check1: c.check1, check2: c.check2, check3: c.check3 }])
+        )
+      );
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -267,8 +288,9 @@ export default function DashboardPage() {
   }
 
   async function toggleCheck(studentId: string, column: "check1" | "check2" | "check3") {
+    if (!selectedClass) return;
     const student = students.find((s) => s.studentId === studentId);
-    const current = student?.[column] ?? false;
+    const current = monthlyChecks[studentId]?.[column] ?? false;
     const next = !current;
 
     if (!next && student) {
@@ -280,22 +302,34 @@ export default function DashboardPage() {
     }
 
     // optimistic update
-    setStudents((prev) =>
-      prev.map((s) => (s.studentId === studentId ? { ...s, [column]: next } : s))
-    );
+    setMonthlyChecks((prev) => ({
+      ...prev,
+      [studentId]: {
+        check1: prev[studentId]?.check1 ?? false,
+        check2: prev[studentId]?.check2 ?? false,
+        check3: prev[studentId]?.check3 ?? false,
+        [column]: next,
+      },
+    }));
 
     try {
-      const res = await fetch("/api/students", {
+      const res = await fetch("/api/monthly-checks", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId, column, value: next }),
+        body: JSON.stringify({ className: selectedClass, month: yearMonth, studentId, column, value: next }),
       });
       if (!res.ok) throw new Error("failed");
     } catch {
       setError("チェックの保存に失敗しました / Failed to save checkbox");
-      setStudents((prev) =>
-        prev.map((s) => (s.studentId === studentId ? { ...s, [column]: current } : s))
-      );
+      setMonthlyChecks((prev) => ({
+        ...prev,
+        [studentId]: {
+          check1: prev[studentId]?.check1 ?? false,
+          check2: prev[studentId]?.check2 ?? false,
+          check3: prev[studentId]?.check3 ?? false,
+          [column]: current,
+        },
+      }));
     }
   }
 
@@ -326,7 +360,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/class-settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ className: selectedClass, column, label: value }),
+        body: JSON.stringify({ className: selectedClass, month: yearMonth, column, label: value }),
       });
       if (!res.ok) throw new Error("failed");
       savedCheckLabelsRef.current = { ...savedCheckLabelsRef.current, [column]: value };
@@ -948,7 +982,7 @@ export default function DashboardPage() {
                     <td className="text-center border border-gray-300 bg-cyan-50/40">
                       <input
                         type="checkbox"
-                        checked={s.check1}
+                        checked={monthlyChecks[s.studentId]?.check1 ?? false}
                         onChange={() => toggleCheck(s.studentId, "check1")}
                         className="w-4 h-4 accent-cyan-600 cursor-pointer"
                       />
@@ -956,7 +990,7 @@ export default function DashboardPage() {
                     <td className="text-center border border-gray-300 bg-pink-50/40">
                       <input
                         type="checkbox"
-                        checked={s.check2}
+                        checked={monthlyChecks[s.studentId]?.check2 ?? false}
                         onChange={() => toggleCheck(s.studentId, "check2")}
                         className="w-4 h-4 accent-pink-600 cursor-pointer"
                       />
@@ -964,7 +998,7 @@ export default function DashboardPage() {
                     <td className="text-center border border-gray-300 bg-lime-50/40">
                       <input
                         type="checkbox"
-                        checked={s.check3}
+                        checked={monthlyChecks[s.studentId]?.check3 ?? false}
                         onChange={() => toggleCheck(s.studentId, "check3")}
                         className="w-4 h-4 accent-lime-600 cursor-pointer"
                       />

@@ -57,9 +57,13 @@ export function addMonthlySheet(
     students: Student[];
     records: AttendanceRow[];
     checkLabels: ClassCheckLabels;
+    // studentId -> this month's check1/2/3 — チェック1/2/3 are scoped per
+    // class+month now, not a permanent property of the student, so this
+    // must be looked up for the specific month being exported.
+    monthlyChecks?: Map<string, { check1: boolean; check2: boolean; check3: boolean }>;
   }
 ) {
-  const { sheetName, yearMonth, students, records, checkLabels } = opts;
+  const { sheetName, yearMonth, students, records, checkLabels, monthlyChecks } = opts;
   const [year, month] = yearMonth.split("-").map(Number);
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
@@ -137,6 +141,7 @@ export function addMonthlySheet(
       .join(", ");
 
     const nameCell = s.nameEnglish ? `${s.nameKanji}\n${s.nameEnglish}` : s.nameKanji;
+    const check = monthlyChecks?.get(s.studentId);
 
     const rowValues = [
       i + 1,
@@ -148,9 +153,9 @@ export function addMonthlySheet(
       presentCount || "",
       absentCount || "",
       reasonSummary,
-      s.check1 ? "✓" : "",
-      s.check2 ? "✓" : "",
-      s.check3 ? "✓" : "",
+      check?.check1 ? "✓" : "",
+      check?.check2 ? "✓" : "",
+      check?.check3 ? "✓" : "",
       s.remark ?? "",
     ];
     const row = sheet.addRow(rowValues);

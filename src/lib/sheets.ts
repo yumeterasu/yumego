@@ -607,7 +607,10 @@ export async function clearAttendance(
   });
 }
 
-// Per-class custom labels for the 3 generic checkbox columns (チェック1/2/3).
+// Per-class, per-MONTH custom labels for the 3 generic checkbox columns
+// (チェック1/2/3) — a label typed in for August has no bearing on
+// September; each month starts blank. Columns:
+// A=className, B=yearMonth, C=check1Label, D=check2Label, E=check3Label.
 export type ClassCheckLabels = {
   check1Label: string;
   check2Label: string;
@@ -615,56 +618,60 @@ export type ClassCheckLabels = {
 };
 
 const CHECK_LABEL_COLUMN_LETTERS: Record<keyof ClassCheckLabels, string> = {
-  check1Label: "B",
-  check2Label: "C",
-  check3Label: "D",
+  check1Label: "C",
+  check2Label: "D",
+  check3Label: "E",
 };
 
-/** Read a class's custom checkbox column labels (blank strings if unset). */
+/** Read a class's custom checkbox column labels for one month (blank strings if unset). */
 export async function getClassCheckLabels(
-  className: string
+  className: string,
+  yearMonth: string
 ): Promise<ClassCheckLabels> {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "ClassSettings!A2:D",
+    range: "ClassSettings!A2:E",
   });
   const rows = res.data.values ?? [];
-  const row = rows.find((r) => (r[0] ?? "") === className);
+  const row = rows.find((r) => (r[0] ?? "") === className && (r[1] ?? "") === yearMonth);
   return {
-    check1Label: row?.[1] ?? "",
-    check2Label: row?.[2] ?? "",
-    check3Label: row?.[3] ?? "",
+    check1Label: row?.[2] ?? "",
+    check2Label: row?.[3] ?? "",
+    check3Label: row?.[4] ?? "",
   };
 }
 
-/** Set one of a class's custom checkbox column labels. */
+/** Set one of a class's custom checkbox column labels for one month. */
 export async function updateClassCheckLabel(
   className: string,
+  yearMonth: string,
   column: keyof ClassCheckLabels,
   label: string
 ): Promise<void> {
   const sheets = getSheetsClient();
   const existing = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "ClassSettings!A2:A",
+    range: "ClassSettings!A2:B",
   });
   const rows = existing.data.values ?? [];
-  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === className);
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === className && (row[1] ?? "") === yearMonth
+  );
 
   const colLetter = CHECK_LABEL_COLUMN_LETTERS[column];
 
   if (rowOffset === -1) {
-    // no row for this class yet — append one
+    // no row for this class+month yet — append one
     const values =
       column === "check1Label"
-        ? [className, label, "", ""]
+        ? [className, yearMonth, label, "", ""]
         : column === "check2Label"
-          ? [className, "", label, ""]
-          : [className, "", "", label];
+          ? [className, yearMonth, "", label, ""]
+          : [className, yearMonth, "", "", label];
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: "ClassSettings!A:D",
+      range: "ClassSettings!A:E",
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
@@ -677,6 +684,93 @@ export async function updateClassCheckLabel(
     range: `ClassSettings!${colLetter}${rowNum}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[label]] },
+  });
+}
+
+// Per-student, per-MONTH state for the same 3 generic checkboxes —
+// checking one in August has no bearing on September, matching the
+// labels above. One row per student+month, upsert-in-place.
+export type MonthlyCheckColumn = "check1" | "check2" | "check3";
+export type MonthlyCheckRecord = {
+  studentId: string;
+  check1: boolean;
+  check2: boolean;
+  check3: boolean;
+};
+
+const MONTHLY_CHECK_COLUMN_LETTERS: Record<MonthlyCheckColumn, string> = {
+  check1: "D",
+  check2: "E",
+  check3: "F",
+};
+
+/** Every student's checkbox state for one class+month (students with no row yet are simply absent — treat as all-false). */
+export async function getMonthlyChecks(
+  className: string,
+  yearMonth: string
+): Promise<MonthlyCheckRecord[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "MonthlyChecks!A2:F",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((r) => (r[0] ?? "") === yearMonth && (r[1] ?? "") === className)
+    .map((r) => ({
+      studentId: (r[2] ?? "").toString(),
+      check1: (r[3] ?? "").toString().toUpperCase() === "TRUE",
+      check2: (r[4] ?? "").toString().toUpperCase() === "TRUE",
+      check3: (r[5] ?? "").toString().toUpperCase() === "TRUE",
+    }))
+    .filter((r) => r.studentId);
+}
+
+/** Set one student's checkbox for one class+month, creating the row if it doesn't exist yet. */
+export async function setMonthlyCheck(
+  className: string,
+  yearMonth: string,
+  studentId: string,
+  column: MonthlyCheckColumn,
+  value: boolean
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "MonthlyChecks!A2:C",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex(
+    (row) =>
+      (row[0] ?? "") === yearMonth &&
+      (row[1] ?? "") === className &&
+      (row[2] ?? "") === studentId
+  );
+
+  const colLetter = MONTHLY_CHECK_COLUMN_LETTERS[column];
+
+  if (rowOffset === -1) {
+    const values =
+      column === "check1"
+        ? [yearMonth, className, studentId, value ? "TRUE" : "FALSE", "FALSE", "FALSE"]
+        : column === "check2"
+          ? [yearMonth, className, studentId, "FALSE", value ? "TRUE" : "FALSE", "FALSE"]
+          : [yearMonth, className, studentId, "FALSE", "FALSE", value ? "TRUE" : "FALSE"];
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "MonthlyChecks!A:F",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [values] },
+    });
+    return;
+  }
+
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `MonthlyChecks!${colLetter}${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[value ? "TRUE" : "FALSE"]] },
   });
 }
 
