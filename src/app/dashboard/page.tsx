@@ -97,13 +97,13 @@ function daysInMonth(year: number, month: number) {
 // this same day-of-week -> color mapping, just at different opacity/text
 // weight for header vs. body cells.
 function weekendHeaderClasses(dow: number): string {
-  if (dow === 0) return "bg-red-50 text-red-700";
-  if (dow === 6) return "bg-blue-50 text-blue-700";
+  if (dow === 0) return "bg-red-200 text-red-800";
+  if (dow === 6) return "bg-blue-200 text-blue-800";
   return "bg-gray-50";
 }
 function weekendCellClasses(dow: number): string {
-  if (dow === 0) return "bg-red-50/60";
-  if (dow === 6) return "bg-blue-50/60";
+  if (dow === 0) return "bg-red-100";
+  if (dow === 6) return "bg-blue-100";
   return "";
 }
 
