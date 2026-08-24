@@ -152,6 +152,12 @@ export default function DashboardPage() {
   const [monthlyChecks, setMonthlyChecks] = useState<
     Record<string, { check1: boolean; check2: boolean; check3: boolean }>
   >({});
+  // Dates this class's calendar says are closed (カレンダー管理: Master
+  // holidays, minus/plus this class's own overrides) — a still-blank cell
+  // on one of these dates shows 祝 as a reference default instead of
+  // truly empty, but stays fully editable (tap it to override to 出, same
+  // as any other cell).
+  const [closedDates, setClosedDates] = useState<Set<string>>(new Set());
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -247,18 +253,21 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [studentsRes, attendanceRes, settingsRes, checksRes] = await Promise.all([
-        fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
-        fetch(
-          `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
-        ),
-        fetch(
-          `/api/class-settings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
-        ),
-        fetch(
-          `/api/monthly-checks?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
-        ),
-      ]);
+      const [studentsRes, attendanceRes, settingsRes, checksRes, holidaysRes, overridesRes] =
+        await Promise.all([
+          fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
+          fetch(
+            `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+          ),
+          fetch(
+            `/api/class-settings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+          ),
+          fetch(
+            `/api/monthly-checks?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+          ),
+          fetch("/api/calendar/master"),
+          fetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
+        ]);
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
       const attendanceData = await attendanceRes.json();
@@ -285,6 +294,24 @@ export default function DashboardPage() {
           checks.map((c) => [c.studentId, { check1: c.check1, check2: c.check2, check3: c.check3 }])
         )
       );
+
+      // Effective closed-dates for this class: start from Master holidays,
+      // then apply this class's own overrides on top (may re-open a
+      // Master holiday, or close an otherwise-normal day).
+      type Holiday = { date: string };
+      type Override = { date: string; isOpen: boolean };
+      const holidayDates: Holiday[] = holidaysRes.ok
+        ? ((await holidaysRes.json()).holidays ?? [])
+        : [];
+      const classOverrides: Override[] = overridesRes.ok
+        ? ((await overridesRes.json()).overrides ?? [])
+        : [];
+      const closed = new Set(holidayDates.map((h) => h.date));
+      for (const o of classOverrides) {
+        if (o.isOpen) closed.delete(o.date);
+        else closed.add(o.date);
+      }
+      setClosedDates(closed);
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -750,6 +777,15 @@ export default function DashboardPage() {
             </span>
           </Link>
           <Link
+            href="/dashboard/calendar"
+            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+          >
+            カレンダー管理
+            <span className="block text-[10px] font-normal opacity-70">
+              Calendar Management
+            </span>
+          </Link>
+          <Link
             href="/attendance"
             className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
           >
@@ -994,6 +1030,12 @@ export default function DashboardPage() {
                       const reason = reasonMap.get(s.studentId)?.get(day) ?? "";
                       const display = status ? STATUS_DISPLAY[status] : null;
                       const date = `${year}-${pad2(month)}-${pad2(day)}`;
+                      // A still-blank cell on a day this class's calendar
+                      // says is closed shows 祝 as a reference default —
+                      // not a real record, so tapping it still opens the
+                      // normal editor and picking a status (e.g. 出 for a
+                      // special class) overrides it for just this student.
+                      const showHolidayDefault = !status && closedDates.has(date);
                       const isFuture = date > today;
                       // Blank future days are locked (use 期間で登録 instead)
                       // to avoid casual future taps, but a future day that
@@ -1030,6 +1072,8 @@ export default function DashboardPage() {
                             <span className={`font-bold ${display.className}`}>
                               {display.label}
                             </span>
+                          ) : showHolidayDefault ? (
+                            <span className="text-purple-400 text-xs">祝</span>
                           ) : (
                             ""
                           )}

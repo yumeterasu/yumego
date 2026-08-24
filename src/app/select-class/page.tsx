@@ -114,6 +114,15 @@ export default function SelectClassPage() {
             Pickup/Drop-off · Thong Lo
           </span>
         </Link>
+        <Link
+          href="/dashboard/calendar-master"
+          className="rounded-full bg-amber-50 border border-amber-300 text-amber-700 px-4 py-2 text-sm font-semibold text-center"
+        >
+          📅 祝日カレンダー
+          <span className="block text-[9px] font-normal opacity-70">
+            Master Holiday Calendar
+          </span>
+        </Link>
       </div>
 
       <h1 className="text-xl font-bold text-center">

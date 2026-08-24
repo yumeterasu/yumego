@@ -1513,3 +1513,154 @@ export async function upsertPickupRecord(
     requestBody: { values: [[nextArrival, nextDeparture]] },
   });
 }
+
+// カレンダー管理 — school-wide holiday master list (date + optional label,
+// e.g. "Songkran"), viewed all 12 months of a fiscal year at once. Every
+// class's own calendar shows these as its default, but can independently
+// override any date (see ClassCalendarOverrides below) — 送迎管理 aside,
+// this is the only other school-wide (not per-class) piece of data.
+export type MasterHoliday = {
+  date: string; // "YYYY-MM-DD"
+  label: string;
+};
+
+export async function getMasterHolidays(): Promise<MasterHoliday[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "MasterHolidays!A2:B",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({ date: (row[0] ?? "").toString(), label: (row[1] ?? "").toString() }))
+    .filter((h) => h.date);
+}
+
+/** label === null removes the date from the holiday list entirely; a string (even "") sets/updates it as a holiday. */
+export async function setMasterHoliday(date: string, label: string | null): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "MasterHolidays!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === date);
+
+  if (label === null) {
+    if (rowOffset === -1) return; // already not a holiday
+    const sheetId = await getSheetIdByTitle(sheets, "MasterHolidays");
+    const rowNum = rowOffset + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "MasterHolidays!A:B",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[date, label]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `MasterHolidays!B${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[label]] },
+  });
+}
+
+// Per-class open/closed overrides — only a row when a class's calendar
+// actually DIFFERS from the Master default for that date (forcing open on
+// a Master holiday, e.g. a make-up class, or forcing closed on an
+// otherwise-normal day). No row for a date means "use the Master default."
+export type ClassCalendarOverride = {
+  className: string;
+  date: string;
+  isOpen: boolean;
+};
+
+export async function getClassCalendarOverrides(
+  className: string
+): Promise<ClassCalendarOverride[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "ClassCalendarOverrides!A2:C",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .filter((row) => (row[0] ?? "") === className)
+    .map((row) => ({
+      className: (row[0] ?? "").toString(),
+      date: (row[1] ?? "").toString(),
+      isOpen: (row[2] ?? "").toString().toUpperCase() === "TRUE",
+    }))
+    .filter((o) => o.date);
+}
+
+/** isOpen === null removes the override (falls back to the Master default again). */
+export async function setClassCalendarOverride(
+  className: string,
+  date: string,
+  isOpen: boolean | null
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "ClassCalendarOverrides!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === className && (row[1] ?? "") === date
+  );
+
+  if (isOpen === null) {
+    if (rowOffset === -1) return; // no override to remove
+    const sheetId = await getSheetIdByTitle(sheets, "ClassCalendarOverrides");
+    const rowNum = rowOffset + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "ClassCalendarOverrides!A:C",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[className, date, isOpen ? "TRUE" : "FALSE"]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `ClassCalendarOverrides!C${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[isOpen ? "TRUE" : "FALSE"]] },
+  });
+}
