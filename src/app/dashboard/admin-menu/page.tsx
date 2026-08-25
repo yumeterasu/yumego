@@ -23,6 +23,12 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
     ja: "クラス管理",
     en: "Class Management",
   },
+  {
+    href: "/dashboard/admin-menu/buses",
+    icon: "🚌",
+    ja: "バス管理",
+    en: "Bus Management",
+  },
 ];
 
 export default function AdminMenuPage() {

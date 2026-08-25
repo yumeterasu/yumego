@@ -1943,3 +1943,83 @@ export async function updateExtraClass(
     requestBody: { values: [merged] },
   });
 }
+
+// バス管理 — a plain named list (school-wide), each with an optional emoji
+// icon for quick visual identification. Not yet wired into 送迎管理 or
+// anywhere else; this is just the Master list itself.
+export type Bus = {
+  id: string;
+  name: string;
+  emoji: string;
+};
+
+export async function getBuses(): Promise<Bus[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Buses!A2:C",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      id: (row[0] ?? "").toString(),
+      name: (row[1] ?? "").toString(),
+      emoji: (row[2] ?? "").toString(),
+    }))
+    .filter((b) => b.id && b.name);
+}
+
+export async function addBus(id: string, bus: Omit<Bus, "id">): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "Buses!A:C",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[id, bus.name, bus.emoji]] },
+  });
+}
+
+export async function updateBus(id: string, updates: Partial<Omit<Bus, "id">>): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Buses!A2:C",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const rowNum = rowOffset + 2;
+  const current = rows[rowOffset];
+  const merged = [id, updates.name ?? (current[1] ?? ""), updates.emoji ?? (current[2] ?? "")];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Buses!A${rowNum}:C${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [merged] },
+  });
+}
+
+export async function deleteBus(id: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Buses!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const sheetId = await getSheetIdByTitle(sheets, "Buses");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
+  });
+}
