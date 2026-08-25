@@ -248,7 +248,7 @@ export default function BusesSettingsPage() {
                 type="text"
                 value={editing.emoji}
                 onChange={(e) => setEditing({ ...editing, emoji: e.target.value })}
-                placeholder="🚌"
+                placeholder="🐶"
                 className="border border-gray-300 rounded-lg px-3 py-2"
               />
               <div className="flex gap-2 flex-wrap mt-1 max-h-40 overflow-y-auto p-1 border border-gray-100 rounded-lg">
