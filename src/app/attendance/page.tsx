@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { classNameToEnglish } from "@/lib/classes";
-import type { Student, AttendanceStatus } from "@/lib/sheets";
+import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
-import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
+import type { AbsenceBucket } from "@/lib/absenceReasons";
 
 function todayDateString() {
   const d = new Date();
@@ -60,6 +60,7 @@ export default function AttendancePage() {
   const [showOtherInput, setShowOtherInput] = useState(false);
   const [otherText, setOtherText] = useState("");
   const [otherStatus, setOtherStatus] = useState<AbsenceBucket>("absent");
+  const [reasonOptions, setReasonOptions] = useState<AbsenceReason[]>([]);
 
   const today = useMemo(() => todayDateString(), []);
   // Defaults to today, but can be navigated back to backfill a day that
@@ -99,6 +100,15 @@ export default function AttendancePage() {
     window.addEventListener("online", syncPending);
     return () => window.removeEventListener("online", syncPending);
   }, [refreshPendingCount, syncPending]);
+
+  useEffect(() => {
+    // School-wide, cosmetic (quick-pick buttons only) — if this fails,
+    // "その他" is still always there as a fallback, so no error state needed.
+    fetch("/api/absence-reasons")
+      .then((r) => (r.ok ? r.json() : { reasons: [] }))
+      .then((d) => setReasonOptions(d.reasons ?? []))
+      .catch(() => {});
+  }, []);
 
   async function load(className: string, forDate: string) {
     setLoading(true);
@@ -505,9 +515,9 @@ export default function AttendancePage() {
                   早退
                   <span className="block text-[10px] font-normal opacity-70">Early leave</span>
                 </button>
-                {REASON_OPTIONS.map((opt) => (
+                {reasonOptions.map((opt) => (
                   <button
-                    key={opt.label}
+                    key={opt.id}
                     onClick={() => pickReason(opt.label, opt.status)}
                     className={`rounded-full border py-3 font-semibold ${
                       opt.status === "suspended"

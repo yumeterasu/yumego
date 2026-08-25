@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
-import type { Student, AttendanceStatus } from "@/lib/sheets";
-import { REASON_OPTIONS, type AbsenceBucket } from "@/lib/absenceReasons";
+import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
+import type { AbsenceBucket } from "@/lib/absenceReasons";
 
 // English names for the 5 attendance statuses, used only in the edit
 // popup's buttons — NOT in the compact day-by-day grid cells (出/欠/遅/
@@ -61,7 +61,7 @@ function isCurrentSelection(
 // True when the current value is a non-blank status/reason that doesn't
 // match any of the fixed buttons — i.e. it was set via a custom "その他"
 // reason, so that button is the one to highlight instead.
-function isCurrentOther(cell: EditingCell): boolean {
+function isCurrentOther(cell: EditingCell, reasonOptions: AbsenceReason[]): boolean {
   if (cell.currentStatus === null) return false;
   if (
     cell.currentStatus === "present" ||
@@ -70,7 +70,7 @@ function isCurrentOther(cell: EditingCell): boolean {
   ) {
     return false;
   }
-  return !REASON_OPTIONS.some(
+  return !reasonOptions.some(
     (o) => o.status === cell.currentStatus && o.label === cell.currentReason
   );
 }
@@ -158,6 +158,9 @@ export default function DashboardPage() {
   // truly empty, but stays fully editable (tap it to override to 出, same
   // as any other cell).
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set());
+  // School-wide quick-pick reasons for the 欠/出停 buttons in the edit
+  // popup — cosmetic only; "その他" is always available regardless.
+  const [reasonOptions, setReasonOptions] = useState<AbsenceReason[]>([]);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -253,21 +256,30 @@ export default function DashboardPage() {
     setLoading(true);
     setError(null);
     try {
-      const [studentsRes, attendanceRes, settingsRes, checksRes, holidaysRes, overridesRes] =
-        await Promise.all([
-          fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
-          fetch(
-            `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
-          ),
-          fetch(
-            `/api/class-settings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
-          ),
-          fetch(
-            `/api/monthly-checks?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
-          ),
-          fetch("/api/calendar/master"),
-          fetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
-        ]);
+      const [
+        studentsRes,
+        attendanceRes,
+        settingsRes,
+        checksRes,
+        holidaysRes,
+        overridesRes,
+        reasonsRes,
+      ] = await Promise.all([
+        fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
+        fetch(
+          `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        ),
+        fetch(
+          `/api/class-settings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        ),
+        fetch(
+          `/api/monthly-checks?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        ),
+        fetch("/api/calendar/master"),
+        fetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
+        fetch("/api/absence-reasons"),
+      ]);
+      setReasonOptions(reasonsRes.ok ? ((await reasonsRes.json()).reasons ?? []) : []);
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
       const attendanceData = await attendanceRes.json();
@@ -1186,9 +1198,9 @@ export default function DashboardPage() {
                       {STATUS_EN.early_leave}
                     </span>
                   </button>
-                  {REASON_OPTIONS.map((opt) => (
+                  {reasonOptions.map((opt) => (
                     <button
-                      key={opt.label}
+                      key={opt.id}
                       onClick={() => applyEdit(opt.status, opt.label)}
                       className={`rounded-full border py-2.5 text-sm font-semibold ${
                         opt.status === "suspended"
@@ -1209,7 +1221,7 @@ export default function DashboardPage() {
                   <button
                     onClick={() => setShowOtherInput(true)}
                     className={`rounded-full bg-gray-100 text-gray-600 font-semibold py-2.5 text-sm ${
-                      isCurrentOther(editingCell) ? "ring-4 ring-gray-600" : ""
+                      isCurrentOther(editingCell, reasonOptions) ? "ring-4 ring-gray-600" : ""
                     }`}
                   >
                     その他
@@ -1461,9 +1473,9 @@ export default function DashboardPage() {
                       {STATUS_EN.early_leave}
                     </span>
                   </button>
-                  {REASON_OPTIONS.map((opt) => (
+                  {reasonOptions.map((opt) => (
                     <button
-                      key={opt.label}
+                      key={opt.id}
                       onClick={() => selectBulkChoice(opt.status, opt.label, opt.label)}
                       disabled={!bulkStudentId}
                       className={`rounded-full border py-2.5 text-sm font-semibold disabled:opacity-40 ${

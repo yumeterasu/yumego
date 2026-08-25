@@ -1765,3 +1765,102 @@ export async function setClassCalendarOverride(
     requestBody: { values: [[isOpen ? "TRUE" : "FALSE", labelValue]] },
   });
 }
+
+// 欠席理由リスト — the quick-pick buttons on the check-in page and the
+// Dashboard's edit popup (都合欠/病欠/インフルエンザ/...). School-wide, like
+// MasterHolidays. Deleting an option only removes it from the picker; it
+// never touches already-recorded Attendance rows, which store the reason
+// as plain text independent of this list. "その他" (free text) is always
+// available in the UI regardless of what's here, so this list is never a
+// hard constraint on what can be recorded.
+export type AbsenceReason = {
+  id: string;
+  label: string;
+  en: string;
+  status: "absent" | "suspended";
+};
+
+export async function getAbsenceReasons(): Promise<AbsenceReason[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "AbsenceReasons!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      id: (row[0] ?? "").toString(),
+      label: (row[1] ?? "").toString(),
+      en: (row[2] ?? "").toString(),
+      status: ((row[3] ?? "").toString() === "suspended" ? "suspended" : "absent") as
+        | "absent"
+        | "suspended",
+    }))
+    .filter((r) => r.id && r.label);
+}
+
+export async function addAbsenceReason(
+  id: string,
+  reason: Omit<AbsenceReason, "id">
+): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "AbsenceReasons!A:D",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[id, reason.label, reason.en, reason.status]] },
+  });
+}
+
+export async function updateAbsenceReason(
+  id: string,
+  updates: Partial<Omit<AbsenceReason, "id">>
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "AbsenceReasons!A2:D",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const rowNum = rowOffset + 2;
+  const current = rows[rowOffset];
+  const merged = [
+    id,
+    updates.label ?? (current[1] ?? ""),
+    updates.en ?? (current[2] ?? ""),
+    updates.status ?? (current[3] ?? "absent"),
+  ];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `AbsenceReasons!A${rowNum}:D${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [merged] },
+  });
+}
+
+export async function deleteAbsenceReason(id: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "AbsenceReasons!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const sheetId = await getSheetIdByTitle(sheets, "AbsenceReasons");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
+  });
+}

@@ -1,13 +1,8 @@
-// The only reasons a teacher can pick when marking someone absent —
-// shared between the daily check-in page and the dashboard's edit popup
-// so both stay in sync. No plain "欠席"/"出席停止" without a reason.
+// The two buckets a picked absence reason falls into — shared between the
+// daily check-in page and the Dashboard's edit popup. The actual list of
+// reasons (都合欠/病欠/インフルエンザ/...) is school-wide, Master-managed
+// data now (see AbsenceReason in @/lib/sheets, fetched from
+// /api/absence-reasons), not hardcoded here — admins edit it from
+// 管理 → 欠席理由設定 without needing a code change.
 
 export type AbsenceBucket = "absent" | "suspended";
-
-export const REASON_OPTIONS: { label: string; en: string; status: AbsenceBucket }[] = [
-  { label: "都合欠", en: "Personal reasons", status: "absent" },
-  { label: "病欠", en: "Sick", status: "absent" },
-  { label: "インフルエンザ", en: "Influenza", status: "suspended" },
-  { label: "手足口病", en: "Hand-Foot-Mouth Disease", status: "suspended" },
-  { label: "コロナ", en: "COVID-19", status: "suspended" },
-];

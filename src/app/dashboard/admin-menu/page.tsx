@@ -11,6 +11,12 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
     ja: "祝日カレンダー",
     en: "Master Holiday Calendar",
   },
+  {
+    href: "/dashboard/admin-menu/absence-reasons",
+    icon: "📋",
+    ja: "欠席理由設定",
+    en: "Absence Reason Settings",
+  },
 ];
 
 export default function AdminMenuPage() {
