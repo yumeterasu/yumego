@@ -18,23 +18,25 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH /api/calendar/class  { className, date, isOpen: boolean | null }
+// PATCH /api/calendar/class  { className, date, isOpen: boolean | null, label?: string }
 // isOpen: null removes the override (falls back to the Master default again).
+// label: only meaningful when isOpen is false — this class's own name for the closure.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { className, date, isOpen } = body ?? {};
+  const { className, date, isOpen, label } = body ?? {};
 
   if (
     !className ||
     typeof date !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-    (isOpen !== null && typeof isOpen !== "boolean")
+    (isOpen !== null && typeof isOpen !== "boolean") ||
+    (label !== undefined && typeof label !== "string")
   ) {
-    return NextResponse.json({ error: "Missing or invalid className/date/isOpen" }, { status: 400 });
+    return NextResponse.json({ error: "Missing or invalid className/date/isOpen/label" }, { status: 400 });
   }
 
   try {
-    await setClassCalendarOverride(className, date, isOpen);
+    await setClassCalendarOverride(className, date, isOpen, label);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error(err);

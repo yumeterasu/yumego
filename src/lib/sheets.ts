@@ -1591,6 +1591,8 @@ export type ClassCalendarOverride = {
   className: string;
   date: string;
   isOpen: boolean;
+  /** Only meaningful when isOpen is false — this class's own name for the closure. */
+  label?: string;
 };
 
 export async function getClassCalendarOverrides(
@@ -1599,7 +1601,7 @@ export async function getClassCalendarOverrides(
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "ClassCalendarOverrides!A2:C",
+    range: "ClassCalendarOverrides!A2:D",
   });
   const rows = res.data.values ?? [];
   return rows
@@ -1608,6 +1610,7 @@ export async function getClassCalendarOverrides(
       className: (row[0] ?? "").toString(),
       date: (row[1] ?? "").toString(),
       isOpen: (row[2] ?? "").toString().toUpperCase() === "TRUE",
+      label: (row[3] ?? "").toString() || undefined,
     }))
     .filter((o) => o.date);
 }
@@ -1616,7 +1619,8 @@ export async function getClassCalendarOverrides(
 export async function setClassCalendarOverride(
   className: string,
   date: string,
-  isOpen: boolean | null
+  isOpen: boolean | null,
+  label?: string
 ): Promise<void> {
   const sheets = getSheetsClient();
   const existing = await sheets.spreadsheets.values.get({
@@ -1647,20 +1651,22 @@ export async function setClassCalendarOverride(
     return;
   }
 
+  const labelValue = isOpen === false ? (label ?? "") : "";
+
   if (rowOffset === -1) {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: "ClassCalendarOverrides!A:C",
+      range: "ClassCalendarOverrides!A:D",
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[className, date, isOpen ? "TRUE" : "FALSE"]] },
+      requestBody: { values: [[className, date, isOpen ? "TRUE" : "FALSE", labelValue]] },
     });
     return;
   }
   const rowNum = rowOffset + 2;
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `ClassCalendarOverrides!C${rowNum}`,
+    range: `ClassCalendarOverrides!C${rowNum}:D${rowNum}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[isOpen ? "TRUE" : "FALSE"]] },
+    requestBody: { values: [[isOpen ? "TRUE" : "FALSE", labelValue]] },
   });
 }

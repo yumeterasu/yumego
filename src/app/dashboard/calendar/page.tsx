@@ -33,6 +33,10 @@ export default function ClassCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingDate, setSavingDate] = useState<string | null>(null);
+  const [confirmClose, setConfirmClose] = useState<{ date: string; label: string } | null>(
+    null
+  );
+  const [confirming, setConfirming] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedClass) return;
@@ -85,6 +89,9 @@ export default function ClassCalendarPage() {
 
   const holidayByDate = new Map(holidays.map((h) => [h.date, h.label]));
   const overrideByDate = new Map(overrides.map((o) => [o.date, o.isOpen]));
+  const overrideLabelByDate = new Map(
+    overrides.filter((o) => o.label).map((o) => [o.date, o.label as string])
+  );
 
   function masterSaysOpen(date: string) {
     return !holidayByDate.has(date);
@@ -93,12 +100,21 @@ export default function ClassCalendarPage() {
     return overrideByDate.has(date) ? overrideByDate.get(date)! : masterSaysOpen(date);
   }
 
-  async function toggleDay(date: string) {
-    if (!selectedClass) return;
+  function toggleDay(date: string) {
     const currentlyOpen = isOpenFor(date);
-    const nextOpen = !currentlyOpen;
+    if (currentlyOpen) {
+      // about to mark this day CLOSED — confirm first, with an optional label
+      setConfirmClose({ date, label: "" });
+      return;
+    }
+    applyToggle(date, true);
+  }
+
+  async function applyToggle(date: string, nextOpen: boolean, label?: string) {
+    if (!selectedClass) return;
     const matchesMaster = nextOpen === masterSaysOpen(date);
     const nextOverrideValue = matchesMaster ? null : nextOpen;
+    const nextLabel = nextOverrideValue === false ? (label ?? "") : undefined;
 
     setSavingDate(date);
     setError(null);
@@ -108,14 +124,22 @@ export default function ClassCalendarPage() {
       const withoutDate = prev.filter((o) => o.date !== date);
       return nextOverrideValue === null
         ? withoutDate
-        : [...withoutDate, { className: selectedClass, date, isOpen: nextOverrideValue }];
+        : [
+            ...withoutDate,
+            { className: selectedClass, date, isOpen: nextOverrideValue, label: nextLabel },
+          ];
     });
 
     try {
       const res = await fetch("/api/calendar/class", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ className: selectedClass, date, isOpen: nextOverrideValue }),
+        body: JSON.stringify({
+          className: selectedClass,
+          date,
+          isOpen: nextOverrideValue,
+          label: nextLabel,
+        }),
       });
       if (!res.ok) throw new Error("failed");
     } catch {
@@ -124,6 +148,14 @@ export default function ClassCalendarPage() {
     } finally {
       setSavingDate(null);
     }
+  }
+
+  async function confirmCloseDay() {
+    if (!confirmClose) return;
+    setConfirming(true);
+    await applyToggle(confirmClose.date, false, confirmClose.label);
+    setConfirming(false);
+    setConfirmClose(null);
   }
 
   const today = todayDateString();
@@ -227,7 +259,7 @@ export default function ClassCalendarPage() {
               const date = `${year}-${pad2(month)}-${pad2(day)}`;
               const open = isOpenFor(date);
               const hasOverride = overrideByDate.has(date);
-              const label = holidayByDate.get(date);
+              const label = overrideLabelByDate.get(date) ?? holidayByDate.get(date);
               const isToday = date === today;
               const isSaving = savingDate === date;
               return (
@@ -247,6 +279,55 @@ export default function ClassCalendarPage() {
                 </button>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {confirmClose && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !confirming && setConfirmClose(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-bold text-lg text-center">
+              {confirmClose.date}
+              <span className="block text-sm font-normal text-gray-500">
+                この日を休校にする / Mark this day as closed
+              </span>
+            </h2>
+            <label className="flex flex-col gap-1 text-sm">
+              名前（任意）
+              <span className="text-xs font-normal text-gray-500">
+                Label (optional — leave blank and press OK is fine)
+              </span>
+              <input
+                type="text"
+                value={confirmClose.label}
+                onChange={(e) => setConfirmClose({ ...confirmClose, label: e.target.value })}
+                placeholder="例：遠足のため"
+                autoFocus
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setConfirmClose(null)}
+                disabled={confirming}
+                className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={confirmCloseDay}
+                disabled={confirming}
+                className="rounded-full bg-red-600 text-white py-2.5 font-semibold disabled:opacity-40"
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}
