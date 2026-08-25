@@ -9,16 +9,30 @@ const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
 const USER_AGENT = "YumegoPreschoolApp/1.0 (contact: ai-admin@yume-terasu.com)";
 
+const SHORT_LINK_PATTERN = /https?:\/\/(?:maps\.app\.goo\.gl|goo\.gl\/maps)\/\S+/;
+
+/** Follows a shortened Google Maps link server-side to its resolved URL. */
+async function resolveShortLink(shortUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(shortUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; YumegoPreschoolApp/1.0)" },
+      redirect: "follow",
+    });
+    return res.url || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Recognizes GPS coordinates pasted directly (most precise — no search
- * ambiguity), in a few common forms an admin might copy from Google Maps:
- *  - a plain "lat, lng" pair (what you get right-clicking a pin -> copying
- *    the coordinates that appear at the top)
+ * Recognizes GPS coordinates, in a few common forms an admin might copy
+ * from Google Maps:
+ *  - a plain "lat, lng" pair (right-click a pin -> click the coordinates
+ *    that appear at the top to copy them)
  *  - a full (non-shortened) Google Maps URL containing "@lat,lng,zoom"
  *  - a Google Maps URL with a "q=lat,lng" or "ll=lat,lng" query param
- * Returns null (falling back to text search) for anything else, including
- * shortened maps.app.goo.gl links, which don't carry coordinates in the URL
- * itself.
+ * Not anchored to the whole string, so it also matches when embedded in a
+ * longer resolved short-link URL.
  */
 function extractCoordinates(input: string): { lat: number; lng: number } | null {
   const patterns = [
@@ -38,6 +52,17 @@ function extractCoordinates(input: string): { lat: number; lng: number } | null 
   return null;
 }
 
+/** "/maps/place/My+Condo+Name/@..." -> "My Condo Name", when present. */
+function extractPlaceName(url: string): string | null {
+  const m = url.match(/\/maps\/place\/([^/@]+)/);
+  if (!m) return null;
+  try {
+    return decodeURIComponent(m[1].replace(/\+/g, " "));
+  } catch {
+    return m[1].replace(/\+/g, " ");
+  }
+}
+
 // GET /api/students/location?studentId=...
 export async function GET(req: NextRequest) {
   const studentId = req.nextUrl.searchParams.get("studentId");
@@ -54,10 +79,11 @@ export async function GET(req: NextRequest) {
 }
 
 // PATCH /api/students/location  { studentId, address: string | null }
-// address: null removes the saved location. Otherwise: if it looks like GPS
-// coordinates (or a Google Maps URL/copy-paste containing them), those are
-// used directly -- most precise, no search involved. Otherwise it's treated
-// as free-text and forward-geocoded via Nominatim.
+// address: null removes the saved location. Otherwise, tried in this order:
+//  1. a shortened Google Maps link ("Copy link") -- resolved server-side,
+//     then coordinates + place name extracted from the resolved URL
+//  2. GPS coordinates pasted directly, or embedded in a full Maps URL
+//  3. free-text address, forward-geocoded via Nominatim
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { studentId, address } = body ?? {};
@@ -76,30 +102,65 @@ export async function PATCH(req: NextRequest) {
     }
 
     const trimmed = address.trim();
-    const coords = extractCoordinates(trimmed);
+    const shortLinkMatch = trimmed.match(SHORT_LINK_PATTERN);
+
+    let workingInput = trimmed;
+    if (shortLinkMatch) {
+      const resolved = await resolveShortLink(shortLinkMatch[0]);
+      if (!resolved) {
+        return NextResponse.json(
+          {
+            error:
+              "リンクを開けませんでした。座標を直接コピーして貼り付けてください / Couldn't open the link — try copying the coordinates directly instead",
+          },
+          { status: 422 }
+        );
+      }
+      workingInput = resolved;
+    }
+
+    const coords = extractCoordinates(workingInput);
 
     if (coords) {
-      // Reverse-geocode is best-effort, purely for a human-readable
-      // confirmation name -- the exact pasted coordinates are what gets
-      // saved either way, never the reverse-lookup's approximate center.
-      let displayName = "GPS座標 (pinned coordinates)";
-      try {
-        const revUrl = `${NOMINATIM_REVERSE_URL}?lat=${coords.lat}&lon=${coords.lng}&format=json`;
-        const revRes = await fetch(revUrl, { headers: { "User-Agent": USER_AGENT } });
-        if (revRes.ok) {
-          const revData = await revRes.json();
-          if (revData?.display_name) displayName = revData.display_name;
+      const placeName = extractPlaceName(workingInput);
+      let displayName = placeName ?? "GPS座標 (pinned coordinates)";
+      if (!placeName) {
+        // Best-effort reverse geocode purely for a human-readable
+        // confirmation name when the URL/coordinates didn't carry one --
+        // the exact coordinates are what gets saved either way.
+        try {
+          const revUrl = `${NOMINATIM_REVERSE_URL}?lat=${coords.lat}&lon=${coords.lng}&format=json`;
+          const revRes = await fetch(revUrl, { headers: { "User-Agent": USER_AGENT } });
+          if (revRes.ok) {
+            const revData = await revRes.json();
+            if (revData?.display_name) displayName = revData.display_name;
+          }
+        } catch {
+          // ignore -- fall back to the generic label above
         }
-      } catch {
-        // reverse lookup failing doesn't block saving the exact coordinates
       }
-      const resolvedAddress = `${coords.lat}, ${coords.lng}`;
+      const resolvedAddress = placeName
+        ? `${placeName} (${coords.lat}, ${coords.lng})`
+        : `${coords.lat}, ${coords.lng}`;
       await setStudentLocation(studentId, { address: resolvedAddress, lat: coords.lat, lng: coords.lng });
       return NextResponse.json({
         ok: true,
         location: { studentId, address: resolvedAddress, lat: coords.lat, lng: coords.lng },
         displayName,
       });
+    }
+
+    if (shortLinkMatch) {
+      // Resolved successfully but the resulting URL had no coordinates we
+      // recognize (an unusual Maps link shape) -- don't fall through to
+      // text-searching the raw link, that would never succeed usefully.
+      return NextResponse.json(
+        {
+          error:
+            "リンクから座標を取得できませんでした。座標を直接コピーして貼り付けてください / Couldn't find coordinates in that link — try copying the coordinates directly instead",
+        },
+        { status: 422 }
+      );
     }
 
     const url = `${NOMINATIM_SEARCH_URL}?q=${encodeURIComponent(trimmed)}&format=json&limit=1`;

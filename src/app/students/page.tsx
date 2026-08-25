@@ -897,11 +897,11 @@ export default function StudentsPage() {
             ) : (
               <>
                 <label className="flex flex-col gap-1 text-sm">
-                  住所（またはGoogle MapsのGPS座標）
+                  住所（またはGoogle Mapsのリンク／GPS座標）
                   <span className="text-xs font-normal text-gray-500">
-                    Address, or paste GPS coordinates copied from Google Maps for exact accuracy
-                    (right-click the pin on Google Maps → click the coordinates to copy → paste
-                    here)
+                    Address, or for exact accuracy: paste a Google Maps "Copy link" (from the
+                    place card's share button), or GPS coordinates copied from a right-click on
+                    the map
                   </span>
                   <textarea
                     value={addressModal.input}
