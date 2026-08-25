@@ -744,7 +744,7 @@ export default function DashboardPage() {
             href="/students"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
-            生徒管理
+            🧒 生徒管理
             <span className="block text-[10px] font-normal opacity-70">
               Manage Students
             </span>
@@ -753,7 +753,7 @@ export default function DashboardPage() {
             href="/dashboard/summary"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
-            年間まとめ
+            📈 年間まとめ
             <span className="block text-[10px] font-normal opacity-70">Annual Summary</span>
           </Link>
           {hasBranchGrade && (
@@ -761,7 +761,7 @@ export default function DashboardPage() {
               href="/dashboard/specialist"
               className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
             >
-              専門コーチ
+              🏅 専門コーチ
               <span className="block text-[10px] font-normal opacity-70">
                 Specialist Coach
               </span>
@@ -771,7 +771,7 @@ export default function DashboardPage() {
             href="/dashboard/outings"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
-            入退出記録
+            🚪 入退出記録
             <span className="block text-[10px] font-normal opacity-70">
               Entry/Exit Log
             </span>
@@ -780,7 +780,7 @@ export default function DashboardPage() {
             href="/dashboard/calendar"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
           >
-            カレンダー管理
+            📅 カレンダー管理
             <span className="block text-[10px] font-normal opacity-70">
               Calendar Management
             </span>
@@ -789,7 +789,7 @@ export default function DashboardPage() {
             href="/attendance"
             className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
           >
-            出席確認
+            ✅ 出席確認
             <span className="block text-[10px] font-normal opacity-70">
               Take Attendance
             </span>
