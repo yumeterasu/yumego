@@ -9,7 +9,7 @@ type Editing = { id: string | null; name: string; emoji: string };
 const EMOJI_SUGGESTIONS = [
   "🐶", "🐱", "🐰", "🐻", "🐼", "🐨",
   "🦁", "🐯", "🐵", "🐸", "🐘", "🦒",
-  "🦊", "🐷", "🐮", "🐔",
+  "🦊", "🐷", "🐮", "🐔", "🐐", "🐧",
 ];
 
 export default function BusesSettingsPage() {
