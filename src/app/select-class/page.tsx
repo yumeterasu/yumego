@@ -94,34 +94,16 @@ export default function SelectClassPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-3 p-4">
-      {/* 送迎管理 — a separate whole-branch entry point, not gated on a class */}
-      <div className="flex gap-3">
+      {/* Admin tools (pickup management, master calendar) live behind one
+          menu button so they don't compete with the daily class-selection
+          flow, which is what this page is actually for. */}
+      <div className="w-full flex justify-end max-w-2xl">
         <Link
-          href="/dashboard/pickup?branch=プロンポン"
-          className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
+          href="/dashboard/admin-menu"
+          className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold text-center"
         >
-          🚌 送迎管理　プロンポン
-          <span className="block text-[9px] font-normal opacity-70">
-            Pickup/Drop-off · Phrom Phong
-          </span>
-        </Link>
-        <Link
-          href="/dashboard/pickup?branch=トンロー"
-          className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
-        >
-          🚌 送迎管理　トンロー
-          <span className="block text-[9px] font-normal opacity-70">
-            Pickup/Drop-off · Thong Lo
-          </span>
-        </Link>
-        <Link
-          href="/dashboard/calendar-master"
-          className="rounded-full bg-amber-50 border border-amber-300 text-amber-700 px-4 py-2 text-sm font-semibold text-center"
-        >
-          📅 祝日カレンダー
-          <span className="block text-[9px] font-normal opacity-70">
-            Master Holiday Calendar
-          </span>
+          ⚙ 管理
+          <span className="block text-[9px] font-normal opacity-70">Management</span>
         </Link>
       </div>
 
