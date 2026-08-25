@@ -114,6 +114,14 @@ export default function MasterCalendarPage() {
   const [saving, setSaving] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
 
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
+  const [deleteAllFinalStep, setDeleteAllFinalStep] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [deleteAllDone, setDeleteAllDone] = useState<number | null>(null);
+
   function closeModal() {
     setEditing(null);
     setConfirmingRemove(false);
@@ -194,6 +202,48 @@ export default function MasterCalendarPage() {
     }
   }
 
+  async function handleImportThai() {
+    setImporting(true);
+    setImportMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/calendar/master/import-thai", { method: "POST" });
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setImportMsg(
+        `追加：${data.added}件　スキップ（既存）：${data.skipped}件 / Added ${data.added}, skipped ${data.skipped} (already set)`
+      );
+      await load();
+    } catch {
+      setError("インポートに失敗しました / Import failed");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function openDeleteAllModal() {
+    setShowDeleteAllModal(true);
+    setDeleteAllFinalStep(false);
+    setDeleteAllDone(null);
+    setError(null);
+  }
+
+  async function handleDeleteAll() {
+    setDeletingAll(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/calendar/master", { method: "DELETE" });
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setHolidays([]);
+      setDeleteAllDone(data.count ?? 0);
+    } catch {
+      setError("削除に失敗しました / Failed to delete");
+    } finally {
+      setDeletingAll(false);
+    }
+  }
+
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -207,7 +257,24 @@ export default function MasterCalendarPage() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button
+            onClick={handleImportThai}
+            disabled={importing}
+            className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold disabled:opacity-40"
+          >
+            {importing ? "読み込み中... / Importing..." : "🇹🇭 タイの祝日を読み込む"}
+            <span className="block text-[9px] font-normal opacity-70">
+              Import Thai Holidays (once)
+            </span>
+          </button>
+          <button
+            onClick={openDeleteAllModal}
+            className="rounded-full bg-red-50 border border-red-300 text-red-700 px-4 py-2 text-sm font-semibold"
+          >
+            🗑 全て削除
+            <span className="block text-[9px] font-normal opacity-70">Delete All</span>
+          </button>
           <Link
             href="/select-class"
             className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
@@ -243,6 +310,7 @@ export default function MasterCalendarPage() {
         </span>
       </p>
 
+      {importMsg && <p className="text-green-700 text-sm text-center">{importMsg}</p>}
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
@@ -355,6 +423,110 @@ export default function MasterCalendarPage() {
                 外す / Remove
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteAllModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !deletingAll && setShowDeleteAllModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {deleteAllDone !== null ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  削除しました
+                  <span className="block text-sm font-normal text-gray-500">Deleted</span>
+                </h2>
+                <p className="text-sm text-center text-gray-600">
+                  祝日カレンダーの記録 {deleteAllDone}件を削除しました
+                  <span className="block text-xs">Removed {deleteAllDone} holiday(s)</span>
+                </p>
+                <button
+                  onClick={() => setShowDeleteAllModal(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : !deleteAllFinalStep ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  祝日カレンダーを全て削除
+                  <span className="block text-sm font-normal text-gray-500">
+                    Delete all Master holidays
+                  </span>
+                </h2>
+                <div className="rounded-xl p-4 text-center bg-red-50 border border-red-300">
+                  <p className="text-2xl font-bold text-red-600">{holidays.length}</p>
+                  <p className="text-xs text-gray-500">
+                    登録されている祝日の件数
+                    <span className="block text-[10px] text-gray-400">Registered holidays</span>
+                  </p>
+                </div>
+                <p className="text-xs text-gray-400 text-center">
+                  マスターの祝日を全て削除します。各クラスのカレンダーが独自に上書きしている日はそのまま残ります。よろしいですか？
+                  <span className="block">
+                    Deletes every Master holiday (all fiscal years). Any class-specific overrides
+                    are unaffected. Continue?
+                  </span>
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowDeleteAllModal(false)}
+                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={() => setDeleteAllFinalStep(true)}
+                    disabled={holidays.length === 0}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    次へ / Next
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  祝日カレンダーを全て削除
+                  <span className="block text-sm font-normal text-gray-500">
+                    Delete all Master holidays
+                  </span>
+                </h2>
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                  <p className="text-sm text-red-800 font-semibold text-center">
+                    ⚠ この削除は完全に永久的です。バックアップはなく、二度と復元できません
+                    <span className="block text-xs font-normal mt-1">
+                      This deletion is permanent — there is no backup and it can never be
+                      recovered.
+                    </span>
+                  </p>
+                </div>
+                {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setDeleteAllFinalStep(false)}
+                    disabled={deletingAll}
+                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
+                  >
+                    戻る / Back
+                  </button>
+                  <button
+                    onClick={handleDeleteAll}
+                    disabled={deletingAll}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {deletingAll ? "削除中... / Deleting..." : "本当に削除する / Really delete"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

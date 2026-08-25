@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMasterHolidays, setMasterHoliday } from "@/lib/sheets";
+import { clearAllMasterHolidays, getMasterHolidays, setMasterHoliday } from "@/lib/sheets";
 
 // GET /api/calendar/master
 // School-wide holiday list — not scoped to a class or branch.
@@ -33,5 +33,16 @@ export async function PATCH(req: NextRequest) {
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Failed to update holiday" }, { status: 500 });
+  }
+}
+
+// DELETE /api/calendar/master — removes every Master holiday.
+export async function DELETE() {
+  try {
+    const count = await clearAllMasterHolidays();
+    return NextResponse.json({ ok: true, count });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Failed to clear holidays" }, { status: 500 });
   }
 }

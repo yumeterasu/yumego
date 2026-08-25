@@ -1583,6 +1583,101 @@ export async function setMasterHoliday(date: string, label: string | null): Prom
   });
 }
 
+/** Deletes every Master holiday. Returns how many rows were removed. */
+export async function clearAllMasterHolidays(): Promise<number> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "MasterHolidays!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  if (rows.length === 0) return 0;
+
+  const sheetId = await getSheetIdByTitle(sheets, "MasterHolidays");
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: 1 + rows.length },
+          },
+        },
+      ],
+    },
+  });
+  return rows.length;
+}
+
+// Google publishes a public read-only "Holidays in Thailand" calendar as an
+// ICS feed — no auth needed. Used for a one-time bulk import into
+// MasterHolidays; the admin edits/removes individual days afterward for
+// ones the school doesn't actually close for.
+const THAI_HOLIDAYS_ICS_URL =
+  "https://calendar.google.com/calendar/ical/en.th%23holiday%40group.v.calendar.google.com/public/basic.ics";
+
+function parseIcsHolidays(icsText: string): { date: string; label: string }[] {
+  // Unfold ICS line continuations (a line starting with a space/tab is a
+  // continuation of the previous line) before splitting into lines.
+  const unfolded = icsText.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "");
+  const lines = unfolded.split("\n");
+
+  const events: { date: string; label: string }[] = [];
+  let current: { date?: string; label?: string } | null = null;
+  for (const line of lines) {
+    if (line.startsWith("BEGIN:VEVENT")) {
+      current = {};
+    } else if (line.startsWith("END:VEVENT")) {
+      if (current?.date) events.push({ date: current.date, label: current.label ?? "" });
+      current = null;
+    } else if (current) {
+      if (line.startsWith("DTSTART")) {
+        const m = line.match(/(\d{8})$/);
+        if (m) {
+          const raw = m[1];
+          current.date = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+        }
+      } else if (line.startsWith("SUMMARY:")) {
+        current.label = line.slice("SUMMARY:".length).replace(/\\,/g, ",").replace(/\\;/g, ";").trim();
+      }
+    }
+  }
+  return events;
+}
+
+/**
+ * One-time bulk import of Thai public holidays into MasterHolidays. Only
+ * adds dates not already present — never overwrites an existing (possibly
+ * hand-edited) holiday, so it's safe to re-run.
+ */
+export async function importThaiHolidays(): Promise<{ added: number; skipped: number }> {
+  const res = await fetch(THAI_HOLIDAYS_ICS_URL);
+  if (!res.ok) throw new Error(`Failed to fetch Thai holidays feed: ${res.status}`);
+  const icsText = await res.text();
+  const events = parseIcsHolidays(icsText);
+
+  const existingDates = new Set((await getMasterHolidays()).map((h) => h.date));
+  const seen = new Set<string>();
+  const rows: string[][] = [];
+  for (const e of events) {
+    if (existingDates.has(e.date) || seen.has(e.date)) continue;
+    seen.add(e.date);
+    rows.push([e.date, e.label]);
+  }
+
+  if (rows.length > 0) {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "MasterHolidays!A:B",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: rows },
+    });
+  }
+
+  return { added: rows.length, skipped: events.length - rows.length };
+}
+
 // Per-class open/closed overrides — only a row when a class's calendar
 // actually DIFFERS from the Master default for that date (forcing open on
 // a Master holiday, e.g. a make-up class, or forcing closed on an
