@@ -105,7 +105,7 @@ export default function SelectClassPage() {
           href="/dashboard/pickup?branch=プロンポン"
           className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
         >
-          🚌 送迎管理　プロンポン
+          🚗 送迎管理　プロンポン
           <span className="block text-[9px] font-normal opacity-70">
             Pickup/Drop-off · Phrom Phong
           </span>
@@ -114,7 +114,7 @@ export default function SelectClassPage() {
           href="/dashboard/pickup?branch=トンロー"
           className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
         >
-          🚌 送迎管理　トンロー
+          🚗 送迎管理　トンロー
           <span className="block text-[9px] font-normal opacity-70">
             Pickup/Drop-off · Thong Lo
           </span>
