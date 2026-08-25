@@ -897,9 +897,11 @@ export default function StudentsPage() {
             ) : (
               <>
                 <label className="flex flex-col gap-1 text-sm">
-                  住所
+                  住所（またはGoogle MapsのGPS座標）
                   <span className="text-xs font-normal text-gray-500">
-                    Address — type it and press 検索して保存 to look it up
+                    Address, or paste GPS coordinates copied from Google Maps for exact accuracy
+                    (right-click the pin on Google Maps → click the coordinates to copy → paste
+                    here)
                   </span>
                   <textarea
                     value={addressModal.input}
@@ -907,7 +909,7 @@ export default function StudentsPage() {
                       setAddressModal({ ...addressModal, input: e.target.value });
                       setAddressFoundName(null);
                     }}
-                    placeholder="例：123 ถนนสุขุมวิท กรุงเทพฯ"
+                    placeholder="例：123 ถนนสุขุมวิท กรุงเทพฯ　または　13.7563, 100.5018"
                     rows={2}
                     autoFocus
                     className="border border-gray-300 rounded-lg px-3 py-2 resize-none"
