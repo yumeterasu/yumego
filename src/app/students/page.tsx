@@ -413,7 +413,7 @@ export default function StudentsPage() {
   const hasBranchGrade = classNameToBranchGrade(selectedClass) !== null;
 
   return (
-    <main className="min-h-screen p-6 max-w-lg mx-auto flex flex-col gap-6">
+    <main className="min-h-screen p-6 max-w-3xl mx-auto flex flex-col gap-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
@@ -565,20 +565,20 @@ export default function StudentsPage() {
             {students.map((s) => (
               <li
                 key={s.studentId}
-                className="px-4 py-1.5 leading-tight flex items-center justify-between gap-2"
+                className="px-4 py-2 leading-tight flex items-start justify-between gap-3"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <span className="font-medium">{s.nameKanji}</span>
                   {s.nameEnglish && (
                     <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
                   )}
                   {locationsByStudent[s.studentId] && (
-                    <p className="text-[11px] text-green-700 truncate max-w-[280px]">
+                    <p className="text-[11px] text-green-700 break-words">
                       📍 {locationsByStudent[s.studentId].address}
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-3 shrink-0 pt-0.5">
                   <button
                     onClick={() => openAddressModal(s)}
                     className={
