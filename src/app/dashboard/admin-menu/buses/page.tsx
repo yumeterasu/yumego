@@ -7,9 +7,26 @@ import type { Bus } from "@/lib/sheets";
 type Editing = { id: string | null; name: string; emoji: string };
 
 const EMOJI_SUGGESTIONS = [
+  // Already-common picks first
   "🐶", "🐱", "🐰", "🐻", "🐼", "🐨",
   "🦁", "🐯", "🐵", "🐸", "🐘", "🦒",
   "🦊", "🐷", "🐮", "🐔", "🐐", "🐧",
+  // Every other standard animal emoji
+  "🐭", "🐹", "🐺", "🐗", "🐴", "🦄",
+  "🐝", "🐛", "🦋", "🐌", "🐞", "🐜",
+  "🦟", "🦗", "🕷️", "🦂", "🐢", "🐍",
+  "🦎", "🦖", "🦕", "🐙", "🦑", "🦐",
+  "🦞", "🦀", "🐡", "🐠", "🐟", "🐬",
+  "🐳", "🐋", "🦈", "🐊", "🐅", "🐆",
+  "🦓", "🦍", "🦧", "🦣", "🦛", "🦏",
+  "🐪", "🐫", "🦘", "🦬", "🐃", "🐂",
+  "🐄", "🐎", "🐖", "🐏", "🐑", "🦙",
+  "🦌", "🐕", "🐩", "🐈", "🐓", "🦃",
+  "🦤", "🦚", "🦜", "🦢", "🦩", "🕊️",
+  "🐇", "🦝", "🦨", "🦡", "🦫", "🦦",
+  "🦥", "🐁", "🐀", "🐿️", "🦔", "🐦",
+  "🐤", "🐣", "🐥", "🦆", "🦅", "🦉",
+  "🦇",
 ];
 
 export default function BusesSettingsPage() {
@@ -203,7 +220,7 @@ export default function BusesSettingsPage() {
           onClick={() => !saving && setEditing(null)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto flex flex-col gap-3"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-bold text-lg text-center">
@@ -234,7 +251,7 @@ export default function BusesSettingsPage() {
                 placeholder="🚌"
                 className="border border-gray-300 rounded-lg px-3 py-2"
               />
-              <div className="flex gap-2 flex-wrap mt-1">
+              <div className="flex gap-2 flex-wrap mt-1 max-h-40 overflow-y-auto p-1 border border-gray-100 rounded-lg">
                 {EMOJI_SUGGESTIONS.map((e) => (
                   <button
                     key={e}
