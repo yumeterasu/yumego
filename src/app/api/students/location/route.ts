@@ -28,8 +28,14 @@ async function resolveShortLink(shortUrl: string): Promise<string | null> {
  * Recognizes GPS coordinates, in a few common forms an admin might copy
  * from Google Maps:
  *  - a plain "lat, lng" pair (right-click a pin -> click the coordinates
- *    that appear at the top to copy them)
- *  - a full (non-shortened) Google Maps URL containing "@lat,lng,zoom"
+ *    that appear at the top to copy them) -- always exact, checked first
+ *  - a full (non-shortened) Google Maps URL's precise marker coordinate,
+ *    encoded as "!3d<lat>!4d<lng>" deep in the data= parameter -- checked
+ *    BEFORE "@lat,lng" below, because that "@" coordinate is the map
+ *    VIEWPORT's center, not the pin itself, and Google's sidebar panel
+ *    shifts the visible viewport enough to measurably offset it from the
+ *    actual marker. "!3d!4d" is what actually matches the dropped pin.
+ *  - "@lat,lng,zoom" as a fallback when no "!3d!4d" is present
  *  - a Google Maps URL with a "q=lat,lng" or "ll=lat,lng" query param
  * Not anchored to the whole string, so it also matches when embedded in a
  * longer resolved short-link URL.
@@ -37,6 +43,7 @@ async function resolveShortLink(shortUrl: string): Promise<string | null> {
 function extractCoordinates(input: string): { lat: number; lng: number } | null {
   const patterns = [
     /^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/,
+    /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/,
     /@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/,
     /[?&](?:q|ll|query)=(-?\d{1,3}\.\d+)(?:,|%2C)(-?\d{1,3}\.\d+)/,
   ];

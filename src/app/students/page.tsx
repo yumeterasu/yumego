@@ -986,11 +986,11 @@ export default function StudentsPage() {
               <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 gap-3">
                 <div className="flex flex-col gap-3">
                   <label className="flex flex-col gap-1 text-sm">
-                    住所（またはGoogle Mapsのリンク／GPS座標）
+                    住所（できればGoogle Mapsのリンク／GPS座標）
                     <span className="text-xs font-normal text-gray-500">
-                      Address, or for exact accuracy: paste a Google Maps "Copy link" (from the
-                      place card's share button), or GPS coordinates copied from a right-click on
-                      the map
+                      For best accuracy, use a Google Maps "Copy link" or right-click coordinates
+                      instead of typing a plain address — free-text search often can't pinpoint
+                      the exact building in Thailand
                     </span>
                     <textarea
                       value={addressModal.input}
