@@ -32,6 +32,13 @@ function parseBulkNames(text: string): { nameKanji: string; nameEnglish: string 
     .filter((s) => s.nameKanji.length > 0);
 }
 
+/** Free, no-API-key map preview embed (OpenStreetMap's official iframe export). */
+function osmEmbedUrl(lat: number, lng: number): string {
+  const delta = 0.004; // roughly a few hundred meters of context around the pin
+  const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+}
+
 export default function StudentsPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
@@ -882,7 +889,7 @@ export default function StudentsPage() {
           onClick={() => !addressSaving && setAddressModal(null)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            className="bg-white rounded-2xl p-6 w-full max-w-sm sm:max-w-2xl max-h-[90vh] overflow-y-auto flex flex-col gap-3"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-bold text-lg text-center">
@@ -895,86 +902,119 @@ export default function StudentsPage() {
             {addressLoading ? (
               <p className="text-gray-400 text-sm text-center">読み込み中... / Loading...</p>
             ) : (
-              <>
-                <label className="flex flex-col gap-1 text-sm">
-                  住所（またはGoogle Mapsのリンク／GPS座標）
-                  <span className="text-xs font-normal text-gray-500">
-                    Address, or for exact accuracy: paste a Google Maps "Copy link" (from the
-                    place card's share button), or GPS coordinates copied from a right-click on
-                    the map
-                  </span>
-                  <textarea
-                    value={addressModal.input}
-                    onChange={(e) => {
-                      setAddressModal({ ...addressModal, input: e.target.value });
-                      setAddressFoundName(null);
-                    }}
-                    placeholder="例：123 ถนนสุขุมวิท กรุงเทพฯ　または　13.7563, 100.5018"
-                    rows={2}
-                    autoFocus
-                    className="border border-gray-300 rounded-lg px-3 py-2 resize-none"
-                  />
-                </label>
+              <div className="flex flex-col sm:grid sm:grid-cols-2 sm:gap-6 gap-3">
+                <div className="flex flex-col gap-3">
+                  <label className="flex flex-col gap-1 text-sm">
+                    住所（またはGoogle Mapsのリンク／GPS座標）
+                    <span className="text-xs font-normal text-gray-500">
+                      Address, or for exact accuracy: paste a Google Maps "Copy link" (from the
+                      place card's share button), or GPS coordinates copied from a right-click on
+                      the map
+                    </span>
+                    <textarea
+                      value={addressModal.input}
+                      onChange={(e) => {
+                        setAddressModal({ ...addressModal, input: e.target.value });
+                        setAddressFoundName(null);
+                      }}
+                      placeholder="例：123 ถนนสุขุมวิท กรุงเทพฯ　または　13.7563, 100.5018"
+                      rows={3}
+                      autoFocus
+                      className="border border-gray-300 rounded-lg px-3 py-2 resize-none"
+                    />
+                  </label>
 
-                {addressFoundName && (
-                  <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-xs text-green-800">
-                    見つかりました / Found:
-                    <span className="block font-medium mt-0.5">{addressFoundName}</span>
-                  </div>
-                )}
-                {addressError && (
-                  <p className="text-red-600 text-sm text-center">{addressError}</p>
-                )}
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setAddressModal(null)}
-                    disabled={addressSaving}
-                    className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
-                  >
-                    閉じる / Close
-                  </button>
-                  <button
-                    onClick={saveAddress}
-                    disabled={addressSaving || !addressModal.input.trim()}
-                    className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
-                  >
-                    {addressSaving ? "検索中... / Searching..." : "検索して保存 / Look up & save"}
-                  </button>
-                </div>
-
-                {savedLocation &&
-                  (addressConfirmRemove ? (
-                    <div className="flex flex-col gap-2 items-center">
-                      <p className="text-xs text-red-600 font-semibold">
-                        登録済みの住所を削除しますか？ / Remove the saved address?
-                      </p>
-                      <div className="grid grid-cols-2 gap-2 w-full">
-                        <button
-                          onClick={() => setAddressConfirmRemove(false)}
-                          disabled={addressSaving}
-                          className="rounded-full bg-gray-100 text-gray-600 py-2 text-sm font-semibold disabled:opacity-40"
-                        >
-                          キャンセル / Cancel
-                        </button>
-                        <button
-                          onClick={removeAddress}
-                          disabled={addressSaving}
-                          className="rounded-full bg-red-600 text-white py-2 text-sm font-semibold disabled:opacity-40"
-                        >
-                          削除する / Remove
-                        </button>
-                      </div>
+                  {addressFoundName && (
+                    <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-xs text-green-800">
+                      見つかりました / Found:
+                      <span className="block font-medium mt-0.5">{addressFoundName}</span>
                     </div>
-                  ) : (
+                  )}
+                  {addressError && (
+                    <p className="text-red-600 text-sm text-center">{addressError}</p>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
                     <button
-                      onClick={() => setAddressConfirmRemove(true)}
-                      className="text-xs text-red-500 underline text-center"
+                      onClick={() => setAddressModal(null)}
+                      disabled={addressSaving}
+                      className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+                    >
+                      閉じる / Close
+                    </button>
+                    <button
+                      onClick={saveAddress}
+                      disabled={addressSaving || !addressModal.input.trim()}
+                      className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
+                    >
+                      {addressSaving ? "検索中... / Searching..." : "検索して保存 / Look up & save"}
+                    </button>
+                  </div>
+
+                  {savedLocation &&
+                    (addressConfirmRemove ? (
+                      <div className="flex flex-col gap-2 items-center">
+                        <p className="text-xs text-red-600 font-semibold">
+                          登録済みの住所を削除しますか？ / Remove the saved address?
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 w-full">
+                          <button
+                            onClick={() => setAddressConfirmRemove(false)}
+                            disabled={addressSaving}
+                            className="rounded-full bg-gray-100 text-gray-600 py-2 text-sm font-semibold disabled:opacity-40"
+                          >
+                            キャンセル / Cancel
+                          </button>
+                          <button
+                            onClick={removeAddress}
+                            disabled={addressSaving}
+                            className="rounded-full bg-red-600 text-white py-2 text-sm font-semibold disabled:opacity-40"
+                          >
+                            削除する / Remove
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setAddressConfirmRemove(true)}
+                        className="text-xs text-red-500 underline text-center"
                     >
                       登録済みの住所を削除 / Remove saved address
                     </button>
                   ))}
-              </>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-gray-500">
+                    地図で確認 / Confirm on the map
+                  </p>
+                  {savedLocation ? (
+                    <>
+                      <iframe
+                        key={`${savedLocation.lat},${savedLocation.lng}`}
+                        title="住所の地図 / Address map"
+                        src={osmEmbedUrl(savedLocation.lat, savedLocation.lng)}
+                        className="w-full h-64 sm:h-full min-h-64 rounded-lg border border-gray-300"
+                      />
+                      <a
+                        href={`https://www.google.com/maps?q=${savedLocation.lat},${savedLocation.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-blue-600 underline text-center"
+                      >
+                        Google Mapsで開く / Open in Google Maps
+                      </a>
+                    </>
+                  ) : (
+                    <div className="w-full h-64 sm:h-full min-h-64 rounded-lg border border-dashed border-gray-300 flex items-center justify-center text-center px-4">
+                      <p className="text-xs text-gray-400">
+                        住所を保存するとここに地図が表示されます
+                        <span className="block">The map appears here once an address is saved</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         </div>
