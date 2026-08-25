@@ -95,7 +95,7 @@ export type AttendanceRecord = {
   studentId: string;
   status: AttendanceStatus;
   timestamp: string;
-  /** Free-text detail, e.g. which of 事故欠/病欠/インフルエンザ/... this is. */
+  /** Free-text detail, e.g. which of 都合欠/病欠/インフルエンザ/... this is. */
   reason: string;
 };
 

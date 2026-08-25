@@ -5,7 +5,7 @@
 export type AbsenceBucket = "absent" | "suspended";
 
 export const REASON_OPTIONS: { label: string; en: string; status: AbsenceBucket }[] = [
-  { label: "事故欠", en: "Accident/Injury", status: "absent" },
+  { label: "都合欠", en: "Personal reasons", status: "absent" },
   { label: "病欠", en: "Sick", status: "absent" },
   { label: "インフルエンザ", en: "Influenza", status: "suspended" },
   { label: "手足口病", en: "Hand-Foot-Mouth Disease", status: "suspended" },

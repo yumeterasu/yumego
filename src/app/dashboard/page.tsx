@@ -48,7 +48,7 @@ function statusChangeLabel(status: AttendanceStatus | null, reason: string): str
 }
 
 // Which button in the edit popup matches the cell's CURRENT value — 欠
-// alone doesn't say whether it was 事故欠/病欠/インフルエンザ/etc, so the
+// alone doesn't say whether it was 都合欠/病欠/インフルエンザ/etc, so the
 // popup highlights the exact one that's actually set (thick ring border).
 function isCurrentSelection(
   cell: EditingCell,
