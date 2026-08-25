@@ -112,6 +112,12 @@ export default function MasterCalendarPage() {
     null
   );
   const [saving, setSaving] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+
+  function closeModal() {
+    setEditing(null);
+    setConfirmingRemove(false);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,7 +166,7 @@ export default function MasterCalendarPage() {
           ? [...prev, { date: editing.date, label: editing.label }]
           : prev.map((h) => (h.date === editing.date ? { ...h, label: editing.label } : h))
       );
-      setEditing(null);
+      closeModal();
     } catch {
       setError("保存に失敗しました / Failed to save");
     } finally {
@@ -180,7 +186,7 @@ export default function MasterCalendarPage() {
       });
       if (!res.ok) throw new Error("failed");
       setHolidays((prev) => prev.filter((h) => h.date !== editing.date));
-      setEditing(null);
+      closeModal();
     } catch {
       setError("削除に失敗しました / Failed to delete");
     } finally {
@@ -256,10 +262,10 @@ export default function MasterCalendarPage() {
         </div>
       )}
 
-      {editing && (
+      {editing && !confirmingRemove && (
         <div
           className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
-          onClick={() => !saving && setEditing(null)}
+          onClick={() => !saving && closeModal()}
         >
           <div
             className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
@@ -287,7 +293,7 @@ export default function MasterCalendarPage() {
             </label>
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => setEditing(null)}
+                onClick={closeModal}
                 disabled={saving}
                 className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
               >
@@ -303,13 +309,52 @@ export default function MasterCalendarPage() {
             </div>
             {!editing.isNew && (
               <button
-                onClick={removeHoliday}
+                onClick={() => setConfirmingRemove(true)}
                 disabled={saving}
                 className="rounded-full border border-red-300 text-red-600 py-2.5 font-semibold disabled:opacity-40"
               >
                 この日を祝日から外す / Remove as holiday
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {editing && confirmingRemove && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !saving && closeModal()}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-bold text-lg text-center">
+              {editing.date}
+              <span className="block text-sm font-normal text-gray-500">
+                本当にこの日を祝日から外しますか？
+                <span className="block text-xs">Really remove this holiday?</span>
+              </span>
+              {editing.label && (
+                <span className="block text-xs text-gray-400 mt-1">{editing.label}</span>
+              )}
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setConfirmingRemove(false)}
+                disabled={saving}
+                className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={removeHoliday}
+                disabled={saving}
+                className="rounded-full bg-red-600 text-white py-2.5 font-semibold disabled:opacity-40"
+              >
+                外す / Remove
+              </button>
+            </div>
           </div>
         </div>
       )}

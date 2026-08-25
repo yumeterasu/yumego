@@ -37,6 +37,8 @@ export default function ClassCalendarPage() {
     null
   );
   const [confirming, setConfirming] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState<string | null>(null);
+  const [openConfirming, setOpenConfirming] = useState(false);
 
   const load = useCallback(async () => {
     if (!selectedClass) return;
@@ -105,9 +107,10 @@ export default function ClassCalendarPage() {
     if (currentlyOpen) {
       // about to mark this day CLOSED — confirm first, with an optional label
       setConfirmClose({ date, label: "" });
-      return;
+    } else {
+      // about to REOPEN this day — confirm first too
+      setConfirmOpen(date);
     }
-    applyToggle(date, true);
   }
 
   async function applyToggle(date: string, nextOpen: boolean, label?: string) {
@@ -156,6 +159,14 @@ export default function ClassCalendarPage() {
     await applyToggle(confirmClose.date, false, confirmClose.label);
     setConfirming(false);
     setConfirmClose(null);
+  }
+
+  async function confirmOpenDay() {
+    if (!confirmOpen) return;
+    setOpenConfirming(true);
+    await applyToggle(confirmOpen, true);
+    setOpenConfirming(false);
+    setConfirmOpen(null);
   }
 
   const today = todayDateString();
@@ -324,6 +335,46 @@ export default function ClassCalendarPage() {
                 onClick={confirmCloseDay}
                 disabled={confirming}
                 className="rounded-full bg-red-600 text-white py-2.5 font-semibold disabled:opacity-40"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !openConfirming && setConfirmOpen(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-bold text-lg text-center">
+              {confirmOpen}
+              <span className="block text-sm font-normal text-gray-500">
+                この日を開校に戻す / Reopen this day
+              </span>
+              {(overrideLabelByDate.get(confirmOpen) ?? holidayByDate.get(confirmOpen)) && (
+                <span className="block text-xs text-gray-400 mt-1">
+                  現在の休校名：{overrideLabelByDate.get(confirmOpen) ?? holidayByDate.get(confirmOpen)}
+                </span>
+              )}
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setConfirmOpen(null)}
+                disabled={openConfirming}
+                className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={confirmOpenDay}
+                disabled={openConfirming}
+                className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
               >
                 OK
               </button>
