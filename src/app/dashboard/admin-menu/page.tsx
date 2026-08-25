@@ -1,19 +1,10 @@
 import Link from "next/link";
 import { Bi } from "@/components/Bilingual";
 
+// 送迎管理 lives directly on the top page (used often enough to deserve its
+// own buttons there). This menu is for less-frequent admin tools — more
+// will likely be added here over time.
 const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
-  {
-    href: "/dashboard/pickup?branch=プロンポン",
-    icon: "🚌",
-    ja: "送迎管理　プロンポン",
-    en: "Pickup/Drop-off · Phrom Phong",
-  },
-  {
-    href: "/dashboard/pickup?branch=トンロー",
-    icon: "🚌",
-    ja: "送迎管理　トンロー",
-    en: "Pickup/Drop-off · Thong Lo",
-  },
   {
     href: "/dashboard/calendar-master",
     icon: "📅",

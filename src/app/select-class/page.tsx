@@ -94,10 +94,29 @@ export default function SelectClassPage() {
 
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-3 p-4">
-      {/* Admin tools (pickup management, master calendar) live behind one
-          menu button so they don't compete with the daily class-selection
-          flow, which is what this page is actually for. */}
-      <div className="w-full flex justify-end max-w-2xl">
+      {/* 送迎管理 — a separate whole-branch entry point, not gated on a class.
+          管理 holds less-frequently-used admin tools (currently just the
+          master calendar); more can be added there later without crowding
+          this page. */}
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/dashboard/pickup?branch=プロンポン"
+          className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
+        >
+          🚌 送迎管理　プロンポン
+          <span className="block text-[9px] font-normal opacity-70">
+            Pickup/Drop-off · Phrom Phong
+          </span>
+        </Link>
+        <Link
+          href="/dashboard/pickup?branch=トンロー"
+          className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
+        >
+          🚌 送迎管理　トンロー
+          <span className="block text-[9px] font-normal opacity-70">
+            Pickup/Drop-off · Thong Lo
+          </span>
+        </Link>
         <Link
           href="/dashboard/admin-menu"
           className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold text-center"
