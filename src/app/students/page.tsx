@@ -68,6 +68,11 @@ export default function StudentsPage() {
   const [addressFoundName, setAddressFoundName] = useState<string | null>(null);
   const [addressConfirmRemove, setAddressConfirmRemove] = useState(false);
   const [savedLocation, setSavedLocation] = useState<StudentLocation | null>(null);
+  // For the roster list itself -- which students already have an address
+  // saved, and what it is, so that's visible without opening each one.
+  const [locationsByStudent, setLocationsByStudent] = useState<Record<string, StudentLocation>>(
+    {}
+  );
 
   const [showInactive, setShowInactive] = useState(false);
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
@@ -98,8 +103,22 @@ export default function StudentsPage() {
       return;
     }
     loadStudents(selectedClass);
+    loadLocations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, selectedClass]);
+
+  async function loadLocations() {
+    try {
+      const res = await fetch("/api/students/location");
+      if (!res.ok) return;
+      const data = await res.json();
+      const map: Record<string, StudentLocation> = {};
+      for (const loc of (data.locations ?? []) as StudentLocation[]) map[loc.studentId] = loc;
+      setLocationsByStudent(map);
+    } catch {
+      // non-critical -- the roster just won't show address previews
+    }
+  }
 
   async function loadStudents(className: string) {
     setLoading(true);
@@ -351,6 +370,7 @@ export default function StudentsPage() {
       }
       setSavedLocation(data.location);
       setAddressFoundName(data.displayName ?? null);
+      setLocationsByStudent((prev) => ({ ...prev, [addressModal.studentId]: data.location }));
     } catch {
       setAddressError("保存に失敗しました / Failed to save");
     } finally {
@@ -373,6 +393,11 @@ export default function StudentsPage() {
       setAddressModal({ ...addressModal, input: "" });
       setAddressFoundName(null);
       setAddressConfirmRemove(false);
+      setLocationsByStudent((prev) => {
+        const next = { ...prev };
+        delete next[addressModal.studentId];
+        return next;
+      });
     } catch {
       setAddressError("削除に失敗しました / Failed to delete");
     } finally {
@@ -542,18 +567,29 @@ export default function StudentsPage() {
                 key={s.studentId}
                 className="px-4 py-1.5 leading-tight flex items-center justify-between gap-2"
               >
-                <div>
+                <div className="min-w-0">
                   <span className="font-medium">{s.nameKanji}</span>
                   {s.nameEnglish && (
                     <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
+                  )}
+                  {locationsByStudent[s.studentId] && (
+                    <p className="text-[11px] text-green-700 truncate max-w-[280px]">
+                      📍 {locationsByStudent[s.studentId].address}
+                    </p>
                   )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <button
                     onClick={() => openAddressModal(s)}
-                    className="text-xs text-gray-400 hover:text-blue-500 underline"
+                    className={
+                      locationsByStudent[s.studentId]
+                        ? "text-xs text-green-600 hover:text-blue-500 underline font-semibold"
+                        : "text-xs text-gray-400 hover:text-blue-500 underline"
+                    }
                   >
-                    🏠 住所 / Address
+                    {locationsByStudent[s.studentId]
+                      ? "🏠 住所 登録済み / Registered"
+                      : "🏠 住所 / Address"}
                   </button>
                   <button
                     onClick={() => handleWithdraw(s)}

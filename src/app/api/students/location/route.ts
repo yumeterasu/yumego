@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getStudentLocation, setStudentLocation } from "@/lib/sheets";
+import { getStudentLocation, getStudentLocations, setStudentLocation } from "@/lib/sheets";
 
 // Nominatim (OpenStreetMap) — free, no API key. Their usage policy requires
 // a descriptive User-Agent identifying the app/contact, and asks for light,
@@ -63,13 +63,15 @@ function extractPlaceName(url: string): string | null {
   }
 }
 
-// GET /api/students/location?studentId=...
+// GET /api/students/location?studentId=... -> { location }
+// GET /api/students/location (no studentId) -> { locations: [...] } (everyone with one saved)
 export async function GET(req: NextRequest) {
   const studentId = req.nextUrl.searchParams.get("studentId");
-  if (!studentId) {
-    return NextResponse.json({ error: "Missing 'studentId' query param" }, { status: 400 });
-  }
   try {
+    if (!studentId) {
+      const locations = await getStudentLocations();
+      return NextResponse.json({ locations });
+    }
     const location = await getStudentLocation(studentId);
     return NextResponse.json({ location });
   } catch (err) {
