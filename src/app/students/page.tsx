@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
-import type { Student } from "@/lib/sheets";
+import type { Student, StudentLocation } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
 
@@ -48,6 +48,19 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+
+  // 送迎バス住所登録 — per-student home address, geocoded server-side.
+  const [addressModal, setAddressModal] = useState<{
+    studentId: string;
+    nameKanji: string;
+    input: string;
+  } | null>(null);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressError, setAddressError] = useState<string | null>(null);
+  const [addressFoundName, setAddressFoundName] = useState<string | null>(null);
+  const [addressConfirmRemove, setAddressConfirmRemove] = useState(false);
+  const [savedLocation, setSavedLocation] = useState<StudentLocation | null>(null);
 
   const [showInactive, setShowInactive] = useState(false);
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
@@ -284,6 +297,82 @@ export default function StudentsPage() {
     }
   }
 
+  async function openAddressModal(student: Student) {
+    setAddressModal({ studentId: student.studentId, nameKanji: student.nameKanji, input: "" });
+    setAddressError(null);
+    setAddressFoundName(null);
+    setAddressConfirmRemove(false);
+    setSavedLocation(null);
+    setAddressLoading(true);
+    try {
+      const res = await fetch(
+        `/api/students/location?studentId=${encodeURIComponent(student.studentId)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setSavedLocation(data.location ?? null);
+        if (data.location) {
+          setAddressModal({
+            studentId: student.studentId,
+            nameKanji: student.nameKanji,
+            input: data.location.address,
+          });
+        }
+      }
+    } catch {
+      // no saved address yet, or fetch failed — modal still usable to enter a new one
+    } finally {
+      setAddressLoading(false);
+    }
+  }
+
+  async function saveAddress() {
+    if (!addressModal || !addressModal.input.trim()) return;
+    setAddressSaving(true);
+    setAddressError(null);
+    setAddressFoundName(null);
+    try {
+      const res = await fetch("/api/students/location", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: addressModal.studentId, address: addressModal.input.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddressError(data.error ?? "保存に失敗しました / Failed to save");
+        return;
+      }
+      setSavedLocation(data.location);
+      setAddressFoundName(data.displayName ?? null);
+    } catch {
+      setAddressError("保存に失敗しました / Failed to save");
+    } finally {
+      setAddressSaving(false);
+    }
+  }
+
+  async function removeAddress() {
+    if (!addressModal) return;
+    setAddressSaving(true);
+    setAddressError(null);
+    try {
+      const res = await fetch("/api/students/location", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: addressModal.studentId, address: null }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setSavedLocation(null);
+      setAddressModal({ ...addressModal, input: "" });
+      setAddressFoundName(null);
+      setAddressConfirmRemove(false);
+    } catch {
+      setAddressError("削除に失敗しました / Failed to delete");
+    } finally {
+      setAddressSaving(false);
+    }
+  }
+
   if (!loaded || !selectedClass) return null;
 
   // Reset deletes Coach Schedule/Headcount by branch+grade, which only
@@ -452,13 +541,21 @@ export default function StudentsPage() {
                     <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
                   )}
                 </div>
-                <button
-                  onClick={() => handleWithdraw(s)}
-                  disabled={withdrawingId === s.studentId}
-                  className="shrink-0 text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
-                >
-                  削除する / Remove
-                </button>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={() => openAddressModal(s)}
+                    className="text-xs text-gray-400 hover:text-blue-500 underline"
+                  >
+                    🏠 住所 / Address
+                  </button>
+                  <button
+                    onClick={() => handleWithdraw(s)}
+                    disabled={withdrawingId === s.studentId}
+                    className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
+                  >
+                    削除する / Remove
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -773,6 +870,108 @@ export default function StudentsPage() {
                       : "リセットする / Reset"}
                   </button>
                 </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {addressModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !addressSaving && setAddressModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-bold text-lg text-center">
+              {addressModal.nameKanji}
+              <span className="block text-sm font-normal text-gray-500">
+                送迎バス用の住所 / Home address for bus routing
+              </span>
+            </h2>
+
+            {addressLoading ? (
+              <p className="text-gray-400 text-sm text-center">読み込み中... / Loading...</p>
+            ) : (
+              <>
+                <label className="flex flex-col gap-1 text-sm">
+                  住所
+                  <span className="text-xs font-normal text-gray-500">
+                    Address — type it and press 検索して保存 to look it up
+                  </span>
+                  <textarea
+                    value={addressModal.input}
+                    onChange={(e) => {
+                      setAddressModal({ ...addressModal, input: e.target.value });
+                      setAddressFoundName(null);
+                    }}
+                    placeholder="例：123 ถนนสุขุมวิท กรุงเทพฯ"
+                    rows={2}
+                    autoFocus
+                    className="border border-gray-300 rounded-lg px-3 py-2 resize-none"
+                  />
+                </label>
+
+                {addressFoundName && (
+                  <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-xs text-green-800">
+                    見つかりました / Found:
+                    <span className="block font-medium mt-0.5">{addressFoundName}</span>
+                  </div>
+                )}
+                {addressError && (
+                  <p className="text-red-600 text-sm text-center">{addressError}</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setAddressModal(null)}
+                    disabled={addressSaving}
+                    className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+                  >
+                    閉じる / Close
+                  </button>
+                  <button
+                    onClick={saveAddress}
+                    disabled={addressSaving || !addressModal.input.trim()}
+                    className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
+                  >
+                    {addressSaving ? "検索中... / Searching..." : "検索して保存 / Look up & save"}
+                  </button>
+                </div>
+
+                {savedLocation &&
+                  (addressConfirmRemove ? (
+                    <div className="flex flex-col gap-2 items-center">
+                      <p className="text-xs text-red-600 font-semibold">
+                        登録済みの住所を削除しますか？ / Remove the saved address?
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 w-full">
+                        <button
+                          onClick={() => setAddressConfirmRemove(false)}
+                          disabled={addressSaving}
+                          className="rounded-full bg-gray-100 text-gray-600 py-2 text-sm font-semibold disabled:opacity-40"
+                        >
+                          キャンセル / Cancel
+                        </button>
+                        <button
+                          onClick={removeAddress}
+                          disabled={addressSaving}
+                          className="rounded-full bg-red-600 text-white py-2 text-sm font-semibold disabled:opacity-40"
+                        >
+                          削除する / Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setAddressConfirmRemove(true)}
+                      className="text-xs text-red-500 underline text-center"
+                    >
+                      登録済みの住所を削除 / Remove saved address
+                    </button>
+                  ))}
               </>
             )}
           </div>

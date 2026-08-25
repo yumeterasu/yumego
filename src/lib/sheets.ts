@@ -2023,3 +2023,89 @@ export async function deleteBus(id: string): Promise<void> {
     },
   });
 }
+
+// 送迎バスルート計算 — each student's geocoded home address, feeding the
+// per-bus route optimizer. Deliberately its own sheet (not extra columns
+// on Students) since it's optional per-student data unrelated to
+// attendance, and this keeps the heavily-used Students sheet/functions
+// untouched. Geocoding itself happens server-side (Nominatim, OpenStreetMap
+// — no paid API, see /api/students/location) so this just stores the result.
+export type StudentLocation = {
+  studentId: string;
+  address: string;
+  lat: number;
+  lng: number;
+};
+
+export async function getStudentLocations(): Promise<StudentLocation[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "StudentLocations!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      studentId: (row[0] ?? "").toString(),
+      address: (row[1] ?? "").toString(),
+      lat: Number(row[2] ?? 0),
+      lng: Number(row[3] ?? 0),
+    }))
+    .filter((l) => l.studentId && l.address);
+}
+
+export async function getStudentLocation(studentId: string): Promise<StudentLocation | null> {
+  const all = await getStudentLocations();
+  return all.find((l) => l.studentId === studentId) ?? null;
+}
+
+/** location === null removes the saved address for this student. */
+export async function setStudentLocation(
+  studentId: string,
+  location: { address: string; lat: number; lng: number } | null
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing2 = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "StudentLocations!A2:A",
+  });
+  const rows2 = existing2.data.values ?? [];
+  const rowOffset2 = rows2.findIndex((row) => (row[0] ?? "") === studentId);
+
+  if (location === null) {
+    if (rowOffset2 === -1) return;
+    const sheetId2 = await getSheetIdByTitle(sheets, "StudentLocations");
+    const rowNum2 = rowOffset2 + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId: sheetId2, dimension: "ROWS", startIndex: rowNum2 - 1, endIndex: rowNum2 },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  const values = [[studentId, location.address, location.lat, location.lng]];
+  if (rowOffset2 === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "StudentLocations!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values },
+    });
+    return;
+  }
+  const rowNum2 = rowOffset2 + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `StudentLocations!A${rowNum2}:D${rowNum2}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values },
+  });
+}
