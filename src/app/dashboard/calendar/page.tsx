@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import type { MasterHoliday, ClassCalendarOverride } from "@/lib/sheets";
 
@@ -23,6 +24,7 @@ function todayDateString() {
 export default function ClassCalendarPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -184,7 +186,7 @@ export default function ClassCalendarPage() {
         <div>
           <h1 className="text-xl font-bold">{selectedClass} カレンダー管理</h1>
           <p className="text-xs text-gray-400">
-            {classNameToEnglish(selectedClass)} · Calendar Management
+            {classNameToEnglish(selectedClass, extraClassEnNames)} · Calendar Management
           </p>
           <p className="text-sm text-gray-500">
             祝日カレンダー（マスター）の設定を引き継ぎます。日付をタップすると開校・休校を切り替えられます

@@ -1864,3 +1864,82 @@ export async function deleteAbsenceReason(id: string): Promise<void> {
     },
   });
 }
+
+// クラス管理 — classes OUTSIDE the fixed 年少/年中/年長 continuum (like
+// トンロー　小学生). The continuum itself stays hardcoded in classes.ts
+// (専門コーチ scoping, promotion logic, etc. all depend on that exact
+// shape) — only these "extra" classes are Master-manageable. Full class
+// name is always `${branch}　${suffix}`, matching the existing naming
+// convention. "active: false" hides a class everywhere (top page, etc.)
+// without touching its historical Students/Attendance/... data — same
+// soft-delete philosophy as a student's own active flag.
+export type ExtraClass = {
+  id: string;
+  branch: "プロンポン" | "トンロー";
+  suffix: string;
+  nameEn: string;
+  active: boolean;
+};
+
+export async function getExtraClasses(): Promise<ExtraClass[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "ExtraClasses!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      id: (row[0] ?? "").toString(),
+      branch: ((row[1] ?? "").toString() === "トンロー" ? "トンロー" : "プロンポン") as
+        | "プロンポン"
+        | "トンロー",
+      suffix: (row[2] ?? "").toString(),
+      nameEn: (row[3] ?? "").toString(),
+      active: (row[4] ?? "").toString().toUpperCase() !== "FALSE",
+    }))
+    .filter((c) => c.id && c.suffix);
+}
+
+export async function addExtraClass(id: string, data: Omit<ExtraClass, "id">): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "ExtraClasses!A:E",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[id, data.branch, data.suffix, data.nameEn, data.active ? "TRUE" : "FALSE"]],
+    },
+  });
+}
+
+export async function updateExtraClass(
+  id: string,
+  updates: Partial<Omit<ExtraClass, "id">>
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "ExtraClasses!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const rowNum = rowOffset + 2;
+  const current = rows[rowOffset];
+  const currentActive = (current[4] ?? "TRUE").toString().toUpperCase() !== "FALSE";
+  const nextActive = updates.active ?? currentActive;
+  const merged = [
+    id,
+    updates.branch ?? (current[1] ?? "プロンポン"),
+    updates.suffix ?? (current[2] ?? ""),
+    updates.nameEn ?? (current[3] ?? ""),
+    nextActive ? "TRUE" : "FALSE",
+  ];
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `ExtraClasses!A${rowNum}:E${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [merged] },
+  });
+}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
@@ -139,6 +140,7 @@ function sleep(ms: number) {
 export default function DashboardPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -745,7 +747,9 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
-          <p className="text-xs text-gray-400">{classNameToEnglish(selectedClass)}</p>
+          <p className="text-xs text-gray-400">
+            {classNameToEnglish(selectedClass, extraClassEnNames)}
+          </p>
           <p className="text-sm text-gray-500">
             出席簿
             <span className="ml-1 text-xs text-gray-400">Attendance Register</span>

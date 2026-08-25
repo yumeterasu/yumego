@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import type { OutingDestination, OutingLog } from "@/lib/sheets";
 
@@ -67,6 +68,7 @@ function toEditForm(entry: OutingLog, mode: FormMode): FormState {
 export default function OutingsPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -286,7 +288,7 @@ export default function OutingsPage() {
         <div>
           <h1 className="text-xl font-bold">{selectedClass} 入退出記録</h1>
           <p className="text-xs text-gray-400">
-            {classNameToEnglish(selectedClass)} · Entry/Exit Log
+            {classNameToEnglish(selectedClass, extraClassEnNames)} · Entry/Exit Log
           </p>
           <p className="text-sm text-gray-500">
             行き先は登録済みのリストから選ぶか、自由入力できます

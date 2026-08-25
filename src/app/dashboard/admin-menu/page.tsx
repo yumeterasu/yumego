@@ -17,6 +17,12 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
     ja: "欠席理由設定",
     en: "Absence Reason Settings",
   },
+  {
+    href: "/dashboard/admin-menu/class-management",
+    icon: "🏫",
+    ja: "クラス管理",
+    en: "Class Management",
+  },
 ];
 
 export default function AdminMenuPage() {

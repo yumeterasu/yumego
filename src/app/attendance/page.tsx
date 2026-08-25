@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
@@ -39,6 +40,7 @@ type Absence = { status: AbsenceBucket | "late" | "early_leave"; reason: string 
 export default function AttendancePage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const [students, setStudents] = useState<Student[]>([]);
   // Everyone starts present. Only students tapped-out show up here.
@@ -296,7 +298,9 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
-          <p className="text-xs text-gray-400">{classNameToEnglish(selectedClass)}</p>
+          <p className="text-xs text-gray-400">
+            {classNameToEnglish(selectedClass, extraClassEnNames)}
+          </p>
           <p className="text-sm text-gray-500">{date}</p>
         </div>
         <div className="flex items-center gap-2">

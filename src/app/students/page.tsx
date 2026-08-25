@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student } from "@/lib/sheets";
 
@@ -34,6 +35,7 @@ function parseBulkNames(text: string): { nameKanji: string; nameEnglish: string 
 export default function StudentsPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -295,7 +297,7 @@ export default function StudentsPage() {
         <div>
           <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
           <p className="text-xs text-gray-500">
-            {classNameToEnglish(selectedClass)} · Student Management
+            {classNameToEnglish(selectedClass, extraClassEnNames)} · Student Management
           </p>
         </div>
         <div className="flex items-center gap-2">

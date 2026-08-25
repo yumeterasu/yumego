@@ -1,3 +1,8 @@
+// The fixed 年少/年中/年長 continuum, per branch — 専門コーチ scoping,
+// promotion logic (nextGradeClassName), and Reset all depend on exactly
+// this shape, so it stays hardcoded. Classes OUTSIDE this continuum (like
+// トンロー　小学生) are Master-managed instead — see ExtraClass in
+// @/lib/sheets and useExtraClasses() — not listed here.
 export const CLASSES = [
   "プロンポン　年長",
   "プロンポン　年中",
@@ -5,7 +10,6 @@ export const CLASSES = [
   "トンロー　年長",
   "トンロー　年中",
   "トンロー　年少",
-  "トンロー　小学生",
 ] as const;
 
 export type ClassName = (typeof CLASSES)[number];
@@ -47,14 +51,24 @@ const GRADE_EN: Record<GradeShort, string> = {
   少: "Younger Class (3 Years Old)",
 };
 
-/** "プロンポン　年長" -> "Phrom Phong · Older Class (5 Years Old)", for the English gloss under class names. */
-export function classNameToEnglish(className: string): string {
+/**
+ * "プロンポン　年長" -> "Phrom Phong · Older Class (5 Years Old)", for the
+ * English gloss under class names. `extraClassEnNames` (from
+ * useExtraClasses()) supplies the live gloss for Master-managed classes
+ * outside the 長/中/少 continuum — pass it wherever available so a renamed
+ * extra class's English text updates everywhere without a code change.
+ */
+export function classNameToEnglish(
+  className: string,
+  extraClassEnNames?: Record<string, string>
+): string {
   const bg = classNameToBranchGrade(className);
   if (bg) return `${BRANCH_EN[bg.branch]} · ${GRADE_EN[bg.grade]}`;
 
-  // 小学生 (elementary) classes aren't part of the 長/中/少 continuum (no
-  // specialist-coach grade row, no promote/reset grade mapping) but still
-  // need an English gloss like every other class.
+  if (extraClassEnNames?.[className]) return extraClassEnNames[className];
+
+  // Fallback for the one legacy extra class, in case this renders before
+  // useExtraClasses() has finished its first fetch.
   const [branch, suffix] = className.split("　");
   if ((branch === "プロンポン" || branch === "トンロー") && suffix === "小学生") {
     return `${BRANCH_EN[branch]} · Elementary School`;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import type { OutingLog } from "@/lib/sheets";
 
@@ -14,6 +15,7 @@ function pad2(n: number) {
 export default function OutingsSummaryPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -94,7 +96,7 @@ export default function OutingsSummaryPage() {
         <div>
           <h1 className="text-xl font-bold">{selectedClass} 入退出まとめ</h1>
           <p className="text-xs text-gray-400">
-            {classNameToEnglish(selectedClass)} · Entry/Exit Summary
+            {classNameToEnglish(selectedClass, extraClassEnNames)} · Entry/Exit Summary
           </p>
           <p className="text-sm text-gray-500">
             この月の外出回数・人数・行き先の内訳

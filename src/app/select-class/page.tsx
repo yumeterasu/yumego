@@ -5,20 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CLASSES, classNameToEnglish } from "@/lib/classes";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { Bi } from "@/components/Bilingual";
 
-const PROMPONG_REGULAR = CLASSES.filter(
-  (c) => c.startsWith("プロンポン") && !c.endsWith("小学生")
-);
-const PROMPONG_ELEMENTARY = CLASSES.filter(
-  (c) => c.startsWith("プロンポン") && c.endsWith("小学生")
-);
-const THONGLOR_REGULAR = CLASSES.filter(
-  (c) => c.startsWith("トンロー") && !c.endsWith("小学生")
-);
-const THONGLOR_ELEMENTARY = CLASSES.filter(
-  (c) => c.startsWith("トンロー") && c.endsWith("小学生")
-);
+// The fixed 3-grade continuum, split by branch. "Extra" classes (like
+// トンロー　小学生) are Master-managed now — see useExtraClasses() below,
+// computed per-render since they can be added/renamed/deactivated live.
+const PROMPONG_REGULAR = CLASSES.filter((c) => c.startsWith("プロンポン"));
+const THONGLOR_REGULAR = CLASSES.filter((c) => c.startsWith("トンロー"));
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -41,6 +35,14 @@ function addDays(dateStr: string, delta: number) {
 export default function SelectClassPage() {
   const router = useRouter();
   const { setSelectedClass } = useSelectedClass();
+  const { activeClasses, enNames: extraClassEnNames } = useExtraClasses();
+
+  const promponExtra = activeClasses
+    .filter((c) => c.branch === "プロンポン")
+    .map((c) => `プロンポン　${c.suffix}`);
+  const thonglorExtra = activeClasses
+    .filter((c) => c.branch === "トンロー")
+    .map((c) => `トンロー　${c.suffix}`);
 
   const today = todayDateString();
   const [selectedDate, setSelectedDate] = useState(today);
@@ -80,7 +82,7 @@ export default function SelectClassPage() {
       >
         <span className="block">{name}</span>
         <span className="block text-xs font-normal opacity-70">
-          {classNameToEnglish(name)}
+          {classNameToEnglish(name, extraClassEnNames)}
         </span>
         {checked && (
           <span className="absolute top-1.5 right-3 text-sm font-bold text-green-700 bg-green-50 border border-green-300 rounded-full px-2 py-0.5">
@@ -168,10 +170,10 @@ export default function SelectClassPage() {
         {[...PROMPONG_REGULAR, ...THONGLOR_REGULAR].map((name) => (
           <ClassButton key={name} name={name} />
         ))}
-        {(PROMPONG_ELEMENTARY.length > 0 || THONGLOR_ELEMENTARY.length > 0) && (
+        {(promponExtra.length > 0 || thonglorExtra.length > 0) && (
           <div className="col-span-full border-t border-gray-200 my-1" />
         )}
-        {[...PROMPONG_ELEMENTARY, ...THONGLOR_ELEMENTARY].map((name) => (
+        {[...promponExtra, ...thonglorExtra].map((name) => (
           <ClassButton key={name} name={name} />
         ))}
       </div>
@@ -186,10 +188,10 @@ export default function SelectClassPage() {
           {PROMPONG_REGULAR.map((name) => (
             <ClassButton key={name} name={name} />
           ))}
-          {PROMPONG_ELEMENTARY.length > 0 && (
+          {promponExtra.length > 0 && (
             <>
               <div className="border-t border-gray-200 my-1" />
-              {PROMPONG_ELEMENTARY.map((name) => (
+              {promponExtra.map((name) => (
                 <ClassButton key={name} name={name} />
               ))}
             </>
@@ -203,10 +205,10 @@ export default function SelectClassPage() {
           {THONGLOR_REGULAR.map((name) => (
             <ClassButton key={name} name={name} />
           ))}
-          {THONGLOR_ELEMENTARY.length > 0 && (
+          {thonglorExtra.length > 0 && (
             <>
               <div className="border-t border-gray-200 my-1" />
-              {THONGLOR_ELEMENTARY.map((name) => (
+              {thonglorExtra.map((name) => (
                 <ClassButton key={name} name={name} />
               ))}
             </>

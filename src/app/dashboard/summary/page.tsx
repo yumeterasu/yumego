@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 
@@ -46,6 +47,7 @@ function defaultFiscalYearStart(): number {
 export default function SummaryPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
+  const { enNames: extraClassEnNames } = useExtraClasses();
 
   const [fiscalYearStart, setFiscalYearStart] = useState(defaultFiscalYearStart);
   const [students, setStudents] = useState<Student[]>([]);
@@ -148,7 +150,9 @@ export default function SummaryPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}</h1>
-          <p className="text-xs text-gray-400">{classNameToEnglish(selectedClass)}</p>
+          <p className="text-xs text-gray-400">
+            {classNameToEnglish(selectedClass, extraClassEnNames)}
+          </p>
           <p className="text-sm text-gray-500">
             年間まとめ
             <span className="ml-1 text-xs text-gray-400">Annual Summary</span>
