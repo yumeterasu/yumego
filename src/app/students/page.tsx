@@ -63,9 +63,16 @@ export default function StudentsPage() {
     input: string;
   } | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
+  const [addressLookingUp, setAddressLookingUp] = useState(false);
   const [addressSaving, setAddressSaving] = useState(false);
   const [addressError, setAddressError] = useState<string | null>(null);
-  const [addressFoundName, setAddressFoundName] = useState<string | null>(null);
+  // Result of "Look up" -- not saved yet until 保存 is pressed separately.
+  const [pendingResult, setPendingResult] = useState<{
+    address: string;
+    lat: number;
+    lng: number;
+    displayName: string;
+  } | null>(null);
   const [addressConfirmRemove, setAddressConfirmRemove] = useState(false);
   const [savedLocation, setSavedLocation] = useState<StudentLocation | null>(null);
   // For the roster list itself -- which students already have an address
@@ -326,7 +333,7 @@ export default function StudentsPage() {
   async function openAddressModal(student: Student) {
     setAddressModal({ studentId: student.studentId, nameKanji: student.nameKanji, input: "" });
     setAddressError(null);
-    setAddressFoundName(null);
+    setPendingResult(null);
     setAddressConfirmRemove(false);
     setSavedLocation(null);
     setAddressLoading(true);
@@ -352,16 +359,54 @@ export default function StudentsPage() {
     }
   }
 
-  async function saveAddress() {
+  async function lookupAddress() {
     if (!addressModal || !addressModal.input.trim()) return;
-    setAddressSaving(true);
+    setAddressLookingUp(true);
     setAddressError(null);
-    setAddressFoundName(null);
+    setPendingResult(null);
     try {
       const res = await fetch("/api/students/location", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: addressModal.studentId, address: addressModal.input.trim() }),
+        body: JSON.stringify({
+          studentId: addressModal.studentId,
+          address: addressModal.input.trim(),
+          mode: "lookup",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAddressError(data.error ?? "検索に失敗しました / Look up failed");
+        return;
+      }
+      setPendingResult({
+        address: data.address,
+        lat: data.lat,
+        lng: data.lng,
+        displayName: data.displayName,
+      });
+    } catch {
+      setAddressError("検索に失敗しました / Look up failed");
+    } finally {
+      setAddressLookingUp(false);
+    }
+  }
+
+  async function confirmSaveAddress() {
+    if (!addressModal || !pendingResult) return;
+    setAddressSaving(true);
+    setAddressError(null);
+    try {
+      const res = await fetch("/api/students/location", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: addressModal.studentId,
+          address: pendingResult.address,
+          lat: pendingResult.lat,
+          lng: pendingResult.lng,
+          mode: "save",
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -369,8 +414,8 @@ export default function StudentsPage() {
         return;
       }
       setSavedLocation(data.location);
-      setAddressFoundName(data.displayName ?? null);
       setLocationsByStudent((prev) => ({ ...prev, [addressModal.studentId]: data.location }));
+      setPendingResult(null);
     } catch {
       setAddressError("保存に失敗しました / Failed to save");
     } finally {
@@ -391,7 +436,7 @@ export default function StudentsPage() {
       if (!res.ok) throw new Error("failed");
       setSavedLocation(null);
       setAddressModal({ ...addressModal, input: "" });
-      setAddressFoundName(null);
+      setPendingResult(null);
       setAddressConfirmRemove(false);
       setLocationsByStudent((prev) => {
         const next = { ...prev };
@@ -951,7 +996,7 @@ export default function StudentsPage() {
                       value={addressModal.input}
                       onChange={(e) => {
                         setAddressModal({ ...addressModal, input: e.target.value });
-                        setAddressFoundName(null);
+                        setPendingResult(null);
                       }}
                       placeholder="例：123 ถนนสุขุมวิท กรุงเทพฯ　または　13.7563, 100.5018"
                       rows={3}
@@ -960,10 +1005,19 @@ export default function StudentsPage() {
                     />
                   </label>
 
-                  {addressFoundName && (
+                  <button
+                    onClick={lookupAddress}
+                    disabled={addressLookingUp || !addressModal.input.trim()}
+                    className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 py-2.5 font-semibold disabled:opacity-40"
+                  >
+                    {addressLookingUp ? "検索中... / Searching..." : "🔍 検索 / Look up"}
+                  </button>
+
+                  {pendingResult && (
                     <div className="bg-green-50 border border-green-300 rounded-lg p-3 text-xs text-green-800">
-                      見つかりました / Found:
-                      <span className="block font-medium mt-0.5">{addressFoundName}</span>
+                      見つかりました（まだ保存されていません）
+                      <span className="block">Found — not saved yet, press 保存 below</span>
+                      <span className="block font-medium mt-0.5">{pendingResult.displayName}</span>
                     </div>
                   )}
                   {addressError && (
@@ -979,11 +1033,11 @@ export default function StudentsPage() {
                       閉じる / Close
                     </button>
                     <button
-                      onClick={saveAddress}
-                      disabled={addressSaving || !addressModal.input.trim()}
+                      onClick={confirmSaveAddress}
+                      disabled={addressSaving || !pendingResult}
                       className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
                     >
-                      {addressSaving ? "検索中... / Searching..." : "検索して保存 / Look up & save"}
+                      {addressSaving ? "保存中... / Saving..." : "💾 保存 / Save"}
                     </button>
                   </div>
 
@@ -1022,18 +1076,25 @@ export default function StudentsPage() {
 
                 <div className="flex flex-col gap-2">
                   <p className="text-xs font-semibold text-gray-500">
-                    地図で確認 / Confirm on the map
+                    {pendingResult
+                      ? "地図で確認（まだ保存されていません） / Confirm on the map (not saved yet)"
+                      : "地図で確認 / Confirm on the map"}
                   </p>
-                  {savedLocation ? (
+                  {pendingResult || savedLocation ? (
                     <>
                       <iframe
-                        key={`${savedLocation.lat},${savedLocation.lng}`}
+                        key={`${(pendingResult ?? savedLocation)!.lat},${(pendingResult ?? savedLocation)!.lng}`}
                         title="住所の地図 / Address map"
-                        src={osmEmbedUrl(savedLocation.lat, savedLocation.lng)}
-                        className="w-full h-64 sm:h-full min-h-64 rounded-lg border border-gray-300"
+                        src={osmEmbedUrl(
+                          (pendingResult ?? savedLocation)!.lat,
+                          (pendingResult ?? savedLocation)!.lng
+                        )}
+                        className={`w-full h-64 sm:h-full min-h-64 rounded-lg border ${
+                          pendingResult ? "border-2 border-green-400" : "border-gray-300"
+                        }`}
                       />
                       <a
-                        href={`https://www.google.com/maps?q=${savedLocation.lat},${savedLocation.lng}`}
+                        href={`https://www.google.com/maps?q=${(pendingResult ?? savedLocation)!.lat},${(pendingResult ?? savedLocation)!.lng}`}
                         target="_blank"
                         rel="noreferrer"
                         className="text-xs text-blue-600 underline text-center"
@@ -1044,8 +1105,8 @@ export default function StudentsPage() {
                   ) : (
                     <div className="w-full h-64 sm:h-full min-h-64 rounded-lg border border-dashed border-gray-300 flex items-center justify-center text-center px-4">
                       <p className="text-xs text-gray-400">
-                        住所を保存するとここに地図が表示されます
-                        <span className="block">The map appears here once an address is saved</span>
+                        検索するとここに地図が表示されます
+                        <span className="block">The map appears here once you look up an address</span>
                       </p>
                     </div>
                   )}
