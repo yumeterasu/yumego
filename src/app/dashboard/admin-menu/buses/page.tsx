@@ -6,7 +6,11 @@ import type { Bus } from "@/lib/sheets";
 
 type Editing = { id: string | null; name: string; emoji: string };
 
-const EMOJI_SUGGESTIONS = ["🚌", "🚐", "🚕", "🚗", "🚙", "🛺"];
+const EMOJI_SUGGESTIONS = [
+  "🐶", "🐱", "🐰", "🐻", "🐼", "🐨",
+  "🦁", "🐯", "🐵", "🐸", "🐘", "🦒",
+  "🦊", "🐷", "🐮", "🐔",
+];
 
 export default function BusesSettingsPage() {
   const [buses, setBuses] = useState<Bus[]>([]);
