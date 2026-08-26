@@ -422,7 +422,12 @@ export default function AttendancePage() {
                   <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
                     {i + 1}
                   </span>
-                  {label}
+                  <span className="block">{s.nameKanji}</span>
+                  {s.nameEnglish && (
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {s.nameEnglish}
+                    </span>
+                  )}
                   {absence && (
                     <span className="block text-[10px] font-normal mt-0.5">
                       {absence.reason || (isLate ? "遅刻" : isEarlyLeave ? "早退" : "")}

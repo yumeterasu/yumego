@@ -240,7 +240,6 @@ function PickupPageInner() {
                 return students.map((s) => {
                   const showGroupHeader = s.className !== lastClassName;
                   lastClassName = s.className;
-                  const label = s.nameEnglish || s.nameKanji;
 
                   return (
                     <Fragment key={s.studentId}>
@@ -259,9 +258,14 @@ function PickupPageInner() {
                           {fi === 0 && (
                             <td
                               rowSpan={2}
-                              className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap align-top z-10"
+                              className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap align-top z-10 leading-tight"
                             >
-                              {label}
+                              {s.nameKanji}
+                              {s.nameEnglish && (
+                                <span className="block text-[10px] text-gray-400">
+                                  {s.nameEnglish}
+                                </span>
+                              )}
                             </td>
                           )}
                           <td className="sticky left-28 bg-white border border-gray-300 px-2 py-1 text-center whitespace-nowrap text-xs text-gray-500 z-10">

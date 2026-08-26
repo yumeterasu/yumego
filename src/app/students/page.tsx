@@ -32,6 +32,26 @@ function parseBulkNames(text: string): { nameKanji: string; nameEnglish: string 
     .filter((s) => s.nameKanji.length > 0);
 }
 
+/**
+ * Parses the bulk-add textarea for a "名前" column copied straight out of a
+ * roster where each cell has kanji and romaji on two lines (an Alt+Enter
+ * line break inside the cell) -- pasting that whole column as plain text
+ * loses the cell boundaries and becomes a flat sequence of lines, so every
+ * pair of lines (kanji, then romaji) is treated as one student.
+ */
+function parseBulkNamesTwoLine(text: string): { nameKanji: string; nameEnglish: string }[] {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const result: { nameKanji: string; nameEnglish: string }[] = [];
+  for (let i = 0; i < lines.length; i += 2) {
+    if (!lines[i]) continue;
+    result.push({ nameKanji: lines[i], nameEnglish: lines[i + 1] ?? "" });
+  }
+  return result;
+}
+
 /** Free, no-API-key map preview embed (OpenStreetMap's official iframe export). */
 function osmEmbedUrl(lat: number, lng: number): string {
   const delta = 0.004; // roughly a few hundred meters of context around the pin
@@ -52,6 +72,9 @@ export default function StudentsPage() {
   const [nameKanji, setNameKanji] = useState("");
   const [nameEnglish, setNameEnglish] = useState("");
   const [bulkText, setBulkText] = useState("");
+  // For pasting a "名前" column where each cell has kanji+romaji on 2 lines
+  // (e.g. the school's own roster spreadsheet) -- see parseBulkNamesTwoLine.
+  const [bulkTwoLineMode, setBulkTwoLineMode] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
@@ -252,7 +275,7 @@ export default function StudentsPage() {
     }
   }
 
-  const bulkParsed = parseBulkNames(bulkText);
+  const bulkParsed = bulkTwoLineMode ? parseBulkNamesTwoLine(bulkText) : parseBulkNames(bulkText);
 
   async function handleAddBulk() {
     if (!selectedClass || bulkParsed.length === 0) return;
@@ -642,21 +665,59 @@ export default function StudentsPage() {
           </form>
         ) : (
           <div className="flex flex-col gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={bulkTwoLineMode}
+                onChange={(e) => setBulkTwoLineMode(e.target.checked)}
+              />
+              名前が1つのセルに2行（漢字→ローマ字）で入っている「名前」列をそのまま貼り付ける
+              <span className="block text-xs font-normal text-gray-500">
+                Check this when pasting a "名前" column copied directly from a roster where
+                each cell has kanji on one line and romaji on the next (e.g. Alt+Enter inside
+                the cell)
+              </span>
+            </label>
             <label className="flex flex-col gap-1 text-sm">
-              1行に1人ずつ貼り付けてください（表計算ソフトの2列をそのまま貼り付けてもOK）
+              {bulkTwoLineMode
+                ? "名前列をそのまま貼り付けてください（1人あたり2行：漢字→ローマ字）"
+                : "1行に1人ずつ貼り付けてください（表計算ソフトの2列をそのまま貼り付けてもOK）"}
               <span className="text-xs font-normal text-gray-500">
-                Paste one student per line — works with two spreadsheet columns pasted
-                directly (kanji + English), or manually typed &quot;漢字,English&quot;
-                (English optional either way)
+                {bulkTwoLineMode
+                  ? "Paste the name column as-is — 2 lines per student (kanji, then romaji)"
+                  : "Paste one student per line — works with two spreadsheet columns pasted " +
+                    'directly (kanji + English), or manually typed "漢字,English" (English ' +
+                    "optional either way)"}
               </span>
               <textarea
                 value={bulkText}
                 onChange={(e) => setBulkText(e.target.value)}
                 rows={6}
-                placeholder={"山田 太郎, TARO YAMADA\n佐藤 花子, HANAKO SATO\n鈴木 次郎"}
+                placeholder={
+                  bulkTwoLineMode
+                    ? "山田 太郎\nTARO YAMADA\n佐藤 花子\nHANAKO SATO"
+                    : "山田 太郎, TARO YAMADA\n佐藤 花子, HANAKO SATO\n鈴木 次郎"
+                }
                 className="border rounded px-3 py-2 font-mono text-sm"
               />
             </label>
+
+            {bulkParsed.length > 0 && (
+              <div className="border rounded-lg p-2 max-h-40 overflow-y-auto">
+                <p className="text-xs font-semibold text-gray-500 mb-1">
+                  プレビュー（この内容で登録されます）/ Preview (this is what will be added)
+                </p>
+                <ul className="text-xs flex flex-col divide-y">
+                  {bulkParsed.map((p, i) => (
+                    <li key={i} className="py-1 flex justify-between gap-2">
+                      <span>{p.nameKanji}</span>
+                      <span className="text-gray-400">{p.nameEnglish || "—"}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <p className="text-xs text-gray-500">
               {bulkParsed.length}人を追加します / {bulkParsed.length} student(s) will be added
             </p>
@@ -710,9 +771,9 @@ export default function StudentsPage() {
                 className="px-4 py-2.5 leading-tight flex items-center gap-3 flex-wrap"
               >
                 <div className="min-w-0 flex-1 basis-48">
-                  <span className="font-medium">{s.nameKanji}</span>
+                  <span className="font-medium block">{s.nameKanji}</span>
                   {s.nameEnglish && (
-                    <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
+                    <span className="text-xs text-gray-500 block">{s.nameEnglish}</span>
                   )}
                   {transportByStudent[s.studentId] === "self" ? (
                     <p className="text-[10px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
@@ -807,9 +868,9 @@ export default function StudentsPage() {
                     className="px-4 py-1.5 leading-tight flex items-center justify-between gap-2 bg-gray-50 text-gray-500"
                   >
                     <div>
-                      <span className="font-medium">{s.nameKanji}</span>
+                      <span className="font-medium block">{s.nameKanji}</span>
                       {s.nameEnglish && (
-                        <span className="text-xs ml-2">{s.nameEnglish}</span>
+                        <span className="text-xs block">{s.nameEnglish}</span>
                       )}
                     </div>
                     <button
