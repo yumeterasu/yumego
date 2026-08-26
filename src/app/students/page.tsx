@@ -144,6 +144,19 @@ export default function StudentsPage() {
     headcountRowsDeleted: number;
   } | null>(null);
 
+  // Same idea, scoped to 専門コーチ only -- roster stays untouched (e.g.
+  // when a class's students are moving elsewhere, not being withdrawn).
+  const [showCoachResetModal1, setShowCoachResetModal1] = useState(false);
+  const [showCoachResetModal2, setShowCoachResetModal2] = useState(false);
+  const [coachResetStage, setCoachResetStage] = useState<
+    "idle" | "backing-up" | "deleting" | "done" | "error"
+  >("idle");
+  const [coachResetError, setCoachResetError] = useState<string | null>(null);
+  const [coachResetResult, setCoachResetResult] = useState<{
+    scheduleRowsDeleted: number;
+    headcountRowsDeleted: number;
+  } | null>(null);
+
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
@@ -437,6 +450,47 @@ export default function StudentsPage() {
       setResetStage("error");
       setResetError(
         "処理に失敗しました。バックアップが保存されていない場合、生徒やコーチの記録は削除されていません / Failed — if the backup wasn't saved, nothing was deleted"
+      );
+    }
+  }
+
+  async function handleCoachReset() {
+    if (!selectedClass) return;
+    setCoachResetStage("backing-up");
+    setCoachResetError(null);
+    try {
+      const backupRes = await fetch(
+        `/api/export/reset-backup?class=${encodeURIComponent(selectedClass)}`
+      );
+      if (!backupRes.ok) throw new Error("backup failed");
+      const blob = await backupRes.blob();
+      if (blob.size === 0) throw new Error("empty backup");
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedClass.replace(/\s+/g, "_")}_coach-reset-backup_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setCoachResetStage("deleting");
+      const resetRes = await fetch("/api/students/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className: selectedClass, rosterToo: false }),
+      });
+      if (!resetRes.ok) throw new Error("reset failed");
+      const data = await resetRes.json();
+      setCoachResetResult(data);
+      setCoachResetStage("done");
+    } catch {
+      setCoachResetStage("error");
+      setCoachResetError(
+        "処理に失敗しました。バックアップが保存されていない場合、コーチの記録は削除されていません / Failed — if the backup wasn't saved, nothing was deleted"
       );
     }
   }
@@ -967,6 +1021,34 @@ export default function StudentsPage() {
           >
             🔄 リセット / Reset
           </button>
+
+          <div className="border-t border-red-200 pt-3 mt-1 flex flex-col gap-2">
+            <h3 className="font-semibold text-red-700 text-sm">
+              専門コーチ記録のみ削除
+              <span className="block text-xs font-normal text-red-500">
+                Coach records only (roster untouched)
+              </span>
+            </h3>
+            <p className="text-xs text-gray-500">
+              バックアップを保存してから、このクラスのコーチスケジュール・コーチ人数の記録だけを削除します。生徒名簿はそのまま残ります
+              <span className="block">
+                Backs up, then clears only Coach Schedule/Headcount records — the student roster
+                is left untouched (e.g. students are moving to another class, not withdrawing)
+              </span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setCoachResetStage("idle");
+                setCoachResetError(null);
+                setCoachResetResult(null);
+                setShowCoachResetModal1(true);
+              }}
+              className="self-start rounded-full border border-red-400 text-red-600 px-4 py-2 text-sm font-semibold"
+            >
+              🗑 コーチ記録のみ削除 / Delete coach records only
+            </button>
+          </div>
         </div>
       )}
 
@@ -1205,6 +1287,181 @@ export default function StudentsPage() {
                     {resetStage === "backing-up" || resetStage === "deleting"
                       ? "処理中... / Processing..."
                       : "リセットする / Reset"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Coach-records-only reset, step 1/2 */}
+      {showCoachResetModal1 && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => setShowCoachResetModal1(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-center text-red-600">
+              専門コーチ記録削除の確認（1/2）
+              <span className="block text-sm font-normal text-gray-500">
+                Confirm coach-records delete (1/2)
+              </span>
+            </h2>
+
+            <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象クラス / Class</span>
+                <span className="font-semibold">{selectedClass}</span>
+              </div>
+            </div>
+
+            <ul className="text-xs text-gray-600 list-disc pl-4 flex flex-col gap-2">
+              <li>
+                まずこのクラスの記録をバックアップとしてダウンロードします（生徒名簿・出席記録・コーチスケジュール・コーチ人数）
+                <span className="block text-gray-400">
+                  First, downloads a backup (roster, attendance, Coach Schedule, Coach Headcount)
+                </span>
+              </li>
+              <li className="text-green-700 font-semibold">
+                生徒名簿・出席記録は削除しません
+                <span className="block text-green-600 font-normal">
+                  The student roster and attendance history are NOT touched
+                </span>
+              </li>
+              <li className="text-red-600 font-semibold">
+                このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、復元できません
+                <span className="block text-red-400 font-normal">
+                  This class&apos;s Coach Schedule/Headcount records are permanently deleted —
+                  cannot be undone
+                </span>
+              </li>
+              <li>
+                専門コーチの種目リスト自体は削除しません（他の学年でも使うため）
+                <span className="block text-gray-400">
+                  The Coach category list itself is kept (other grades still use it)
+                </span>
+              </li>
+            </ul>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowCoachResetModal1(false)}
+                className="rounded-full border border-gray-300 py-3 font-semibold"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowCoachResetModal1(false);
+                  setShowCoachResetModal2(true);
+                }}
+                className="rounded-full bg-red-600 text-white py-3 font-semibold"
+              >
+                次へ / Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Coach-records-only reset, step 2/2 */}
+      {showCoachResetModal2 && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => coachResetStage === "idle" && setShowCoachResetModal2(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {coachResetStage === "done" ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  完了しました
+                  <span className="block text-sm font-normal text-gray-500">Done</span>
+                </h2>
+                <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">
+                      削除したスケジュール記録 / Schedule rows deleted
+                    </span>
+                    <span className="font-semibold">{coachResetResult?.scheduleRowsDeleted}件</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">
+                      削除した人数記録 / Headcount rows deleted
+                    </span>
+                    <span className="font-semibold">{coachResetResult?.headcountRowsDeleted}件</span>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-400 text-center">
+                  バックアップファイルはダウンロードフォルダに保存されました。生徒名簿は変更されていません
+                  <span className="block">
+                    The backup file was saved to your downloads folder. The student roster is
+                    unchanged.
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowCoachResetModal2(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  専門コーチ記録削除の確認（2/2）
+                  <span className="block text-sm font-normal text-gray-500">
+                    Confirm coach-records delete (2/2)
+                  </span>
+                </h2>
+
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                  <p className="text-sm text-red-800 font-semibold text-center">
+                    ⚠ まずバックアップを保存します。保存が終わり次第、このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、二度と元に戻せません（生徒名簿は削除されません）
+                    <span className="block text-xs font-normal mt-1">
+                      We&apos;ll back up the data first. Once that&apos;s done, this class&apos;s
+                      Coach Schedule/Headcount records are permanently deleted — there is no undo.
+                      (The student roster is not deleted.)
+                    </span>
+                  </p>
+                </div>
+
+                {coachResetStage === "backing-up" && (
+                  <p className="text-sm text-center text-gray-600">
+                    📥 バックアップを保存中... / Saving backup...
+                  </p>
+                )}
+                {coachResetStage === "deleting" && (
+                  <p className="text-sm text-center text-gray-600">
+                    🗑 削除中... / Deleting...
+                  </p>
+                )}
+                {coachResetStage === "error" && coachResetError && (
+                  <p className="text-red-600 text-sm text-center">{coachResetError}</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowCoachResetModal2(false)}
+                    disabled={coachResetStage === "backing-up" || coachResetStage === "deleting"}
+                    className="rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={handleCoachReset}
+                    disabled={coachResetStage === "backing-up" || coachResetStage === "deleting"}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {coachResetStage === "backing-up" || coachResetStage === "deleting"
+                      ? "処理中... / Processing..."
+                      : "削除する / Delete"}
                   </button>
                 </div>
               </>
