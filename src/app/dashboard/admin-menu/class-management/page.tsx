@@ -2,15 +2,25 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { CLASSES, classNameToEnglish } from "@/lib/classes";
+import { useExtraClasses } from "@/hooks/useExtraClasses";
 import type { ExtraClass } from "@/lib/sheets";
+import {
+  CLASS_COLOR_OPTIONS,
+  CLASS_COLOR_SWATCH_STYLES,
+} from "@/lib/classColors";
 
 type Branch = "プロンポン" | "トンロー";
 type Editing = { id: string | null; branch: Branch; suffix: string; nameEn: string };
 
 export default function ClassManagementPage() {
+  const { enNames: extraClassEnNames } = useExtraClasses();
+
   const [classes, setClasses] = useState<ExtraClass[]>([]);
+  const [colors, setColors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [savingColorFor, setSavingColorFor] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
@@ -27,10 +37,20 @@ export default function ClassManagementPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/extra-classes");
-      if (!res.ok) throw new Error("failed");
-      const data = await res.json();
-      setClasses(data.classes ?? []);
+      const [classesRes, colorsRes] = await Promise.all([
+        fetch("/api/extra-classes"),
+        fetch("/api/class-colors"),
+      ]);
+      if (!classesRes.ok) throw new Error("failed");
+      const classesData = await classesRes.json();
+      setClasses(classesData.classes ?? []);
+
+      const colorMap: Record<string, string> = {};
+      if (colorsRes.ok) {
+        const colorsData = await colorsRes.json();
+        for (const c of colorsData.colors ?? []) colorMap[c.className] = c.color;
+      }
+      setColors(colorMap);
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -41,6 +61,57 @@ export default function ClassManagementPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function pickColor(className: string, color: string | null) {
+    // Picking the already-set color again resets it to default.
+    const nextColor = colors[className] === color ? null : color;
+    setSavingColorFor(className);
+    setError(null);
+    try {
+      const res = await fetch("/api/class-colors", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className, color: nextColor }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setColors((prev) => {
+        const next = { ...prev };
+        if (nextColor === null) delete next[className];
+        else next[className] = nextColor;
+        return next;
+      });
+    } catch {
+      setError("保存に失敗しました / Failed to save");
+    } finally {
+      setSavingColorFor(null);
+    }
+  }
+
+  function ColorSwatches({ className }: { className: string }) {
+    const colorKey = colors[className];
+    return (
+      <div className="flex gap-1.5 flex-wrap">
+        {CLASS_COLOR_OPTIONS.map((c) => (
+          <button
+            key={c}
+            onClick={() => pickColor(className, c)}
+            disabled={savingColorFor === className}
+            aria-label={c}
+            className={`w-6 h-6 rounded-full ${CLASS_COLOR_SWATCH_STYLES[c]} disabled:opacity-40 ${
+              colorKey === c ? "ring-2 ring-offset-2 ring-gray-700" : ""
+            }`}
+          />
+        ))}
+        <button
+          onClick={() => pickColor(className, null)}
+          disabled={savingColorFor === className || !colorKey}
+          className="px-2.5 h-6 rounded-full border border-gray-300 text-[10px] text-gray-500 disabled:opacity-30"
+        >
+          リセット / None
+        </button>
+      </div>
+    );
+  }
 
   function openAdd() {
     setEditing({ id: null, branch: "プロンポン", suffix: "", nameEn: "" });
@@ -150,15 +221,15 @@ export default function ClassManagementPage() {
   }
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4 max-w-lg mx-auto w-full">
+    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4 max-w-2xl mx-auto w-full">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">クラス管理</h1>
           <p className="text-xs text-gray-400">Class Management</p>
           <p className="text-sm text-gray-500">
-            年少・年中・年長以外の追加クラス（例：小学生）を管理します
+            追加クラスの管理と、トップページの各クラスボタンの色を設定します
             <span className="block text-xs">
-              Manage classes outside the fixed 年少/年中/年長 continuum (e.g. 小学生)
+              Manage extra classes, and set each class button's color on the top page
             </span>
           </p>
         </div>
@@ -185,102 +256,136 @@ export default function ClassManagementPage() {
       {loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
       ) : (
-        <div className="flex flex-col gap-3">
-          {classes.map((c) => (
-            <div
-              key={c.id}
-              className={`border rounded-xl p-4 flex items-center justify-between gap-3 ${
-                c.active ? "border-gray-300" : "border-gray-200 bg-gray-50 opacity-60"
-              }`}
-            >
-              <div>
-                <p className="font-semibold">
-                  {c.branch}　{c.suffix}
-                </p>
-                <p className="text-xs text-gray-400">{c.nameEn}</p>
-                <span
-                  className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full border ${
-                    c.active
-                      ? "bg-green-50 text-green-700 border-green-300"
-                      : "bg-gray-100 text-gray-500 border-gray-300"
-                  }`}
-                >
-                  {c.active ? "有効 / Active" : "無効（非表示） / Inactive"}
-                </span>
-              </div>
-              {confirmDeactivateId === c.id ? (
-                <div className="flex flex-col gap-1 items-end shrink-0">
-                  <p className="text-xs text-red-600 font-semibold text-right">
-                    トップページから
-                    <br />
-                    非表示にしますか？
+        <>
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold text-gray-500">
+              固定クラス（名前変更不可、色のみ設定可）
+              <span className="block text-xs font-normal text-gray-400">
+                Fixed classes — name can't change, color only
+              </span>
+            </h2>
+            <div className="flex flex-col gap-2">
+              {CLASSES.map((name) => (
+                <div key={name} className="border rounded-xl p-3 flex flex-col gap-2">
+                  <p className="text-sm font-semibold">
+                    {name}
+                    <span className="block text-[10px] font-normal text-gray-400">
+                      {classNameToEnglish(name, extraClassEnNames)}
+                    </span>
                   </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setConfirmDeactivateId(null)}
-                      disabled={toggling}
-                      className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
-                    >
-                      キャンセル
-                    </button>
-                    <button
-                      onClick={() => toggleActive(c)}
-                      disabled={toggling}
-                      className="rounded-full bg-red-600 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
-                    >
-                      無効にする
-                    </button>
-                  </div>
+                  <ColorSwatches className={name} />
                 </div>
-              ) : (
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => openEdit(c)}
-                    className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-                    aria-label="編集 / Edit"
-                  >
-                    ✏️
-                  </button>
-                  {c.active ? (
-                    <button
-                      onClick={() => setConfirmDeactivateId(c.id)}
-                      className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
-                      aria-label="無効にする / Deactivate"
-                    >
-                      🚫
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => toggleActive(c)}
-                        disabled={toggling}
-                        className="rounded-full bg-green-50 text-green-700 w-9 h-9 flex items-center justify-center disabled:opacity-40"
-                        aria-label="有効にする / Activate"
-                      >
-                        ✅
-                      </button>
-                      <button
-                        onClick={() => openDeleteModal(c)}
-                        className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
-                        aria-label="完全に削除 / Delete permanently"
-                      >
-                        🗑
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
+              ))}
             </div>
-          ))}
+          </div>
 
-          <button
-            onClick={openAdd}
-            className="rounded-xl border-2 border-dashed border-gray-300 text-gray-500 py-4 font-semibold hover:bg-gray-50"
-          >
-            ＋ 新しいクラスを追加
-            <span className="block text-xs font-normal opacity-70">Add new class</span>
-          </button>
-        </div>
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-semibold text-gray-500">
+              追加クラス
+              <span className="block text-xs font-normal text-gray-400">Extra classes</span>
+            </h2>
+            <div className="flex flex-col gap-3">
+              {classes.map((c) => {
+                const fullName = `${c.branch}　${c.suffix}`;
+                return (
+                  <div
+                    key={c.id}
+                    className={`border rounded-xl p-4 flex flex-col gap-3 ${
+                      c.active ? "border-gray-300" : "border-gray-200 bg-gray-50 opacity-60"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold">{fullName}</p>
+                        <p className="text-xs text-gray-400">{c.nameEn}</p>
+                        <span
+                          className={`inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full border ${
+                            c.active
+                              ? "bg-green-50 text-green-700 border-green-300"
+                              : "bg-gray-100 text-gray-500 border-gray-300"
+                          }`}
+                        >
+                          {c.active ? "有効 / Active" : "無効（非表示） / Inactive"}
+                        </span>
+                      </div>
+                      {confirmDeactivateId === c.id ? (
+                        <div className="flex flex-col gap-1 items-end shrink-0">
+                          <p className="text-xs text-red-600 font-semibold text-right">
+                            トップページから
+                            <br />
+                            非表示にしますか？
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => setConfirmDeactivateId(null)}
+                              disabled={toggling}
+                              className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              onClick={() => toggleActive(c)}
+                              disabled={toggling}
+                              className="rounded-full bg-red-600 text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                            >
+                              無効にする
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => openEdit(c)}
+                            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+                            aria-label="編集 / Edit"
+                          >
+                            ✏️
+                          </button>
+                          {c.active ? (
+                            <button
+                              onClick={() => setConfirmDeactivateId(c.id)}
+                              className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
+                              aria-label="無効にする / Deactivate"
+                            >
+                              🚫
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => toggleActive(c)}
+                                disabled={toggling}
+                                className="rounded-full bg-green-50 text-green-700 w-9 h-9 flex items-center justify-center disabled:opacity-40"
+                                aria-label="有効にする / Activate"
+                              >
+                                ✅
+                              </button>
+                              <button
+                                onClick={() => openDeleteModal(c)}
+                                className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
+                                aria-label="完全に削除 / Delete permanently"
+                              >
+                                🗑
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <ColorSwatches className={fullName} />
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={openAdd}
+                className="rounded-xl border-2 border-dashed border-gray-300 text-gray-500 py-4 font-semibold hover:bg-gray-50"
+              >
+                ＋ 新しいクラスを追加
+                <span className="block text-xs font-normal opacity-70">Add new class</span>
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {editing && (

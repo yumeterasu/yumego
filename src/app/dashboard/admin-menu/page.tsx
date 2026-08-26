@@ -21,19 +21,13 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
     href: "/dashboard/admin-menu/class-management",
     icon: "🏫",
     ja: "クラス管理",
-    en: "Class Management",
+    en: "Class Management & Colors",
   },
   {
     href: "/dashboard/admin-menu/buses",
     icon: "🚌",
     ja: "バス管理",
     en: "Bus Management",
-  },
-  {
-    href: "/dashboard/admin-menu/class-colors",
-    icon: "🎨",
-    ja: "クラスの色",
-    en: "Class Colors",
   },
 ];
 
