@@ -555,7 +555,7 @@ export default function StudentsPage() {
   const hasBranchGrade = classNameToBranchGrade(selectedClass) !== null;
 
   return (
-    <main className="min-h-screen p-6 max-w-3xl mx-auto flex flex-col gap-6">
+    <main className="min-h-screen p-6 max-w-5xl mx-auto flex flex-col gap-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
@@ -705,78 +705,78 @@ export default function StudentsPage() {
         ) : (
           <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
             {students.map((s) => (
-              <li key={s.studentId} className="px-4 py-2 leading-tight flex flex-col gap-1">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <span className="font-medium">{s.nameKanji}</span>
-                    {s.nameEnglish && (
-                      <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 pt-0.5">
-                    <button
-                      onClick={() => setTransportMode(s, "bus")}
-                      disabled={transportSavingId === s.studentId}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
-                        transportByStudent[s.studentId] === "bus"
-                          ? "bg-blue-600 text-white border-blue-600"
-                          : "bg-white text-gray-500 border-gray-300"
-                      }`}
-                    >
-                      🚌 バス
-                    </button>
-                    <button
-                      onClick={() => setTransportMode(s, "self")}
-                      disabled={transportSavingId === s.studentId}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
-                        transportByStudent[s.studentId] === "self"
-                          ? "bg-amber-500 text-white border-amber-500"
-                          : "bg-white text-gray-500 border-gray-300"
-                      }`}
-                    >
-                      🚗 送迎
-                    </button>
-                    <button
-                      onClick={() => handleWithdraw(s)}
-                      disabled={withdrawingId === s.studentId}
-                      className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
-                    >
-                      削除する / Remove
-                    </button>
-                  </div>
+              <li
+                key={s.studentId}
+                className="px-4 py-2.5 leading-tight flex items-center gap-3 flex-wrap"
+              >
+                <div className="min-w-0 flex-1 basis-48">
+                  <span className="font-medium">{s.nameKanji}</span>
+                  {s.nameEnglish && (
+                    <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
+                  )}
+                  {transportByStudent[s.studentId] === "self" ? (
+                    <p className="text-[10px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
+                  ) : locationsByStudent[s.studentId] ? (
+                    <p className="text-[10px] text-green-700 truncate max-w-xs">
+                      📍 {locationsByStudent[s.studentId].address}
+                    </p>
+                  ) : (
+                    transportByStudent[s.studentId] === "bus" && (
+                      <p className="text-[10px] text-red-600 font-semibold">
+                        ⚠️ 住所が未登録です / Address missing
+                      </p>
+                    )
+                  )}
                 </div>
-
-                {transportByStudent[s.studentId] === "self" ? (
-                  <p className="text-[11px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
-                ) : (
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      {locationsByStudent[s.studentId] ? (
-                        <p className="text-[11px] text-green-700 break-words">
-                          📍 {locationsByStudent[s.studentId].address}
-                        </p>
-                      ) : (
-                        transportByStudent[s.studentId] === "bus" && (
-                          <p className="text-[11px] text-red-600 font-semibold">
-                            ⚠️ 住所が未登録です / Address missing
-                          </p>
-                        )
-                      )}
-                    </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => setTransportMode(s, "bus")}
+                    disabled={transportSavingId === s.studentId}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
+                      transportByStudent[s.studentId] === "bus"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white text-gray-500 border-gray-300"
+                    }`}
+                  >
+                    🚌 バス
+                  </button>
+                  <button
+                    onClick={() => setTransportMode(s, "self")}
+                    disabled={transportSavingId === s.studentId}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
+                      transportByStudent[s.studentId] === "self"
+                        ? "bg-amber-500 text-white border-amber-500"
+                        : "bg-white text-gray-500 border-gray-300"
+                    }`}
+                  >
+                    🚗 送迎
+                  </button>
+                  {transportByStudent[s.studentId] !== "self" && (
                     <button
                       onClick={() => openAddressModal(s)}
-                      className={
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border ${
                         locationsByStudent[s.studentId]
-                          ? "text-xs text-green-600 hover:text-blue-500 underline font-semibold shrink-0"
-                          : "text-xs text-gray-400 hover:text-blue-500 underline shrink-0"
-                      }
+                          ? "bg-green-50 text-green-700 border-green-300"
+                          : transportByStudent[s.studentId] === "bus"
+                            ? "bg-red-50 text-red-600 border-red-300"
+                            : "bg-white text-gray-500 border-gray-300"
+                      }`}
                     >
                       {locationsByStudent[s.studentId]
-                        ? "🏠 住所 登録済み / Registered"
-                        : "🏠 住所 / Address"}
+                        ? "🏠 住所 ✓"
+                        : transportByStudent[s.studentId] === "bus"
+                          ? "🏠 住所 ⚠️"
+                          : "🏠 住所"}
                     </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    onClick={() => handleWithdraw(s)}
+                    disabled={withdrawingId === s.studentId}
+                    className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
+                  >
+                    削除する / Remove
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
