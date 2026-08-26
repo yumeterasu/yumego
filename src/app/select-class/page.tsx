@@ -6,6 +6,12 @@ import { useRouter } from "next/navigation";
 import { CLASSES, classNameToEnglish } from "@/lib/classes";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
+import { useClassColors } from "@/hooks/useClassColors";
+import {
+  CLASS_COLOR_CARD_STYLES,
+  CLASS_COLOR_DEFAULT_CARD_STYLE,
+  isClassColorKey,
+} from "@/lib/classColors";
 import { Bi } from "@/components/Bilingual";
 
 // The fixed 3-grade continuum, split by branch. "Extra" classes (like
@@ -36,6 +42,7 @@ export default function SelectClassPage() {
   const router = useRouter();
   const { setSelectedClass } = useSelectedClass();
   const { activeClasses, enNames: extraClassEnNames } = useExtraClasses();
+  const { colors: classColors } = useClassColors();
 
   const promponExtra = activeClasses
     .filter((c) => c.branch === "プロンポン")
@@ -75,10 +82,15 @@ export default function SelectClassPage() {
   function ClassButton({ name }: { name: string }) {
     const count = summary[name];
     const checked = count !== undefined;
+    const colorKey = classColors[name];
+    const colorStyle =
+      colorKey && isClassColorKey(colorKey)
+        ? CLASS_COLOR_CARD_STYLES[colorKey]
+        : CLASS_COLOR_DEFAULT_CARD_STYLE;
     return (
       <button
         onClick={() => handleSelect(name)}
-        className="relative rounded-xl border border-gray-300 px-6 py-4 text-lg font-semibold hover:bg-gray-100 active:scale-95 transition"
+        className={`relative rounded-xl border px-6 py-4 text-lg font-semibold active:scale-95 transition ${colorStyle}`}
       >
         <span className="block">{name}</span>
         <span className="block text-xs font-normal opacity-70">

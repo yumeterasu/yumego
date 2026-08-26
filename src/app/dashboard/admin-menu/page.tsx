@@ -29,6 +29,12 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
     ja: "バス管理",
     en: "Bus Management",
   },
+  {
+    href: "/dashboard/admin-menu/class-colors",
+    icon: "🎨",
+    ja: "クラスの色",
+    en: "Class Colors",
+  },
 ];
 
 export default function AdminMenuPage() {

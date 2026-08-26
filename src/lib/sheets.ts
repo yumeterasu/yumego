@@ -2214,3 +2214,74 @@ export async function setStudentTransport(
     requestBody: { values: [[mode]] },
   });
 }
+
+// クラスカラー — an optional color per class (both the fixed continuum and
+// Master-managed extra classes), purely cosmetic: which button color shows
+// on the top page. `color` is a key into a small curated palette (see
+// CLASS_COLOR_STYLES in select-class/page.tsx) rather than a free hex
+// value, since Tailwind's build-time scanner needs literal class name
+// strings in the source to generate their CSS -- a value straight from the
+// sheet couldn't be turned into working Tailwind classes at runtime.
+export type ClassColor = { className: string; color: string };
+
+export async function getClassColors(): Promise<ClassColor[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "ClassColors!A2:B",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      className: (row[0] ?? "").toString(),
+      color: (row[1] ?? "").toString(),
+    }))
+    .filter((c) => c.className && c.color);
+}
+
+/** color === null resets the class back to the default (no color chosen). */
+export async function setClassColor(className: string, color: string | null): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "ClassColors!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === className);
+
+  if (color === null) {
+    if (rowOffset === -1) return;
+    const sheetId = await getSheetIdByTitle(sheets, "ClassColors");
+    const rowNum = rowOffset + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "ClassColors!A:B",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[className, color]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `ClassColors!B${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[color]] },
+  });
+}
