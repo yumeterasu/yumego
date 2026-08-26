@@ -2109,3 +2109,82 @@ export async function setStudentLocation(
     requestBody: { values },
   });
 }
+
+// 送迎バス - 通学方法 — whether a student rides the bus or is dropped
+// off/picked up by their own parents. Kept separate from StudentLocations
+// (a "self" student has no address at all, and this is a different concern
+// from the address itself) and from Students (same reasoning as
+// StudentLocations — optional, unrelated to attendance, keeps the
+// heavily-used Students sheet/functions untouched).
+export type TransportMode = "bus" | "self";
+export type StudentTransport = { studentId: string; mode: TransportMode };
+
+export async function getStudentTransports(): Promise<StudentTransport[]> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "StudentTransport!A2:B",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      studentId: (row[0] ?? "").toString(),
+      mode: ((row[1] ?? "").toString() === "self" ? "self" : "bus") as TransportMode,
+    }))
+    .filter((t) => t.studentId);
+}
+
+export async function getStudentTransport(studentId: string): Promise<StudentTransport | null> {
+  const all = await getStudentTransports();
+  return all.find((t) => t.studentId === studentId) ?? null;
+}
+
+/** mode === null clears the setting (back to "not yet chosen"). */
+export async function setStudentTransport(
+  studentId: string,
+  mode: TransportMode | null
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "StudentTransport!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === studentId);
+
+  if (mode === null) {
+    if (rowOffset === -1) return;
+    const sheetId = await getSheetIdByTitle(sheets, "StudentTransport");
+    const rowNum = rowOffset + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "StudentTransport!A:B",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[studentId, mode]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `StudentTransport!B${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[mode]] },
+  });
+}

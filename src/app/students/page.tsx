@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
-import type { Student, StudentLocation } from "@/lib/sheets";
+import type { Student, StudentLocation, TransportMode } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
 
@@ -80,6 +80,10 @@ export default function StudentsPage() {
   const [locationsByStudent, setLocationsByStudent] = useState<Record<string, StudentLocation>>(
     {}
   );
+  // 通学方法 — バス (fills in an address) vs 自分で送迎 (no address needed,
+  // used elsewhere later per the school's own request).
+  const [transportByStudent, setTransportByStudent] = useState<Record<string, TransportMode>>({});
+  const [transportSavingId, setTransportSavingId] = useState<string | null>(null);
 
   const [showInactive, setShowInactive] = useState(false);
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
@@ -111,6 +115,7 @@ export default function StudentsPage() {
     }
     loadStudents(selectedClass);
     loadLocations();
+    loadTransports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, selectedClass]);
 
@@ -124,6 +129,45 @@ export default function StudentsPage() {
       setLocationsByStudent(map);
     } catch {
       // non-critical -- the roster just won't show address previews
+    }
+  }
+
+  async function loadTransports() {
+    try {
+      const res = await fetch("/api/students/transport");
+      if (!res.ok) return;
+      const data = await res.json();
+      const map: Record<string, TransportMode> = {};
+      for (const t of (data.transports ?? []) as { studentId: string; mode: TransportMode }[]) {
+        map[t.studentId] = t.mode;
+      }
+      setTransportByStudent(map);
+    } catch {
+      // non-critical -- the roster just won't show the bus/self toggle state
+    }
+  }
+
+  async function setTransportMode(student: Student, mode: TransportMode) {
+    // Toggling the same mode again clears it back to "not yet chosen".
+    const nextMode: TransportMode | null = transportByStudent[student.studentId] === mode ? null : mode;
+    setTransportSavingId(student.studentId);
+    try {
+      const res = await fetch("/api/students/transport", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: student.studentId, mode: nextMode }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setTransportByStudent((prev) => {
+        const next = { ...prev };
+        if (nextMode === null) delete next[student.studentId];
+        else next[student.studentId] = nextMode;
+        return next;
+      });
+    } catch {
+      setError("通学方法の更新に失敗しました / Failed to update transport mode");
+    } finally {
+      setTransportSavingId(null);
     }
   }
 
@@ -608,42 +652,72 @@ export default function StudentsPage() {
         ) : (
           <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
             {students.map((s) => (
-              <li
-                key={s.studentId}
-                className="px-4 py-2 leading-tight flex items-start justify-between gap-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <span className="font-medium">{s.nameKanji}</span>
-                  {s.nameEnglish && (
-                    <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
-                  )}
-                  {locationsByStudent[s.studentId] && (
-                    <p className="text-[11px] text-green-700 break-words">
-                      📍 {locationsByStudent[s.studentId].address}
-                    </p>
-                  )}
+              <li key={s.studentId} className="px-4 py-2 leading-tight flex flex-col gap-1">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium">{s.nameKanji}</span>
+                    {s.nameEnglish && (
+                      <span className="text-xs text-gray-500 ml-2">{s.nameEnglish}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                    <button
+                      onClick={() => setTransportMode(s, "bus")}
+                      disabled={transportSavingId === s.studentId}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
+                        transportByStudent[s.studentId] === "bus"
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-gray-500 border-gray-300"
+                      }`}
+                    >
+                      🚌 バス
+                    </button>
+                    <button
+                      onClick={() => setTransportMode(s, "self")}
+                      disabled={transportSavingId === s.studentId}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
+                        transportByStudent[s.studentId] === "self"
+                          ? "bg-amber-500 text-white border-amber-500"
+                          : "bg-white text-gray-500 border-gray-300"
+                      }`}
+                    >
+                      🚗 送迎
+                    </button>
+                    <button
+                      onClick={() => handleWithdraw(s)}
+                      disabled={withdrawingId === s.studentId}
+                      className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
+                    >
+                      削除する / Remove
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 shrink-0 pt-0.5">
-                  <button
-                    onClick={() => openAddressModal(s)}
-                    className={
-                      locationsByStudent[s.studentId]
-                        ? "text-xs text-green-600 hover:text-blue-500 underline font-semibold"
-                        : "text-xs text-gray-400 hover:text-blue-500 underline"
-                    }
-                  >
-                    {locationsByStudent[s.studentId]
-                      ? "🏠 住所 登録済み / Registered"
-                      : "🏠 住所 / Address"}
-                  </button>
-                  <button
-                    onClick={() => handleWithdraw(s)}
-                    disabled={withdrawingId === s.studentId}
-                    className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
-                  >
-                    削除する / Remove
-                  </button>
-                </div>
+
+                {transportByStudent[s.studentId] === "self" ? (
+                  <p className="text-[11px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
+                ) : (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      {locationsByStudent[s.studentId] && (
+                        <p className="text-[11px] text-green-700 break-words">
+                          📍 {locationsByStudent[s.studentId].address}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => openAddressModal(s)}
+                      className={
+                        locationsByStudent[s.studentId]
+                          ? "text-xs text-green-600 hover:text-blue-500 underline font-semibold shrink-0"
+                          : "text-xs text-gray-400 hover:text-blue-500 underline shrink-0"
+                      }
+                    >
+                      {locationsByStudent[s.studentId]
+                        ? "🏠 住所 登録済み / Registered"
+                        : "🏠 住所 / Address"}
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
