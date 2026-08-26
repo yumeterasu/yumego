@@ -313,6 +313,34 @@ export async function updateStudentRemark(
   });
 }
 
+/**
+ * Moves a student to a different class (a real transfer, not a
+ * withdraw/re-add) -- only changes the Students row's own className
+ * field. Historical Attendance/OutingLog/MonthlyChecks rows are
+ * deliberately left as-is, since they already correctly recorded which
+ * class the student was actually in on each past date; new records
+ * created after the move naturally get tagged with the new class since
+ * check-in/etc. always use whatever a student's current className is.
+ * StudentLocations/StudentTransport/PickupLog aren't touched either --
+ * they're keyed by studentId alone, not className, so they already follow
+ * the student automatically.
+ */
+export async function updateStudentClass(
+  studentId: string,
+  className: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const rowNum = await findStudentRowNumber(sheets, studentId);
+  if (rowNum === null) return;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Students!D${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[className]] },
+  });
+}
+
 /** Toggle one of a student's generic, meaning-free checkboxes. */
 export async function updateStudentCheck(
   studentId: string,

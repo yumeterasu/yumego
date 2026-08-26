@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
-import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
+import { CLASSES, classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student, StudentLocation, TransportMode } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
@@ -62,7 +62,11 @@ function osmEmbedUrl(lat: number, lng: number): string {
 export default function StudentsPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
-  const { enNames: extraClassEnNames } = useExtraClasses();
+  const { activeClasses, enNames: extraClassEnNames } = useExtraClasses();
+  const allClassNames = [
+    ...CLASSES,
+    ...activeClasses.map((c) => `${c.branch}　${c.suffix}`),
+  ];
 
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,6 +92,15 @@ export default function StudentsPage() {
   } | null>(null);
   const [editNameSaving, setEditNameSaving] = useState(false);
   const [editNameError, setEditNameError] = useState<string | null>(null);
+
+  // クラス変更 — a real transfer to a different class (not withdraw+re-add).
+  const [moveClassModal, setMoveClassModal] = useState<{
+    studentId: string;
+    nameKanji: string;
+    targetClass: string;
+  } | null>(null);
+  const [moveClassSaving, setMoveClassSaving] = useState(false);
+  const [moveClassError, setMoveClassError] = useState<string | null>(null);
 
   // 送迎バス住所登録 — per-student home address, geocoded server-side.
   const [addressModal, setAddressModal] = useState<{
@@ -357,6 +370,40 @@ export default function StudentsPage() {
       setEditNameError("保存に失敗しました / Failed to save");
     } finally {
       setEditNameSaving(false);
+    }
+  }
+
+  function openMoveClass(student: Student) {
+    const firstOther = allClassNames.find((c) => c !== selectedClass) ?? "";
+    setMoveClassModal({
+      studentId: student.studentId,
+      nameKanji: student.nameKanji,
+      targetClass: firstOther,
+    });
+    setMoveClassError(null);
+  }
+
+  async function saveMoveClass() {
+    if (!moveClassModal || !moveClassModal.targetClass) return;
+    setMoveClassSaving(true);
+    setMoveClassError(null);
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: moveClassModal.studentId,
+          moveToClassName: moveClassModal.targetClass,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      // They no longer belong on this class's roster once moved.
+      setStudents((prev) => prev.filter((s) => s.studentId !== moveClassModal.studentId));
+      setMoveClassModal(null);
+    } catch {
+      setMoveClassError("移動に失敗しました / Failed to move");
+    } finally {
+      setMoveClassSaving(false);
     }
   }
 
@@ -938,6 +985,12 @@ export default function StudentsPage() {
                     className="text-xs text-gray-400 hover:text-blue-500 underline"
                   >
                     ✏️ 名前
+                  </button>
+                  <button
+                    onClick={() => openMoveClass(s)}
+                    className="text-xs text-gray-400 hover:text-blue-500 underline"
+                  >
+                    🔀 クラス変更
                   </button>
                   <button
                     onClick={() => handleWithdraw(s)}
@@ -1693,6 +1746,70 @@ export default function StudentsPage() {
                 className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
               >
                 {editNameSaving ? "保存中... / Saving..." : "保存 / Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {moveClassModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !moveClassSaving && setMoveClassModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-bold text-lg text-center">
+              {moveClassModal.nameKanji}
+              <span className="block text-sm font-normal text-gray-500">
+                クラス変更 / Move to a different class
+              </span>
+            </h2>
+            <label className="flex flex-col gap-1 text-sm">
+              移動先クラス
+              <span className="text-xs font-normal text-gray-500">Destination class</span>
+              <select
+                value={moveClassModal.targetClass}
+                onChange={(e) =>
+                  setMoveClassModal({ ...moveClassModal, targetClass: e.target.value })
+                }
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              >
+                {allClassNames
+                  .filter((c) => c !== selectedClass)
+                  .map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <p className="text-[10px] text-gray-400 text-center">
+              過去の出席記録はそのまま{selectedClass}に残ります。移動後の記録から新しいクラスになります
+              <span className="block">
+                Past attendance history stays under {selectedClass}; records from after the move
+                will be under the new class
+              </span>
+            </p>
+            {moveClassError && (
+              <p className="text-red-600 text-sm text-center">{moveClassError}</p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setMoveClassModal(null)}
+                disabled={moveClassSaving}
+                className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={saveMoveClass}
+                disabled={moveClassSaving || !moveClassModal.targetClass}
+                className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
+              >
+                {moveClassSaving ? "移動中... / Moving..." : "移動する / Move"}
               </button>
             </div>
           </div>

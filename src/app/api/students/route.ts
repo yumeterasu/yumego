@@ -4,6 +4,7 @@ import {
   getStudentsByClass,
   getAllStudentsByClass,
   updateStudentName,
+  updateStudentClass,
   updateStudentRemark,
   updateStudentCheck,
   setStudentActive,
@@ -74,16 +75,29 @@ export async function POST(req: NextRequest) {
 // or { studentId, nameKanji, nameEnglish? } to correct a student's name --
 // takes effect everywhere the name is shown, since it's all read live from
 // this same row.
+// or { studentId, moveToClassName } to transfer a student to a different
+// class -- see updateStudentClass() for exactly what this does and doesn't
+// touch (historical records stay put; StudentLocations/Transport/PickupLog
+// already follow the student automatically).
 // column is one of "check1"/"check2"/"check3", value is boolean.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, remark, column, value, active, nameKanji, nameEnglish } = body ?? {};
+  const { studentId, remark, column, value, active, nameKanji, nameEnglish, moveToClassName } =
+    body ?? {};
 
   if (!studentId) {
     return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
   }
 
   try {
+    if (typeof moveToClassName === "string") {
+      if (!moveToClassName.trim()) {
+        return NextResponse.json({ error: "moveToClassName cannot be empty" }, { status: 400 });
+      }
+      await updateStudentClass(studentId, moveToClassName.trim());
+      return NextResponse.json({ ok: true });
+    }
+
     if (typeof nameKanji === "string") {
       if (!nameKanji.trim()) {
         return NextResponse.json({ error: "nameKanji cannot be empty" }, { status: 400 });
@@ -112,7 +126,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Missing remark, column/value, active, or nameKanji" },
+      { error: "Missing remark, column/value, active, nameKanji, or moveToClassName" },
       { status: 400 }
     );
   } catch (err) {
