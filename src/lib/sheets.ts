@@ -1970,6 +1970,45 @@ export async function updateExtraClass(
   });
 }
 
+/**
+ * Permanently removes an extra class -- only allowed once it's already
+ * inactive (deactivate-first-then-delete is the safety funnel; the UI
+ * enforces this too). This only removes the class from ExtraClasses, i.e.
+ * it stops being selectable anywhere; any historical Students/Attendance/
+ * StudentLocations/etc. rows that used its class name are NOT touched or
+ * cleaned up -- they simply become unreachable through the app (still sit
+ * in their sheets, viewable only by opening the spreadsheet directly).
+ * Throws if the class is still active, so callers can't skip the funnel.
+ */
+export async function deleteExtraClass(id: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "ExtraClasses!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const isActive = (rows[rowOffset][4] ?? "TRUE").toString().toUpperCase() !== "FALSE";
+  if (isActive) {
+    throw new Error("Class must be deactivated before it can be permanently deleted");
+  }
+  const sheetId = await getSheetIdByTitle(sheets, "ExtraClasses");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
+  });
+}
+
 // バス管理 — a plain named list (school-wide), each with an optional emoji
 // icon for quick visual identification. Not yet wired into 送迎管理 or
 // anywhere else; this is just the Master list itself.

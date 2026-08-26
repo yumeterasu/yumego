@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { getExtraClasses, addExtraClass, updateExtraClass } from "@/lib/sheets";
+import { getExtraClasses, addExtraClass, updateExtraClass, deleteExtraClass } from "@/lib/sheets";
 
 // GET /api/extra-classes
 // Every extra class, active and inactive — the Master settings page needs
@@ -65,5 +65,24 @@ export async function PATCH(req: NextRequest) {
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Failed to update extra class" }, { status: 500 });
+  }
+}
+
+// DELETE /api/extra-classes?id=...
+// Only allowed once the class is already inactive -- deleteExtraClass()
+// throws otherwise, enforcing deactivate-first-then-delete.
+export async function DELETE(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "Missing 'id' query param" }, { status: 400 });
+  }
+
+  try {
+    await deleteExtraClass(id);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Failed to delete extra class";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

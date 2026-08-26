@@ -18,6 +18,11 @@ export default function ClassManagementPage() {
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
 
+  const [deleteModal, setDeleteModal] = useState<ExtraClass | null>(null);
+  const [deleteFinalStep, setDeleteFinalStep] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -114,6 +119,33 @@ export default function ClassManagementPage() {
       setError("更新に失敗しました / Failed to update");
     } finally {
       setToggling(false);
+    }
+  }
+
+  function openDeleteModal(c: ExtraClass) {
+    setDeleteModal(c);
+    setDeleteFinalStep(false);
+    setDeleteError(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteModal) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/extra-classes?id=${encodeURIComponent(deleteModal.id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error ?? "failed");
+      }
+      setClasses((prev) => prev.filter((c) => c.id !== deleteModal.id));
+      setDeleteModal(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "削除に失敗しました / Failed to delete");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -218,14 +250,23 @@ export default function ClassManagementPage() {
                       🚫
                     </button>
                   ) : (
-                    <button
-                      onClick={() => toggleActive(c)}
-                      disabled={toggling}
-                      className="rounded-full bg-green-50 text-green-700 w-9 h-9 flex items-center justify-center disabled:opacity-40"
-                      aria-label="有効にする / Activate"
-                    >
-                      ✅
-                    </button>
+                    <>
+                      <button
+                        onClick={() => toggleActive(c)}
+                        disabled={toggling}
+                        className="rounded-full bg-green-50 text-green-700 w-9 h-9 flex items-center justify-center disabled:opacity-40"
+                        aria-label="有効にする / Activate"
+                      >
+                        ✅
+                      </button>
+                      <button
+                        onClick={() => openDeleteModal(c)}
+                        className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
+                        aria-label="完全に削除 / Delete permanently"
+                      >
+                        🗑
+                      </button>
+                    </>
                   )}
                 </div>
               )}
@@ -333,6 +374,90 @@ export default function ClassManagementPage() {
                 OK
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {deleteModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !deleting && setDeleteModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {!deleteFinalStep ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  完全に削除
+                  <span className="block text-sm font-normal text-gray-500">
+                    Delete permanently
+                  </span>
+                </h2>
+                <p className="text-sm text-center text-gray-700 font-medium">
+                  {deleteModal.branch}　{deleteModal.suffix}
+                </p>
+                <p className="text-xs text-gray-500 text-center">
+                  このクラスに過去の生徒・出席記録があった場合、データ自体は残りますが
+                  アプリの画面からは二度と見られなくなります。よろしいですか？
+                  <span className="block mt-1">
+                    Any past student/attendance records under this class name will still exist
+                    in the spreadsheet, but will never be viewable through the app again. Continue?
+                  </span>
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setDeleteModal(null)}
+                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={() => setDeleteFinalStep(true)}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold"
+                  >
+                    次へ / Next
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  完全に削除
+                  <span className="block text-sm font-normal text-gray-500">
+                    Delete permanently
+                  </span>
+                </h2>
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                  <p className="text-sm text-red-800 font-semibold text-center">
+                    ⚠ この削除は完全に永久的です。元に戻せません
+                    <span className="block text-xs font-normal mt-1">
+                      This deletion is permanent and cannot be undone.
+                    </span>
+                  </p>
+                </div>
+                {deleteError && (
+                  <p className="text-red-600 text-sm text-center">{deleteError}</p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setDeleteFinalStep(false)}
+                    disabled={deleting}
+                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
+                  >
+                    戻る / Back
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    disabled={deleting}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {deleting ? "削除中... / Deleting..." : "本当に削除する / Really delete"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
