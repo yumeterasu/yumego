@@ -23,6 +23,32 @@ function getSheetsClient() {
   return google.sheets({ version: "v4", auth: getAuth() });
 }
 
+/**
+ * Wraps sheets.spreadsheets.values.get() so that a tab which has been
+ * fully emptied down to just its header row (e.g. via a "delete all"
+ * feature, which removes ROWS through the grid, not just cell content)
+ * doesn't break every future read. Once a sheet's grid shrinks to exactly
+ * 1 row, a range like "Sheet!A2:D" no longer exists at all and Google
+ * returns a 400 "exceeds grid limits" error instead of an empty result --
+ * that specific error is treated as "no data" here, same as if the range
+ * had simply come back empty. Every read in this file goes through this,
+ * not sheets.spreadsheets.values.get() directly.
+ */
+async function safeValuesGet(
+  sheets: ReturnType<typeof getSheetsClient>,
+  params: { spreadsheetId: string; range: string }
+): Promise<{ data: { values?: string[][] | null } }> {
+  try {
+    return await sheets.spreadsheets.values.get(params);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/exceeds grid limits/i.test(message)) {
+      return { data: { values: [] } };
+    }
+    throw err;
+  }
+}
+
 async function getSheetIdByTitle(
   sheets: ReturnType<typeof getSheetsClient>,
   title: string
@@ -102,7 +128,7 @@ export type AttendanceRecord = {
 /** Read all students for a given class (active only). */
 export async function getStudentsByClass(className: string): Promise<Student[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Students!A2:I",
   });
@@ -131,7 +157,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
  */
 export async function getStudentsByBranch(branch: string): Promise<Student[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Students!A2:I",
   });
@@ -214,7 +240,7 @@ export async function addStudentsBulk(
  */
 export async function getAllStudentsByClass(className: string): Promise<Student[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Students!A2:I",
   });
@@ -238,7 +264,7 @@ async function findStudentRowNumber(
   sheets: ReturnType<typeof getSheetsClient>,
   studentId: string
 ): Promise<number | null> {
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Students!A2:A",
   });
@@ -311,7 +337,7 @@ export async function deactivateAllStudents(
   className: string
 ): Promise<{ studentId: string; nameKanji: string }[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Students!A2:I",
   });
@@ -353,8 +379,8 @@ export async function getAttendanceSummaryForDate(
 ): Promise<Record<string, number>> {
   const sheets = getSheetsClient();
   const [attendanceRes, studentsRes] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Attendance!A2:F" }),
-    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Students!A2:E" }),
+    safeValuesGet(sheets,{ spreadsheetId: SHEET_ID, range: "Attendance!A2:F" }),
+    safeValuesGet(sheets,{ spreadsheetId: SHEET_ID, range: "Students!A2:E" }),
   ]);
 
   // Only count rows for students still on the active roster — otherwise a
@@ -398,7 +424,7 @@ export async function getAttendanceForMonth(
   yearMonth: string // "2026-08"
 ): Promise<AttendanceRow[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Attendance!A2:F",
   });
@@ -436,7 +462,7 @@ export async function getAttendanceForFiscalYear(
   fiscalYearStartYear: number
 ): Promise<AttendanceRow[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Attendance!A2:F",
   });
@@ -476,7 +502,7 @@ export async function getAttendanceForFiscalYear(
  */
 export async function getAllAttendanceForClass(className: string): Promise<AttendanceRow[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Attendance!A2:F",
   });
@@ -504,7 +530,7 @@ export async function upsertAttendance(records: AttendanceRecord[]): Promise<voi
   if (records.length === 0) return;
 
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Attendance!A2:F",
   });
@@ -569,7 +595,7 @@ export async function clearAttendance(
   studentId: string
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Attendance!A2:F",
   });
@@ -618,7 +644,7 @@ export async function clearAttendanceForDate(
   date: string
 ): Promise<number> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Attendance!A2:F",
   });
@@ -668,7 +694,7 @@ export async function getClassCheckLabels(
   yearMonth: string
 ): Promise<ClassCheckLabels> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "ClassSettings!A2:E",
   });
@@ -689,7 +715,7 @@ export async function updateClassCheckLabel(
   label: string
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "ClassSettings!A2:B",
   });
@@ -749,7 +775,7 @@ export async function getMonthlyChecks(
   yearMonth: string
 ): Promise<MonthlyCheckRecord[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "MonthlyChecks!A2:F",
   });
@@ -774,7 +800,7 @@ export async function setMonthlyCheck(
   value: boolean
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "MonthlyChecks!A2:C",
   });
@@ -834,7 +860,7 @@ export async function getSpecialistCategories(
   branch: string
 ): Promise<SpecialistCategory[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistCategories!A2:C",
   });
@@ -865,7 +891,7 @@ export async function renameSpecialistCategory(
   name: string
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistCategories!A2:A",
   });
@@ -883,7 +909,7 @@ export async function renameSpecialistCategory(
 
 export async function deleteSpecialistCategory(categoryId: string): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistCategories!A2:A",
   });
@@ -918,7 +944,7 @@ export async function getSpecialistAttendance(
   yearMonth: string // "2026-08"
 ): Promise<SpecialistCheckedCell[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistAttendance!A2:D",
   });
@@ -950,7 +976,7 @@ export async function setSpecialistChecked(
   checked: boolean
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistAttendance!A2:D",
   });
@@ -1008,7 +1034,7 @@ export async function getAllSpecialistAttendanceForGrade(
   grade: string
 ): Promise<SpecialistCheckedCell[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistAttendance!A2:D",
   });
@@ -1037,7 +1063,7 @@ export async function deleteSpecialistAttendanceForGrade(
   grade: string
 ): Promise<number> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistAttendance!A2:D",
   });
@@ -1080,7 +1106,7 @@ export async function getSpecialistParticipation(
   yearMonth: string // "2026-08"
 ): Promise<SpecialistParticipationCell[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistParticipation!A2:E",
   });
@@ -1121,7 +1147,7 @@ export async function setSpecialistParticipationCount(
   count: number | null
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistParticipation!A2:E",
   });
@@ -1193,7 +1219,7 @@ export async function getAllSpecialistParticipationForGrade(
   grade: string
 ): Promise<SpecialistParticipationCell[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistParticipation!A2:E",
   });
@@ -1219,7 +1245,7 @@ export async function deleteSpecialistParticipationForGrade(
   grade: string
 ): Promise<number> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "SpecialistParticipation!A2:E",
   });
@@ -1267,7 +1293,7 @@ export async function getOutingLogs(
   yearMonth: string // "2026-08"
 ): Promise<OutingLog[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "OutingLog!A2:J",
   });
@@ -1321,7 +1347,7 @@ export async function updateOutingLog(
   fields: Omit<OutingLog, "id">
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "OutingLog!A2:A",
   });
@@ -1354,7 +1380,7 @@ export async function updateOutingLog(
 
 export async function deleteOutingLog(id: string): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "OutingLog!A2:A",
   });
@@ -1391,7 +1417,7 @@ export type OutingDestination = {
 
 export async function getOutingDestinations(): Promise<OutingDestination[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "OutingDestinations!A2:B",
   });
@@ -1413,7 +1439,7 @@ export async function addOutingDestination(id: string, name: string): Promise<vo
 
 export async function deleteOutingDestination(id: string): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "OutingDestinations!A2:A",
   });
@@ -1451,7 +1477,7 @@ export type PickupRecord = {
 /** Every PickupLog row for a given month, across all students/branches — callers filter to their branch's studentIds. */
 export async function getPickupRecordsForMonth(yearMonth: string): Promise<PickupRecord[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "PickupLog!A2:D",
   });
@@ -1477,7 +1503,7 @@ export async function upsertPickupRecord(
   fields: { arrivalTime?: string; departureTime?: string }
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "PickupLog!A2:D",
   });
@@ -1526,7 +1552,7 @@ export type MasterHoliday = {
 
 export async function getMasterHolidays(): Promise<MasterHoliday[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "MasterHolidays!A2:B",
   });
@@ -1539,7 +1565,7 @@ export async function getMasterHolidays(): Promise<MasterHoliday[]> {
 /** label === null removes the date from the holiday list entirely; a string (even "") sets/updates it as a holiday. */
 export async function setMasterHoliday(date: string, label: string | null): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "MasterHolidays!A2:A",
   });
@@ -1586,7 +1612,7 @@ export async function setMasterHoliday(date: string, label: string | null): Prom
 /** Deletes every Master holiday. Returns how many rows were removed. */
 export async function clearAllMasterHolidays(): Promise<number> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "MasterHolidays!A2:A",
   });
@@ -1694,7 +1720,7 @@ export async function getClassCalendarOverrides(
   className: string
 ): Promise<ClassCalendarOverride[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "ClassCalendarOverrides!A2:D",
   });
@@ -1718,7 +1744,7 @@ export async function setClassCalendarOverride(
   label?: string
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "ClassCalendarOverrides!A2:B",
   });
@@ -1782,7 +1808,7 @@ export type AbsenceReason = {
 
 export async function getAbsenceReasons(): Promise<AbsenceReason[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "AbsenceReasons!A2:D",
   });
@@ -1817,7 +1843,7 @@ export async function updateAbsenceReason(
   updates: Partial<Omit<AbsenceReason, "id">>
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "AbsenceReasons!A2:D",
   });
@@ -1842,7 +1868,7 @@ export async function updateAbsenceReason(
 
 export async function deleteAbsenceReason(id: string): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "AbsenceReasons!A2:A",
   });
@@ -1883,7 +1909,7 @@ export type ExtraClass = {
 
 export async function getExtraClasses(): Promise<ExtraClass[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "ExtraClasses!A2:E",
   });
@@ -1918,7 +1944,7 @@ export async function updateExtraClass(
   updates: Partial<Omit<ExtraClass, "id">>
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "ExtraClasses!A2:E",
   });
@@ -1955,7 +1981,7 @@ export type Bus = {
 
 export async function getBuses(): Promise<Bus[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Buses!A2:C",
   });
@@ -1981,7 +2007,7 @@ export async function addBus(id: string, bus: Omit<Bus, "id">): Promise<void> {
 
 export async function updateBus(id: string, updates: Partial<Omit<Bus, "id">>): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Buses!A2:C",
   });
@@ -2001,7 +2027,7 @@ export async function updateBus(id: string, updates: Partial<Omit<Bus, "id">>): 
 
 export async function deleteBus(id: string): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "Buses!A2:A",
   });
@@ -2039,7 +2065,7 @@ export type StudentLocation = {
 
 export async function getStudentLocations(): Promise<StudentLocation[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "StudentLocations!A2:D",
   });
@@ -2065,7 +2091,7 @@ export async function setStudentLocation(
   location: { address: string; lat: number; lng: number } | null
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing2 = await sheets.spreadsheets.values.get({
+  const existing2 = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "StudentLocations!A2:A",
   });
@@ -2121,7 +2147,7 @@ export type StudentTransport = { studentId: string; mode: TransportMode };
 
 export async function getStudentTransports(): Promise<StudentTransport[]> {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "StudentTransport!A2:B",
   });
@@ -2145,7 +2171,7 @@ export async function setStudentTransport(
   mode: TransportMode | null
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await sheets.spreadsheets.values.get({
+  const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
     range: "StudentTransport!A2:A",
   });
