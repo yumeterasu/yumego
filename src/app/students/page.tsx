@@ -74,10 +74,20 @@ export default function StudentsPage() {
   const [bulkText, setBulkText] = useState("");
   // For pasting a "名前" column where each cell has kanji+romaji on 2 lines
   // (e.g. the school's own roster spreadsheet) -- see parseBulkNamesTwoLine.
-  const [bulkTwoLineMode, setBulkTwoLineMode] = useState(false);
+  const [bulkTwoLineMode, setBulkTwoLineMode] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+
+  // 名前の修正 — takes effect everywhere the name is shown, since every
+  // page reads nameKanji/nameEnglish live from the same Students row.
+  const [editNameModal, setEditNameModal] = useState<{
+    studentId: string;
+    nameKanji: string;
+    nameEnglish: string;
+  } | null>(null);
+  const [editNameSaving, setEditNameSaving] = useState(false);
+  const [editNameError, setEditNameError] = useState<string | null>(null);
 
   // 送迎バス住所登録 — per-student home address, geocoded server-side.
   const [addressModal, setAddressModal] = useState<{
@@ -295,6 +305,45 @@ export default function StudentsPage() {
       setError("一括追加に失敗しました / Failed to bulk-add students");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function openEditName(student: Student) {
+    setEditNameModal({
+      studentId: student.studentId,
+      nameKanji: student.nameKanji,
+      nameEnglish: student.nameEnglish,
+    });
+    setEditNameError(null);
+  }
+
+  async function saveEditName() {
+    if (!editNameModal || !editNameModal.nameKanji.trim()) return;
+    setEditNameSaving(true);
+    setEditNameError(null);
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: editNameModal.studentId,
+          nameKanji: editNameModal.nameKanji.trim(),
+          nameEnglish: editNameModal.nameEnglish.trim(),
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setStudents((prev) =>
+        prev.map((s) =>
+          s.studentId === editNameModal.studentId
+            ? { ...s, nameKanji: editNameModal.nameKanji.trim(), nameEnglish: editNameModal.nameEnglish.trim() }
+            : s
+        )
+      );
+      setEditNameModal(null);
+    } catch {
+      setEditNameError("保存に失敗しました / Failed to save");
+    } finally {
+      setEditNameSaving(false);
     }
   }
 
@@ -831,6 +880,12 @@ export default function StudentsPage() {
                     </button>
                   )}
                   <button
+                    onClick={() => openEditName(s)}
+                    className="text-xs text-gray-400 hover:text-blue-500 underline"
+                  >
+                    ✏️ 名前
+                  </button>
+                  <button
                     onClick={() => handleWithdraw(s)}
                     disabled={withdrawingId === s.studentId}
                     className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
@@ -1315,6 +1370,74 @@ export default function StudentsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {editNameModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !editNameSaving && setEditNameModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-bold text-lg text-center">
+              名前を修正
+              <span className="block text-sm font-normal text-gray-500">Edit name</span>
+            </h2>
+            <label className="flex flex-col gap-1 text-sm">
+              名前（漢字）
+              <span className="text-xs font-normal text-gray-500">Name (Kanji)</span>
+              <input
+                type="text"
+                value={editNameModal.nameKanji}
+                onChange={(e) =>
+                  setEditNameModal({ ...editNameModal, nameKanji: e.target.value })
+                }
+                autoFocus
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              英語名（任意）
+              <span className="text-xs font-normal text-gray-500">English name (optional)</span>
+              <input
+                type="text"
+                value={editNameModal.nameEnglish}
+                onChange={(e) =>
+                  setEditNameModal({ ...editNameModal, nameEnglish: e.target.value })
+                }
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <p className="text-[10px] text-gray-400 text-center">
+              保存すると出席簿・出席確認・送迎管理など全ページの表示に反映されます
+              <span className="block">
+                Takes effect on the Dashboard, check-in, pickup, and everywhere else this
+                student's name is shown
+              </span>
+            </p>
+            {editNameError && (
+              <p className="text-red-600 text-sm text-center">{editNameError}</p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setEditNameModal(null)}
+                disabled={editNameSaving}
+                className="rounded-full bg-gray-100 text-gray-600 py-2.5 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={saveEditName}
+                disabled={editNameSaving || !editNameModal.nameKanji.trim()}
+                className="rounded-full bg-green-600 text-white py-2.5 font-semibold disabled:opacity-40"
+              >
+                {editNameSaving ? "保存中... / Saving..." : "保存 / Save"}
+              </button>
+            </div>
           </div>
         </div>
       )}

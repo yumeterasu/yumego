@@ -3,6 +3,7 @@ import {
   addStudent,
   getStudentsByClass,
   getAllStudentsByClass,
+  updateStudentName,
   updateStudentRemark,
   updateStudentCheck,
   setStudentActive,
@@ -69,17 +70,28 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH /api/students  { studentId, remark? } or { studentId, column, value }
-// or { studentId, active } to withdraw/graduate (false) or restore (true).
+// or { studentId, active } to withdraw/graduate (false) or restore (true)
+// or { studentId, nameKanji, nameEnglish? } to correct a student's name --
+// takes effect everywhere the name is shown, since it's all read live from
+// this same row.
 // column is one of "check1"/"check2"/"check3", value is boolean.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, remark, column, value, active } = body ?? {};
+  const { studentId, remark, column, value, active, nameKanji, nameEnglish } = body ?? {};
 
   if (!studentId) {
     return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
   }
 
   try {
+    if (typeof nameKanji === "string") {
+      if (!nameKanji.trim()) {
+        return NextResponse.json({ error: "nameKanji cannot be empty" }, { status: 400 });
+      }
+      await updateStudentName(studentId, nameKanji.trim(), (nameEnglish ?? "").trim());
+      return NextResponse.json({ ok: true });
+    }
+
     if (typeof remark === "string") {
       await updateStudentRemark(studentId, remark);
       return NextResponse.json({ ok: true });
@@ -100,7 +112,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json(
-      { error: "Missing remark, column/value, or active" },
+      { error: "Missing remark, column/value, active, or nameKanji" },
       { status: 400 }
     );
   } catch (err) {

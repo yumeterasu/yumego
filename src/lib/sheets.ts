@@ -273,6 +273,29 @@ async function findStudentRowNumber(
   return rowOffset === -1 ? null : rowOffset + 2; // 1-based, +1 for header
 }
 
+/**
+ * Corrects a student's name in place -- every page reads nameKanji/
+ * nameEnglish live from this same row, so this is the one place a fix
+ * needs to happen for it to show up everywhere (Dashboard, 出席確認,
+ * 年間まとめ, 送迎管理, etc.).
+ */
+export async function updateStudentName(
+  studentId: string,
+  nameKanji: string,
+  nameEnglish: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const rowNum = await findStudentRowNumber(sheets, studentId);
+  if (rowNum === null) return;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Students!B${rowNum}:C${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[nameKanji, nameEnglish]] },
+  });
+}
+
 /** Update a single student's remark (備考) note in place. */
 export async function updateStudentRemark(
   studentId: string,
