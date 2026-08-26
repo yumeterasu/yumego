@@ -61,6 +61,10 @@ export default function StudentsPage() {
     studentId: string;
     nameKanji: string;
     input: string;
+    // If opened because バス was picked with no address on file yet, saving
+    // successfully here also sets the transport mode to バス -- see
+    // setTransportMode() and confirmSaveAddress().
+    autoSetBusOnSave?: boolean;
   } | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
   const [addressLookingUp, setAddressLookingUp] = useState(false);
@@ -148,6 +152,16 @@ export default function StudentsPage() {
   }
 
   async function setTransportMode(student: Student, mode: TransportMode) {
+    // バス requires an address on file -- if there isn't one yet, open the
+    // address modal instead of setting the mode directly; the mode only
+    // actually gets set once that address is looked up and saved (see
+    // confirmSaveAddress()). Cancelling out of the modal leaves the mode
+    // untouched.
+    if (mode === "bus" && transportByStudent[student.studentId] !== "bus" && !locationsByStudent[student.studentId]) {
+      openAddressModal(student, { autoSetBusOnSave: true });
+      return;
+    }
+
     // Toggling the same mode again clears it back to "not yet chosen".
     const nextMode: TransportMode | null = transportByStudent[student.studentId] === mode ? null : mode;
     setTransportSavingId(student.studentId);
@@ -374,8 +388,16 @@ export default function StudentsPage() {
     }
   }
 
-  async function openAddressModal(student: Student) {
-    setAddressModal({ studentId: student.studentId, nameKanji: student.nameKanji, input: "" });
+  async function openAddressModal(
+    student: Student,
+    options?: { autoSetBusOnSave?: boolean }
+  ) {
+    setAddressModal({
+      studentId: student.studentId,
+      nameKanji: student.nameKanji,
+      input: "",
+      autoSetBusOnSave: options?.autoSetBusOnSave,
+    });
     setAddressError(null);
     setPendingResult(null);
     setAddressConfirmRemove(false);
@@ -393,6 +415,7 @@ export default function StudentsPage() {
             studentId: student.studentId,
             nameKanji: student.nameKanji,
             input: data.location.address,
+            autoSetBusOnSave: options?.autoSetBusOnSave,
           });
         }
       }
@@ -460,6 +483,19 @@ export default function StudentsPage() {
       setSavedLocation(data.location);
       setLocationsByStudent((prev) => ({ ...prev, [addressModal.studentId]: data.location }));
       setPendingResult(null);
+
+      // バス requires an address -- if this save happened because バス was
+      // picked with no address yet, the mode gets set now that one exists.
+      if (addressModal.autoSetBusOnSave) {
+        const transportRes = await fetch("/api/students/transport", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: addressModal.studentId, mode: "bus" }),
+        });
+        if (transportRes.ok) {
+          setTransportByStudent((prev) => ({ ...prev, [addressModal.studentId]: "bus" }));
+        }
+      }
     } catch {
       setAddressError("保存に失敗しました / Failed to save");
     } finally {
@@ -487,6 +523,23 @@ export default function StudentsPage() {
         delete next[addressModal.studentId];
         return next;
       });
+
+      // バス requires an address -- removing it clears the mode back to
+      // "not yet chosen" rather than leaving a バス student with no address.
+      if (transportByStudent[addressModal.studentId] === "bus") {
+        const transportRes = await fetch("/api/students/transport", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId: addressModal.studentId, mode: null }),
+        });
+        if (transportRes.ok) {
+          setTransportByStudent((prev) => {
+            const next = { ...prev };
+            delete next[addressModal.studentId];
+            return next;
+          });
+        }
+      }
     } catch {
       setAddressError("削除に失敗しました / Failed to delete");
     } finally {
@@ -698,10 +751,16 @@ export default function StudentsPage() {
                 ) : (
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      {locationsByStudent[s.studentId] && (
+                      {locationsByStudent[s.studentId] ? (
                         <p className="text-[11px] text-green-700 break-words">
                           📍 {locationsByStudent[s.studentId].address}
                         </p>
+                      ) : (
+                        transportByStudent[s.studentId] === "bus" && (
+                          <p className="text-[11px] text-red-600 font-semibold">
+                            ⚠️ 住所が未登録です / Address missing
+                          </p>
+                        )
                       )}
                     </div>
                     <button
@@ -1052,6 +1111,14 @@ export default function StudentsPage() {
               <span className="block text-sm font-normal text-gray-500">
                 送迎バス用の住所 / Home address for bus routing
               </span>
+              {addressModal.autoSetBusOnSave && (
+                <span className="block text-xs font-normal text-amber-600 mt-1">
+                  🚌 バスを選ぶには住所が必要です — 保存すると自動でバスに設定されます
+                  <span className="block">
+                    An address is required to select バス — saving one will set it automatically
+                  </span>
+                </span>
+              )}
             </h2>
 
             {addressLoading ? (
