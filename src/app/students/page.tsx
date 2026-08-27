@@ -102,7 +102,15 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
-  const [reorderingId, setReorderingId] = useState<string | null>(null);
+
+  // 並び替え — locked by default (no arrows shown, matching the plain
+  // roster look). 並び替え button unlocks the ▲▼ arrows; swaps only touch
+  // local state while unlocked (no network calls per click) until 保存
+  // commits the final order in one write, or キャンセル discards it and
+  // restores the snapshot taken when unlocking.
+  const [reorderMode, setReorderMode] = useState(false);
+  const [reorderSnapshot, setReorderSnapshot] = useState<Student[] | null>(null);
+  const [reorderSaving, setReorderSaving] = useState(false);
 
   // 名前の修正 — takes effect everywhere the name is shown, since every
   // page reads nameKanji/nameEnglish/nameHiragana live from the same
@@ -570,35 +578,49 @@ export default function StudentsPage() {
   // 並び替え — the school lines students up by birthdate (or whatever
   // order they prefer), which nothing else in the sheet captures, and a
   // newly-enrolled child needs to slot in mid-list rather than always
-  // landing at the bottom. Swaps with the immediate neighbor; optimistic
-  // locally (the list is already in display order client-side) with a
-  // full reload on failure so the roster never drifts out of sync with
-  // the sheet.
-  async function handleMoveOrder(index: number, direction: "up" | "down") {
-    const student = students[index];
-    if (!student) return;
+  // landing at the bottom. Locked by default (no arrows); 並び替え unlocks
+  // them and snapshots the current order for a possible キャンセル. Every
+  // swap while unlocked only rearranges local state -- nothing is written
+  // until 保存, which commits the whole final order in one request and
+  // locks back down (see saveReorder/cancelReorder below).
+  function startReorder() {
+    setReorderSnapshot(students);
+    setReorderMode(true);
+  }
+
+  function moveLocalOrder(index: number, direction: "up" | "down") {
     const neighborIndex = direction === "up" ? index - 1 : index + 1;
     if (neighborIndex < 0 || neighborIndex >= students.length) return;
-
-    setReorderingId(student.studentId);
-    setError(null);
     setStudents((prev) => {
       const next = [...prev];
       [next[index], next[neighborIndex]] = [next[neighborIndex], next[index]];
       return next;
     });
+  }
+
+  function cancelReorder() {
+    if (reorderSnapshot) setStudents(reorderSnapshot);
+    setReorderSnapshot(null);
+    setReorderMode(false);
+    setError(null);
+  }
+
+  async function saveReorder() {
+    setReorderSaving(true);
+    setError(null);
     try {
-      const res = await fetch("/api/students", {
-        method: "PATCH",
+      const res = await fetch("/api/students/reorder", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: student.studentId, moveOrder: direction }),
+        body: JSON.stringify({ studentIds: students.map((s) => s.studentId) }),
       });
       if (!res.ok) throw new Error("failed");
+      setReorderSnapshot(null);
+      setReorderMode(false);
     } catch {
-      setError("並び替えに失敗しました / Failed to reorder");
-      if (selectedClass) await loadStudents(selectedClass); // resync with the sheet
+      setError("並び替えの保存に失敗しました / Failed to save the new order");
     } finally {
-      setReorderingId(null);
+      setReorderSaving(false);
     }
   }
 
@@ -1131,7 +1153,7 @@ export default function StudentsPage() {
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
           <h2 className="font-semibold">
             現在の生徒一覧 {!loading && `(${students.length}名)`}
             <span className="block text-xs font-normal text-gray-500">
@@ -1139,18 +1161,56 @@ export default function StudentsPage() {
             </span>
           </h2>
           {students.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setRemoveAllError(null);
-                setShowRemoveAllModal(true);
-              }}
-              className="shrink-0 rounded-full border border-red-300 text-red-600 px-3 py-1 text-xs font-semibold"
-            >
-              全員削除 / Remove all
-            </button>
+            <div className="flex items-center gap-2">
+              {reorderMode ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={cancelReorder}
+                    disabled={reorderSaving}
+                    className="shrink-0 rounded-full border border-gray-300 text-gray-600 px-3 py-1 text-xs font-semibold disabled:opacity-40"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={saveReorder}
+                    disabled={reorderSaving}
+                    className="shrink-0 rounded-full bg-green-600 text-white px-3 py-1 text-xs font-semibold disabled:opacity-40"
+                  >
+                    {reorderSaving ? "保存中... / Saving..." : "✅ 保存 / Save"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={startReorder}
+                    className="shrink-0 rounded-full border border-blue-300 text-blue-600 px-3 py-1 text-xs font-semibold"
+                  >
+                    🔀 並び替え / Reorder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRemoveAllError(null);
+                      setShowRemoveAllModal(true);
+                    }}
+                    className="shrink-0 rounded-full border border-red-300 text-red-600 px-3 py-1 text-xs font-semibold"
+                  >
+                    全員削除 / Remove all
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
+        {reorderMode && (
+          <p className="text-xs text-blue-600 text-center mb-2">
+            ▲▼ で並び替えてから「保存」を押してください
+            <span className="block">Use ▲▼ to reorder, then press Save</span>
+          </p>
+        )}
         {students.some((s) => transportByStudent[s.studentId] === "bus") && (
           <div className="flex items-center justify-center gap-3 mb-2 text-sm">
             <span className="text-gray-400 text-xs">
@@ -1188,26 +1248,28 @@ export default function StudentsPage() {
                 key={s.studentId}
                 className="px-4 py-2.5 leading-tight flex items-center gap-3 flex-wrap"
               >
-                <div className="flex flex-col shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleMoveOrder(index, "up")}
-                    disabled={index === 0 || reorderingId === s.studentId}
-                    className="text-gray-400 hover:text-blue-500 disabled:opacity-20 leading-none text-xs px-1"
-                    aria-label="上へ移動 / Move up"
-                  >
-                    ▲
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleMoveOrder(index, "down")}
-                    disabled={index === students.length - 1 || reorderingId === s.studentId}
-                    className="text-gray-400 hover:text-blue-500 disabled:opacity-20 leading-none text-xs px-1"
-                    aria-label="下へ移動 / Move down"
-                  >
-                    ▼
-                  </button>
-                </div>
+                {reorderMode && (
+                  <div className="flex flex-col shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => moveLocalOrder(index, "up")}
+                      disabled={index === 0 || reorderSaving}
+                      className="text-blue-500 hover:text-blue-700 disabled:opacity-20 leading-none text-xs px-1"
+                      aria-label="上へ移動 / Move up"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveLocalOrder(index, "down")}
+                      disabled={index === students.length - 1 || reorderSaving}
+                      className="text-blue-500 hover:text-blue-700 disabled:opacity-20 leading-none text-xs px-1"
+                      aria-label="下へ移動 / Move down"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                )}
                 <div className="min-w-0 flex-1 basis-48">
                   <span className="font-medium block">{s.nameKanji}</span>
                   {s.nameEnglish && (
@@ -1233,7 +1295,7 @@ export default function StudentsPage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => setTransportMode(s, "bus")}
-                    disabled={transportSavingId === s.studentId}
+                    disabled={reorderMode || transportSavingId === s.studentId}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
                       transportByStudent[s.studentId] === "bus"
                         ? "bg-blue-600 text-white border-blue-600"
@@ -1244,7 +1306,7 @@ export default function StudentsPage() {
                   </button>
                   <button
                     onClick={() => setTransportMode(s, "self")}
-                    disabled={transportSavingId === s.studentId}
+                    disabled={reorderMode || transportSavingId === s.studentId}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
                       transportByStudent[s.studentId] === "self"
                         ? "bg-amber-500 text-white border-amber-500"
@@ -1256,7 +1318,8 @@ export default function StudentsPage() {
                   {transportByStudent[s.studentId] === "bus" && (
                     <button
                       onClick={() => openAddressModal(s)}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border ${
+                      disabled={reorderMode}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
                         locationsByStudent[s.studentId]
                           ? "bg-green-50 text-green-700 border-green-300"
                           : "bg-red-50 text-red-600 border-red-300"
@@ -1272,7 +1335,7 @@ export default function StudentsPage() {
                           ? `${busPatternsByStudent[s.studentId].arrivalMode}_${busPatternsByStudent[s.studentId].departureMode}`
                           : "bus_bus"
                       }
-                      disabled={busPatternSavingId === s.studentId}
+                      disabled={reorderMode || busPatternSavingId === s.studentId}
                       onChange={(e) => {
                         const [arrivalMode, departureMode] = e.target.value.split("_") as [
                           BusLegMode,
@@ -1290,19 +1353,21 @@ export default function StudentsPage() {
                   )}
                   <button
                     onClick={() => openEditName(s)}
-                    className="text-xs text-gray-400 hover:text-blue-500 underline"
+                    disabled={reorderMode}
+                    className="text-xs text-gray-400 hover:text-blue-500 underline disabled:opacity-40"
                   >
                     ✏️ 名前
                   </button>
                   <button
                     onClick={() => openMoveClass(s)}
-                    className="text-xs text-gray-400 hover:text-blue-500 underline"
+                    disabled={reorderMode}
+                    className="text-xs text-gray-400 hover:text-blue-500 underline disabled:opacity-40"
                   >
                     🔀 クラス変更
                   </button>
                   <button
                     onClick={() => handleWithdraw(s)}
-                    disabled={withdrawingId === s.studentId}
+                    disabled={reorderMode || withdrawingId === s.studentId}
                     className="text-xs text-gray-400 hover:text-red-500 underline disabled:opacity-40"
                   >
                     削除する / Remove

@@ -441,76 +441,43 @@ export async function updateStudentRemark(
 }
 
 /**
- * Swaps a student's display position with its neighbor within the same
- * class's ACTIVE roster (matching what the roster page actually shows) --
- * a no-op if the student is already at that end of the list, or isn't
- * found/isn't active. Every page that lists students by class picks this
- * order up automatically since they all read through getStudentsByClass/
- * getAllStudentsByClass/getStudentsByBranch, which sort by sort_order.
+ * Rewrites sort_order for every id in `studentIdsInOrder` to match that
+ * exact sequence (10, 20, 30, ...), one batched write -- used by the
+ * roster page's explicit 並び替え→保存 flow: dragging/swapping while
+ * unlocked only touches local state, and this is the single write that
+ * commits the final order when 保存 is pressed. Every page that lists
+ * students by class picks the new order up for free, since they all read
+ * through getStudentsByClass/getAllStudentsByClass/getStudentsByBranch,
+ * which sort by sort_order. Ids not found in the sheet are silently
+ * skipped rather than failing the whole save.
  */
-export async function moveStudentOrder(
-  studentId: string,
-  direction: "up" | "down"
-): Promise<void> {
+export async function reorderStudents(studentIdsInOrder: string[]): Promise<void> {
+  if (studentIdsInOrder.length === 0) return;
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:J",
+    range: "Students!A2:A",
   });
   const rows = res.data.values ?? [];
+  const rowNumByStudentId = new Map<string, number>();
+  rows.forEach((row, i) => {
+    const id = row[0] ?? "";
+    if (id) rowNumByStudentId.set(id, i + 2);
+  });
 
-  const target = rows
-    .map((row, i) => ({ row, rowNum: i + 2 }))
-    .find(({ row }) => (row[0] ?? "") === studentId);
-  if (!target) return;
-
-  const className = target.row[3] ?? "";
-  const isActive = (target.row[4] ?? "").toString().toUpperCase() === "TRUE";
-  if (!isActive) return;
-
-  const siblings = rows
-    .map((row, i) => ({
-      studentId: row[0] ?? "",
-      rowNum: i + 2,
-      sortOrder: parseSortOrder(row[9]),
-    }))
-    .filter((_, i) => {
-      const row = rows[i];
-      return (
-        (row[0] ?? "") &&
-        (row[3] ?? "") === className &&
-        (row[4] ?? "").toString().toUpperCase() === "TRUE"
-      );
+  const data = studentIdsInOrder
+    .map((studentId, i) => {
+      const rowNum = rowNumByStudentId.get(studentId);
+      return rowNum === undefined
+        ? null
+        : { range: `Students!J${rowNum}`, values: [[String((i + 1) * 10)]] };
     })
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-
-  const idx = siblings.findIndex((s) => s.studentId === studentId);
-  if (idx === -1) return;
-  const neighborIdx = direction === "up" ? idx - 1 : idx + 1;
-  if (neighborIdx < 0 || neighborIdx >= siblings.length) return; // already at that end
-
-  const a = siblings[idx];
-  const b = siblings[neighborIdx];
-  // If either side never got backfilled (shouldn't happen post-migration,
-  // but parseSortOrder falls back to a shared sentinel for blanks), give
-  // it a real distinct value based on its row rather than writing the
-  // sentinel itself into the sheet.
-  const aOrder = Number.isFinite(a.sortOrder) && a.sortOrder !== Number.MAX_SAFE_INTEGER
-    ? a.sortOrder
-    : a.rowNum * 10;
-  const bOrder = Number.isFinite(b.sortOrder) && b.sortOrder !== Number.MAX_SAFE_INTEGER
-    ? b.sortOrder
-    : b.rowNum * 10;
+    .filter((d): d is { range: string; values: string[][] } => d !== null);
+  if (data.length === 0) return;
 
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SHEET_ID,
-    requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: [
-        { range: `Students!J${a.rowNum}`, values: [[String(bOrder)]] },
-        { range: `Students!J${b.rowNum}`, values: [[String(aOrder)]] },
-      ],
-    },
+    requestBody: { valueInputOption: "USER_ENTERED", data },
   });
 }
 

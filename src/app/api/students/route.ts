@@ -8,7 +8,6 @@ import {
   updateStudentRemark,
   updateStudentCheck,
   setStudentActive,
-  moveStudentOrder,
   CheckColumn,
 } from "@/lib/sheets";
 import { randomUUID } from "crypto";
@@ -80,9 +79,8 @@ export async function POST(req: NextRequest) {
 // class -- see updateStudentClass() for exactly what this does and doesn't
 // touch (historical records stay put; StudentLocations/Transport/PickupLog
 // already follow the student automatically).
-// or { studentId, moveOrder: "up" | "down" } to swap display position with
-// the neighbor above/below within the same class's active roster -- see
-// moveStudentOrder() for exactly how ties/edges are handled.
+// (Reordering the roster is a separate endpoint -- see
+// POST /api/students/reorder.)
 // column is one of "check1"/"check2"/"check3", value is boolean.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
@@ -96,7 +94,6 @@ export async function PATCH(req: NextRequest) {
     nameEnglish,
     nameHiragana,
     moveToClassName,
-    moveOrder,
   } = body ?? {};
 
   if (!studentId) {
@@ -104,11 +101,6 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    if (moveOrder === "up" || moveOrder === "down") {
-      await moveStudentOrder(studentId, moveOrder);
-      return NextResponse.json({ ok: true });
-    }
-
     if (typeof moveToClassName === "string") {
       if (!moveToClassName.trim()) {
         return NextResponse.json({ error: "moveToClassName cannot be empty" }, { status: 400 });
@@ -151,8 +143,7 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json(
       {
-        error:
-          "Missing remark, column/value, active, nameKanji, moveToClassName, or moveOrder",
+        error: "Missing remark, column/value, active, nameKanji, or moveToClassName",
       },
       { status: 400 }
     );
