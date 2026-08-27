@@ -25,6 +25,21 @@ function classOrderIndex(className: string) {
   return idx === -1 ? CLASS_ORDER.length : idx;
 }
 
+// Sunday red, Saturday blue — same convention as the Dashboard's own
+// monthly grid (see weekendHeaderClasses/weekendCellClasses there).
+function weekendHeaderClasses(dow: number): string {
+  if (dow === 0) return "bg-red-200 text-red-800";
+  if (dow === 6) return "bg-blue-200 text-blue-800";
+  return "bg-gray-50";
+}
+// Weekend color takes priority over the 降園 row's own light-orange tint
+// where the two would otherwise overlap.
+function cellBgClass(dow: number, field: "arrival" | "departure"): string {
+  if (dow === 0) return "bg-red-100";
+  if (dow === 6) return "bg-blue-100";
+  return field === "departure" ? "bg-orange-50" : "";
+}
+
 function PickupPageInner() {
   const searchParams = useSearchParams();
   const branch = (searchParams.get("branch") ?? "") as Branch | "";
@@ -225,13 +240,10 @@ function PickupPageInner() {
                 </th>
                 {dayNumbers.map((day) => {
                   const dow = new Date(year, month - 1, day).getDay();
-                  const isWeekend = dow === 0 || dow === 6;
                   return (
                     <th
                       key={day}
-                      className={`border border-gray-300 px-0.5 py-1 text-center w-10 ${
-                        isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
-                      }`}
+                      className={`border border-gray-300 px-0.5 py-1 text-center w-10 ${weekendHeaderClasses(dow)}`}
                     >
                       <div>{day}</div>
                       <div className="text-[10px] font-normal">{WEEKDAY_LABELS[dow]}</div>
@@ -274,13 +286,16 @@ function PickupPageInner() {
                               )}
                             </td>
                           )}
-                          <td className="sticky left-28 bg-white border border-gray-300 px-1 py-1 text-center whitespace-nowrap text-xs text-gray-500 z-10">
+                          <td
+                            className={`sticky left-28 border border-gray-300 px-1 py-1 text-center whitespace-nowrap text-xs text-gray-500 z-10 ${
+                              field === "departure" ? "bg-orange-50" : "bg-white"
+                            }`}
+                          >
                             {field === "arrival" ? "登園" : "降園"}
                           </td>
                           {dayNumbers.map((day) => {
                             const date = `${year}-${pad2(month)}-${pad2(day)}`;
                             const dow = new Date(year, month - 1, day).getDay();
-                            const isWeekend = dow === 0 || dow === 6;
                             const draftKey = `${cellKey(s.studentId, date)}|${field}`;
                             const isSaving = savingKey === draftKey;
                             const isChecked = (drafts[draftKey] ?? "") !== "";
@@ -290,7 +305,7 @@ function PickupPageInner() {
                                 onClick={() => !isSaving && toggleCheck(s.studentId, date, field)}
                                 className={`text-center border border-gray-300 py-1 select-none ${
                                   isSaving ? "opacity-40 cursor-wait" : "cursor-pointer"
-                                } ${isWeekend ? "bg-orange-50/60" : ""}`}
+                                } ${cellBgClass(dow, field)}`}
                               >
                                 {isChecked ? (
                                   <span className="inline-block w-6 h-6 rounded-full border-[3px] border-red-600" />
