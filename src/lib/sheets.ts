@@ -2453,6 +2453,127 @@ export async function setStudentTransport(
   });
 }
 
+// 月次バスパターン — bus students can ride the bus one way and be picked up/
+// dropped off themselves the other way, and which of the 3 combinations
+// applies changes month to month (school activities, parent schedules,
+// etc.). Only meaningful for students whose overall StudentTransport mode
+// is "bus" -- this is layered on top of that, not a replacement for it.
+// One row per (studentId, yearMonth) -- but ONLY for months that deviate
+// from the default 来:バス／帰:バス (full round-trip bus), which is assumed
+// whenever no row exists for that student+month. This keeps the sheet to
+// just the exceptions while still preserving full month-by-month history
+// for every month someone actually changed it.
+export type BusLegMode = "bus" | "self";
+export type StudentBusPattern = {
+  studentId: string;
+  yearMonth: string; // "YYYY-MM"
+  arrivalMode: BusLegMode;
+  departureMode: BusLegMode;
+};
+
+function parseBusLegMode(raw: string | undefined): BusLegMode {
+  return (raw ?? "").toString() === "self" ? "self" : "bus";
+}
+
+/** Every recorded (non-default) pattern for one month, across all students. */
+export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusPattern!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): StudentBusPattern => ({
+      studentId: (row[0] ?? "").toString(),
+      yearMonth: (row[1] ?? "").toString(),
+      arrivalMode: parseBusLegMode(row[2]),
+      departureMode: parseBusLegMode(row[3]),
+    }))
+    .filter((p) => p.studentId && p.yearMonth === yearMonth);
+}
+
+/** Every recorded (non-default) month for one student, oldest first --
+ *  the month-by-month history view (defaults/unset months aren't included,
+ *  since they're implicitly 来:バス／帰:バス). */
+export async function getBusPatternHistory(studentId: string): Promise<StudentBusPattern[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusPattern!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): StudentBusPattern => ({
+      studentId: (row[0] ?? "").toString(),
+      yearMonth: (row[1] ?? "").toString(),
+      arrivalMode: parseBusLegMode(row[2]),
+      departureMode: parseBusLegMode(row[3]),
+    }))
+    .filter((p) => p.studentId === studentId)
+    .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+}
+
+/**
+ * Sets one student's pattern for one month. Setting it back to the default
+ * (bus/bus) deletes the row instead of storing it -- functionally identical
+ * either way (a missing row already means "default"), and keeps the sheet
+ * limited to genuine exceptions.
+ */
+export async function setBusPattern(
+  studentId: string,
+  yearMonth: string,
+  arrivalMode: BusLegMode,
+  departureMode: BusLegMode
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusPattern!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === studentId && (row[1] ?? "") === yearMonth
+  );
+  const isDefault = arrivalMode === "bus" && departureMode === "bus";
+
+  if (isDefault) {
+    if (rowOffset === -1) return; // already default, nothing stored to remove
+    const sheetId = await getSheetIdByTitle(sheets, "StudentBusPattern");
+    const rowNum = rowOffset + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "StudentBusPattern!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[studentId, yearMonth, arrivalMode, departureMode]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `StudentBusPattern!C${rowNum}:D${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[arrivalMode, departureMode]] },
+  });
+}
+
 // クラスカラー — an optional color per class (both the fixed continuum and
 // Master-managed extra classes), purely cosmetic: which button color shows
 // on the top page. `color` is a key into a small curated palette (see

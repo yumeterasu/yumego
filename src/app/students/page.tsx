@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { CLASSES, classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
-import type { Student, StudentLocation, TransportMode } from "@/lib/sheets";
+import type { Student, StudentLocation, TransportMode, BusLegMode } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
 
@@ -156,6 +156,16 @@ export default function StudentsPage() {
   const [transportByStudent, setTransportByStudent] = useState<Record<string, TransportMode>>({});
   const [transportSavingId, setTransportSavingId] = useState<string | null>(null);
 
+  // 月次バスパターン — バス students only: which of 来:バス／帰:バス,
+  // 来:バス／帰:自分, 来:自分／帰:バス applies for the month currently being
+  // viewed (changes month to month, e.g. after-school activities). Missing
+  // entry for a student = the default, full round-trip bus.
+  const [busMonth, setBusMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [busPatternsByStudent, setBusPatternsByStudent] = useState<
+    Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }>
+  >({});
+  const [busPatternSavingId, setBusPatternSavingId] = useState<string | null>(null);
+
   const [showInactive, setShowInactive] = useState(false);
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
   const [loadingInactive, setLoadingInactive] = useState(false);
@@ -208,6 +218,72 @@ export default function StudentsPage() {
     loadTransports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, selectedClass]);
+
+  useEffect(() => {
+    if (!loaded || !selectedClass) return;
+    loadBusPatterns(busMonth);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, selectedClass, busMonth]);
+
+  function shiftBusMonth(delta: number) {
+    const [y, m] = busMonth.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setBusMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }
+
+  async function loadBusPatterns(month: string) {
+    try {
+      const res = await fetch(`/api/students/bus-pattern?month=${encodeURIComponent(month)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const map: Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }> = {};
+      for (const p of (data.patterns ?? []) as {
+        studentId: string;
+        arrivalMode: BusLegMode;
+        departureMode: BusLegMode;
+      }[]) {
+        map[p.studentId] = { arrivalMode: p.arrivalMode, departureMode: p.departureMode };
+      }
+      setBusPatternsByStudent(map);
+    } catch {
+      // non-critical -- rows just show the default (bus/bus) pattern
+    }
+  }
+
+  async function setBusPatternFor(
+    student: Student,
+    arrivalMode: BusLegMode,
+    departureMode: BusLegMode
+  ) {
+    setBusPatternSavingId(student.studentId);
+    setError(null);
+    try {
+      const res = await fetch("/api/students/bus-pattern", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: student.studentId,
+          month: busMonth,
+          arrivalMode,
+          departureMode,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setBusPatternsByStudent((prev) => {
+        const next = { ...prev };
+        if (arrivalMode === "bus" && departureMode === "bus") {
+          delete next[student.studentId]; // back to default, matches server-side delete
+        } else {
+          next[student.studentId] = { arrivalMode, departureMode };
+        }
+        return next;
+      });
+    } catch {
+      setError("バスパターンの更新に失敗しました / Failed to update bus pattern");
+    } finally {
+      setBusPatternSavingId(null);
+    }
+  }
 
   async function loadLocations() {
     try {
@@ -1068,6 +1144,30 @@ export default function StudentsPage() {
             </button>
           )}
         </div>
+        {students.some((s) => transportByStudent[s.studentId] === "bus") && (
+          <div className="flex items-center justify-center gap-3 mb-2 text-sm">
+            <span className="text-gray-400 text-xs">
+              🚌バスパターン月 / Bus pattern month
+            </span>
+            <button
+              type="button"
+              onClick={() => shiftBusMonth(-1)}
+              className="rounded-full bg-gray-100 text-gray-600 w-7 h-7 flex items-center justify-center shrink-0"
+              aria-label="前の月 / Previous month"
+            >
+              ◀
+            </button>
+            <span className="font-semibold w-20 text-center">{busMonth}</span>
+            <button
+              type="button"
+              onClick={() => shiftBusMonth(1)}
+              className="rounded-full bg-gray-100 text-gray-600 w-7 h-7 flex items-center justify-center shrink-0"
+              aria-label="次の月 / Next month"
+            >
+              ▶
+            </button>
+          </div>
+        )}
         {loading ? (
           <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
         ) : students.length === 0 ? (
@@ -1154,6 +1254,29 @@ export default function StudentsPage() {
                     >
                       {locationsByStudent[s.studentId] ? "🏠 住所 ✓" : "🏠 住所 ⚠️"}
                     </button>
+                  )}
+                  {transportByStudent[s.studentId] === "bus" && (
+                    <select
+                      value={
+                        busPatternsByStudent[s.studentId]
+                          ? `${busPatternsByStudent[s.studentId].arrivalMode}_${busPatternsByStudent[s.studentId].departureMode}`
+                          : "bus_bus"
+                      }
+                      disabled={busPatternSavingId === s.studentId}
+                      onChange={(e) => {
+                        const [arrivalMode, departureMode] = e.target.value.split("_") as [
+                          BusLegMode,
+                          BusLegMode,
+                        ];
+                        setBusPatternFor(s, arrivalMode, departureMode);
+                      }}
+                      title={`${busMonth} のバスパターン / Bus pattern for ${busMonth}`}
+                      className="rounded-full px-2 py-1 text-[11px] font-semibold border bg-white text-gray-600 border-gray-300 disabled:opacity-40"
+                    >
+                      <option value="bus_bus">🚌↔🚌 往復バス</option>
+                      <option value="bus_self">🚌→🚗 帰り自分</option>
+                      <option value="self_bus">🚗→🚌 行き自分</option>
+                    </select>
                   )}
                   <button
                     onClick={() => openEditName(s)}
