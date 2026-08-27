@@ -313,11 +313,13 @@ function PickupPageInner() {
                                       : "cursor-pointer"
                                 } ${cellBgClass(dow, field)}`}
                               >
-                                {isWeekend ? null : isChecked ? (
-                                  <span className="inline-block w-6 h-6 rounded-full border-[3px] border-red-600" />
-                                ) : (
-                                  <span className="text-gray-300 text-base leading-none">—</span>
-                                )}
+                                <div className="w-6 h-6 mx-auto flex items-center justify-center">
+                                  {isWeekend ? null : isChecked ? (
+                                    <span className="w-6 h-6 rounded-full border-[3px] border-red-600" />
+                                  ) : (
+                                    <span className="text-gray-300 text-base leading-none">—</span>
+                                  )}
+                                </div>
                               </td>
                             );
                           })}
