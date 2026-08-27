@@ -216,6 +216,19 @@ export default function StudentsPage() {
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
   const [loadingInactive, setLoadingInactive] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [deletingInactiveId, setDeletingInactiveId] = useState<string | null>(null);
+
+  // 削除した生徒を完全に削除 (bulk) — otherwise the withdrawn list only
+  // ever grows. No backup step (unlike Reset/全員削除) since these are
+  // already-inactive entries with no bearing on current operation; use
+  // バックアップのみ separately first if a copy is wanted.
+  const [showPurgeModal1, setShowPurgeModal1] = useState(false);
+  const [showPurgeModal2, setShowPurgeModal2] = useState(false);
+  const [purgeStage, setPurgeStage] = useState<"idle" | "deleting" | "done" | "error">("idle");
+  const [purgeError, setPurgeError] = useState<string | null>(null);
+  const [purgeResult, setPurgeResult] = useState<{ studentId: string; nameKanji: string }[] | null>(
+    null
+  );
 
   // End-of-term Reset: two-step confirm, then backup-download-then-delete.
   // Backup-only, no delete -- separate from the Reset flow below.
@@ -842,6 +855,49 @@ export default function StudentsPage() {
       setError("復帰に失敗しました / Failed to restore");
     } finally {
       setRestoringId(null);
+    }
+  }
+
+  async function handleDeleteInactivePermanently(student: Student) {
+    if (
+      !window.confirm(
+        `${student.nameKanji} を完全に削除しますか？この操作は元に戻せません（過去の出席記録などは残ります）\n\nPermanently delete ${student.nameKanji}? This cannot be undone (past attendance etc. is untouched).`
+      )
+    ) {
+      return;
+    }
+    setDeletingInactiveId(student.studentId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/students?studentId=${encodeURIComponent(student.studentId)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("failed");
+      setInactiveStudents((prev) => prev.filter((s) => s.studentId !== student.studentId));
+    } catch {
+      setError("完全削除に失敗しました / Failed to permanently delete");
+    } finally {
+      setDeletingInactiveId(null);
+    }
+  }
+
+  async function handlePurgeAllInactive() {
+    setPurgeStage("deleting");
+    setPurgeError(null);
+    try {
+      const res = await fetch("/api/students/purge-inactive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className: selectedClass }),
+      });
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setPurgeResult(data.removed ?? []);
+      setInactiveStudents([]);
+      setPurgeStage("done");
+    } catch {
+      setPurgeStage("error");
+      setPurgeError("完全削除に失敗しました / Failed to permanently delete");
     }
   }
 
@@ -1480,13 +1536,28 @@ export default function StudentsPage() {
       </div>
 
       <div>
-        <button
-          type="button"
-          onClick={toggleShowInactive}
-          className="text-xs text-gray-400 underline"
-        >
-          {showInactive ? "非表示の生徒を隠す" : "削除した生徒を表示"} / {showInactive ? "Hide" : "Show"} removed students
-        </button>
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={toggleShowInactive}
+            className="text-xs text-gray-400 underline"
+          >
+            {showInactive ? "非表示の生徒を隠す" : "削除した生徒を表示"} / {showInactive ? "Hide" : "Show"} removed students
+          </button>
+          {showInactive && inactiveStudents.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setPurgeError(null);
+                setPurgeStage("idle");
+                setShowPurgeModal1(true);
+              }}
+              className="shrink-0 rounded-full border border-red-300 text-red-600 px-3 py-1 text-xs font-semibold"
+            >
+              🗑️ 全員完全に削除 / Delete all permanently
+            </button>
+          )}
+        </div>
         {showInactive && (
           <div className="mt-2">
             {loadingInactive ? (
@@ -1511,13 +1582,22 @@ export default function StudentsPage() {
                         <span className="text-xs block">{s.nameHiragana}</span>
                       )}
                     </div>
-                    <button
-                      onClick={() => handleRestore(s)}
-                      disabled={restoringId === s.studentId}
-                      className="shrink-0 text-xs text-blue-500 underline disabled:opacity-40"
-                    >
-                      復帰させる / Restore
-                    </button>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <button
+                        onClick={() => handleRestore(s)}
+                        disabled={restoringId === s.studentId}
+                        className="text-xs text-blue-500 underline disabled:opacity-40"
+                      >
+                        復帰させる / Restore
+                      </button>
+                      <button
+                        onClick={() => handleDeleteInactivePermanently(s)}
+                        disabled={deletingInactiveId === s.studentId}
+                        className="text-xs text-red-500 underline disabled:opacity-40"
+                      >
+                        完全に削除 / Delete permanently
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -1793,6 +1873,159 @@ export default function StudentsPage() {
                     {resetStage === "backing-up" || resetStage === "deleting"
                       ? "処理中... / Processing..."
                       : "リセットする / Reset"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 削除した生徒を完全に削除 (bulk), step 1/2 */}
+      {showPurgeModal1 && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => setShowPurgeModal1(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-bold text-center text-red-600">
+              完全削除の確認（1/2）
+              <span className="block text-sm font-normal text-gray-500">
+                Confirm permanent delete (1/2)
+              </span>
+            </h2>
+
+            <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象クラス / Class</span>
+                <span className="font-semibold">{selectedClass}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">対象人数 / Students</span>
+                <span className="font-semibold">
+                  {inactiveStudents.length}名 / {inactiveStudents.length}
+                </span>
+              </div>
+            </div>
+
+            <ul className="text-xs text-gray-600 list-disc pl-4 flex flex-col gap-2">
+              <li className="text-red-600 font-semibold">
+                「削除した生徒を表示」に出ているこのクラスの{inactiveStudents.length}
+                名が完全に削除され、二度と復元できません
+                <span className="block text-red-400 font-normal">
+                  All {inactiveStudents.length} students currently shown in this class&apos;s
+                  removed list are permanently deleted — there is no undo
+                </span>
+              </li>
+              <li className="text-green-700 font-semibold">
+                出席記録など過去のデータ自体は削除しません（この生徒の名前が今後見つからなくなるだけです）
+                <span className="block text-green-600 font-normal">
+                  Past attendance etc. is not deleted — only this student&apos;s name stops being
+                  findable going forward
+                </span>
+              </li>
+              <li>
+                コピーを残したい場合は、先に「📥 バックアップ」ボタンでダウンロードしておいてください
+                <span className="block text-gray-400">
+                  If you want a copy, download one with the "📥 Back up all" button first
+                </span>
+              </li>
+            </ul>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setShowPurgeModal1(false)}
+                className="rounded-full border border-gray-300 py-3 font-semibold"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowPurgeModal1(false);
+                  setShowPurgeModal2(true);
+                }}
+                className="rounded-full bg-red-600 text-white py-3 font-semibold"
+              >
+                次へ / Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 削除した生徒を完全に削除 (bulk), step 2/2 */}
+      {showPurgeModal2 && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => purgeStage === "idle" && setShowPurgeModal2(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {purgeStage === "done" ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  完了しました
+                  <span className="block text-sm font-normal text-gray-500">Done</span>
+                </h2>
+                <p className="text-sm text-center">
+                  {purgeResult?.length ?? 0}名を完全に削除しました
+                  <span className="block text-xs text-gray-500">
+                    {purgeResult?.length ?? 0} student(s) permanently deleted
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowPurgeModal2(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  完全削除の確認（2/2）
+                  <span className="block text-sm font-normal text-gray-500">
+                    Confirm permanent delete (2/2)
+                  </span>
+                </h2>
+
+                <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                  <p className="text-sm text-red-800 font-semibold text-center">
+                    ⚠ 本当によろしいですか？この{inactiveStudents.length}
+                    名は完全に削除され、二度と元に戻せません
+                    <span className="block text-xs font-normal mt-1">
+                      Are you sure? These {inactiveStudents.length} students will be permanently
+                      deleted — there is no undo.
+                    </span>
+                  </p>
+                </div>
+
+                {purgeStage === "deleting" && (
+                  <p className="text-sm text-center text-gray-600">🗑 削除中... / Deleting...</p>
+                )}
+                {purgeStage === "error" && purgeError && (
+                  <p className="text-red-600 text-sm text-center">{purgeError}</p>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowPurgeModal2(false)}
+                    disabled={purgeStage === "deleting"}
+                    className="rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={handlePurgeAllInactive}
+                    disabled={purgeStage === "deleting"}
+                    className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {purgeStage === "deleting" ? "削除中... / Deleting..." : "削除する / Delete"}
                   </button>
                 </div>
               </>

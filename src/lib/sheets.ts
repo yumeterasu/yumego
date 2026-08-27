@@ -577,6 +577,91 @@ export async function setStudentActive(studentId: string, active: boolean): Prom
 }
 
 /**
+ * Permanently removes one student's row from the sheet -- NOT recoverable,
+ * unlike setStudentActive(false). Deliberately only touches the Students
+ * row itself; historical Attendance/PickupLog/OutingLog/etc. rows for this
+ * studentId are left as-is (harmless once orphaned -- nothing else ever
+ * looks them up without going through the Students roster first). Throws
+ * if the student is still active, enforcing withdraw-first-then-delete
+ * (same funnel as deleteExtraClass).
+ */
+export async function deleteStudentPermanently(studentId: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === studentId);
+  if (rowOffset === -1) return;
+  const isActive = (rows[rowOffset][4] ?? "").toString().toUpperCase() === "TRUE";
+  if (isActive) {
+    throw new Error("Student must be removed (withdrawn) before they can be permanently deleted");
+  }
+
+  const sheetId = await getSheetIdByTitle(sheets, "Students");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
+  });
+}
+
+/**
+ * Permanently removes EVERY currently-inactive (already-withdrawn) student
+ * in one class -- the "削除した生徒を表示" list otherwise grows forever,
+ * since withdrawing is soft-delete by design. Same non-recoverable/
+ * history-left-alone scope as deleteStudentPermanently(), just batched
+ * (one multi-row deleteDimension instead of N single-row calls).
+ */
+export async function deleteAllInactiveStudents(
+  className: string
+): Promise<{ studentId: string; nameKanji: string }[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:E",
+  });
+  const rows = res.data.values ?? [];
+
+  const targets = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(
+      ({ row }) =>
+        (row[0] ?? "") &&
+        (row[3] ?? "") === className &&
+        (row[4] ?? "").toString().toUpperCase() !== "TRUE"
+    );
+  if (targets.length === 0) return [];
+
+  const sheetId = await getSheetIdByTitle(sheets, "Students");
+  // Highest row index first -- deleting top-down would shift every
+  // subsequent target's row number out from under it.
+  const sortedTargets = [...targets].sort((a, b) => b.rowNum - a.rowNum);
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: sortedTargets.map(({ rowNum }) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+
+  return targets.map(({ row }) => ({ studentId: row[0] ?? "", nameKanji: row[1] ?? "" }));
+}
+
+/**
  * Soft-delete every currently active student in a class at once (e.g. to
  * quickly undo a bulk-add that went into the wrong class) — one batched
  * write, not N, same reasoning as the old promoteClassStudents. Still

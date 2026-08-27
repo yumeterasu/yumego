@@ -8,6 +8,7 @@ import {
   updateStudentRemark,
   updateStudentCheck,
   setStudentActive,
+  deleteStudentPermanently,
   CheckColumn,
 } from "@/lib/sheets";
 import { randomUUID } from "crypto";
@@ -169,5 +170,25 @@ export async function PATCH(req: NextRequest) {
       { error: "Failed to update student" },
       { status: 500 }
     );
+  }
+}
+
+// DELETE /api/students?studentId=...
+// Permanently removes one already-withdrawn student -- NOT recoverable.
+// Only allowed once inactive; deleteStudentPermanently() throws otherwise,
+// enforcing withdraw-first-then-delete (same funnel as extra classes).
+export async function DELETE(req: NextRequest) {
+  const studentId = req.nextUrl.searchParams.get("studentId");
+  if (!studentId) {
+    return NextResponse.json({ error: "Missing 'studentId' query param" }, { status: 400 });
+  }
+
+  try {
+    await deleteStudentPermanently(studentId);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    const message = err instanceof Error ? err.message : "Failed to delete student";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
