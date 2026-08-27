@@ -98,16 +98,21 @@ function PickupPageInner() {
     }
   }
 
-  async function commitTime(studentId: string, date: string, field: "arrival" | "departure") {
+  // A checked cell just stores "TRUE" (matching the boolean-string
+  // convention used throughout the rest of this app, e.g. Students'
+  // active/check1-3 columns) rather than a specific time -- any non-empty
+  // value counts as checked, so older rows that still hold a real "HH:MM"
+  // from before this change display as checked too, untouched unless the
+  // operator taps that specific cell again.
+  async function toggleCheck(studentId: string, date: string, field: "arrival" | "departure") {
     const key = cellKey(studentId, date);
     const draftKey = `${key}|${field}`;
-    const value = drafts[draftKey] ?? "";
-    const saved = savedRef.current.get(key);
-    const original = field === "arrival" ? (saved?.arrivalTime ?? "") : (saved?.departureTime ?? "");
-    if (value === original) return; // nothing changed, skip the request
+    const wasChecked = (drafts[draftKey] ?? "") !== "";
+    const nextValue = wasChecked ? "" : "TRUE";
 
     setSavingKey(draftKey);
     setError(null);
+    setDrafts((prev) => ({ ...prev, [draftKey]: nextValue }));
     try {
       const res = await fetch("/api/pickup", {
         method: "PATCH",
@@ -115,20 +120,21 @@ function PickupPageInner() {
         body: JSON.stringify({
           date,
           studentId,
-          [field === "arrival" ? "arrivalTime" : "departureTime"]: value,
+          [field === "arrival" ? "arrivalTime" : "departureTime"]: nextValue,
         }),
       });
       if (!res.ok) throw new Error("failed");
+      const saved = savedRef.current.get(key);
       const nextSaved: PickupRecord = {
         date,
         studentId,
-        arrivalTime: field === "arrival" ? value : (saved?.arrivalTime ?? ""),
-        departureTime: field === "departure" ? value : (saved?.departureTime ?? ""),
+        arrivalTime: field === "arrival" ? nextValue : (saved?.arrivalTime ?? ""),
+        departureTime: field === "departure" ? nextValue : (saved?.departureTime ?? ""),
       };
       savedRef.current.set(key, nextSaved);
     } catch {
       setError("保存に失敗しました / Failed to save");
-      setDrafts((prev) => ({ ...prev, [draftKey]: original }));
+      setDrafts((prev) => ({ ...prev, [draftKey]: wasChecked ? "TRUE" : "" })); // revert
     } finally {
       setSavingKey(null);
     }
@@ -277,23 +283,22 @@ function PickupPageInner() {
                             const isWeekend = dow === 0 || dow === 6;
                             const draftKey = `${cellKey(s.studentId, date)}|${field}`;
                             const isSaving = savingKey === draftKey;
+                            const isChecked = (drafts[draftKey] ?? "") !== "";
                             return (
                               <td
                                 key={day}
-                                className={`text-center border border-gray-300 py-0.5 ${
-                                  isWeekend ? "bg-orange-50/60" : ""
+                                onClick={() => !isSaving && toggleCheck(s.studentId, date, field)}
+                                className={`text-center border border-gray-300 py-1 select-none ${
+                                  isSaving ? "opacity-40 cursor-wait" : "cursor-pointer"
+                                } ${isWeekend ? "bg-orange-50/60" : ""} ${
+                                  isChecked ? "bg-green-50" : ""
                                 }`}
                               >
-                                <input
-                                  type="time"
-                                  value={drafts[draftKey] ?? ""}
-                                  disabled={isSaving}
-                                  onChange={(e) =>
-                                    setDrafts((prev) => ({ ...prev, [draftKey]: e.target.value }))
-                                  }
-                                  onBlur={() => commitTime(s.studentId, date, field)}
-                                  className="w-full text-center text-xs outline-none bg-transparent focus:bg-blue-50 disabled:opacity-40"
-                                />
+                                {isChecked ? (
+                                  <span className="text-green-600 text-base leading-none">✓</span>
+                                ) : (
+                                  <span className="text-gray-300 text-base leading-none">—</span>
+                                )}
                               </td>
                             );
                           })}
