@@ -73,9 +73,9 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/students  { studentId, remark? } or { studentId, column, value }
 // or { studentId, active } to withdraw/graduate (false) or restore (true)
-// or { studentId, nameKanji, nameEnglish? } to correct a student's name --
-// takes effect everywhere the name is shown, since it's all read live from
-// this same row.
+// or { studentId, nameKanji, nameEnglish?, nameHiragana? } to correct a
+// student's name -- takes effect everywhere the name is shown, since it's
+// all read live from this same row.
 // or { studentId, moveToClassName } to transfer a student to a different
 // class -- see updateStudentClass() for exactly what this does and doesn't
 // touch (historical records stay put; StudentLocations/Transport/PickupLog
@@ -94,6 +94,7 @@ export async function PATCH(req: NextRequest) {
     active,
     nameKanji,
     nameEnglish,
+    nameHiragana,
     moveToClassName,
     moveOrder,
   } = body ?? {};
@@ -120,7 +121,12 @@ export async function PATCH(req: NextRequest) {
       if (!nameKanji.trim()) {
         return NextResponse.json({ error: "nameKanji cannot be empty" }, { status: 400 });
       }
-      await updateStudentName(studentId, nameKanji.trim(), (nameEnglish ?? "").trim());
+      await updateStudentName(
+        studentId,
+        nameKanji.trim(),
+        (nameEnglish ?? "").trim(),
+        (nameHiragana ?? "").trim()
+      );
       return NextResponse.json({ ok: true });
     }
 

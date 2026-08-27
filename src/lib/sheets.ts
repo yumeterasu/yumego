@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { romajiToHiragana } from "./romajiToHiragana";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 
@@ -85,6 +86,14 @@ export type Student = {
    * below rather than re-sorting on their own.
    */
   sortOrder: number;
+  /**
+   * Best-effort auto-filled from nameEnglish via romajiToHiragana() at
+   * registration time (see addStudent/addStudentsBulk) -- a starting point,
+   * not authoritative, since romaji-to-hiragana readings are genuinely
+   * ambiguous. Editable afterward via the name-edit screen like the other
+   * two name fields.
+   */
+  nameHiragana: string;
 };
 
 /** Parses column J (sort_order); blank/non-numeric rows sort after every
@@ -152,7 +161,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:J",
+    range: "Students!A2:K",
   });
 
   const rows = res.data.values ?? [];
@@ -170,6 +179,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
         check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
         check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
         sortOrder: parseSortOrder(row[9]),
+        nameHiragana: row[10] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className && s.active)
   );
@@ -184,7 +194,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:J",
+    range: "Students!A2:K",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -200,6 +210,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
         check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
         check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
         sortOrder: parseSortOrder(row[9]),
+        nameHiragana: row[10] ?? "",
       }))
       .filter((s) => s.studentId && s.active && s.className.startsWith(branch))
   );
@@ -242,22 +253,28 @@ function stripStrayQuotes(s: string): string {
   return s.replace(/^["“”]+/, "").replace(/["“”]+$/, "").trim();
 }
 
-/** Append a new student row to the Students sheet. */
+/** Append a new student row to the Students sheet. nameHiragana is
+ *  auto-filled from nameEnglish via romajiToHiragana() -- a best-effort
+ *  starting point the operator can correct via the name-edit screen. */
 export async function addStudent(
-  student: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder">
+  student: Omit<
+    Student,
+    "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder" | "nameHiragana"
+  >
 ): Promise<void> {
   const sheets = getSheetsClient();
   const [nextOrder] = await getNextSortOrders(sheets, 1);
+  const nameEnglish = stripStrayQuotes(student.nameEnglish);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:J",
+    range: "Students!A:K",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
         [
           student.studentId,
           stripStrayQuotes(student.nameKanji),
-          stripStrayQuotes(student.nameEnglish),
+          nameEnglish,
           student.className,
           "TRUE",
           "",
@@ -265,6 +282,7 @@ export async function addStudent(
           "FALSE",
           "FALSE",
           String(nextOrder),
+          romajiToHiragana(nameEnglish),
         ],
       ],
     },
@@ -277,28 +295,35 @@ export async function addStudent(
  * doesn't mean N separate round trips (and N chances to hit quota).
  */
 export async function addStudentsBulk(
-  students: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder">[]
+  students: Omit<
+    Student,
+    "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder" | "nameHiragana"
+  >[]
 ): Promise<void> {
   if (students.length === 0) return;
   const sheets = getSheetsClient();
   const orders = await getNextSortOrders(sheets, students.length);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:J",
+    range: "Students!A:K",
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: students.map((s, i) => [
-        s.studentId,
-        stripStrayQuotes(s.nameKanji),
-        stripStrayQuotes(s.nameEnglish),
-        s.className,
-        "TRUE",
-        "",
-        "FALSE",
-        "FALSE",
-        "FALSE",
-        String(orders[i]),
-      ]),
+      values: students.map((s, i) => {
+        const nameEnglish = stripStrayQuotes(s.nameEnglish);
+        return [
+          s.studentId,
+          stripStrayQuotes(s.nameKanji),
+          nameEnglish,
+          s.className,
+          "TRUE",
+          "",
+          "FALSE",
+          "FALSE",
+          "FALSE",
+          String(orders[i]),
+          romajiToHiragana(nameEnglish),
+        ];
+      }),
     },
   });
 }
@@ -311,7 +336,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:J",
+    range: "Students!A2:K",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -327,6 +352,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
         check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
         check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
         sortOrder: parseSortOrder(row[9]),
+        nameHiragana: row[10] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className)
   );
@@ -347,25 +373,34 @@ async function findStudentRowNumber(
 
 /**
  * Corrects a student's name in place -- every page reads nameKanji/
- * nameEnglish live from this same row, so this is the one place a fix
- * needs to happen for it to show up everywhere (Dashboard, 出席確認,
- * 年間まとめ, 送迎管理, etc.).
+ * nameEnglish/nameHiragana live from this same row, so this is the one
+ * place a fix needs to happen for it to show up everywhere (Dashboard,
+ * 出席確認, 年間まとめ, 送迎管理, etc.).
  */
 export async function updateStudentName(
   studentId: string,
   nameKanji: string,
-  nameEnglish: string
+  nameEnglish: string,
+  nameHiragana: string
 ): Promise<void> {
   const sheets = getSheetsClient();
   const rowNum = await findStudentRowNumber(sheets, studentId);
   if (rowNum === null) return;
 
-  await sheets.spreadsheets.values.update({
+  await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SHEET_ID,
-    range: `Students!B${rowNum}:C${rowNum}`,
-    valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[stripStrayQuotes(nameKanji), stripStrayQuotes(nameEnglish)]],
+      valueInputOption: "USER_ENTERED",
+      data: [
+        {
+          range: `Students!B${rowNum}:C${rowNum}`,
+          values: [[stripStrayQuotes(nameKanji), stripStrayQuotes(nameEnglish)]],
+        },
+        {
+          range: `Students!K${rowNum}`,
+          values: [[stripStrayQuotes(nameHiragana)]],
+        },
+      ],
     },
   });
 }

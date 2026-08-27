@@ -105,11 +105,15 @@ export default function StudentsPage() {
   const [reorderingId, setReorderingId] = useState<string | null>(null);
 
   // 名前の修正 — takes effect everywhere the name is shown, since every
-  // page reads nameKanji/nameEnglish live from the same Students row.
+  // page reads nameKanji/nameEnglish/nameHiragana live from the same
+  // Students row. nameHiragana starts out auto-filled (best-effort, from
+  // nameEnglish via romajiToHiragana() at registration time) -- this is
+  // where the operator corrects it if the guess was wrong.
   const [editNameModal, setEditNameModal] = useState<{
     studentId: string;
     nameKanji: string;
     nameEnglish: string;
+    nameHiragana: string;
   } | null>(null);
   const [editNameSaving, setEditNameSaving] = useState(false);
   const [editNameError, setEditNameError] = useState<string | null>(null);
@@ -424,6 +428,7 @@ export default function StudentsPage() {
           check2: false,
           check3: false,
           sortOrder: 0,
+          nameHiragana: "",
         };
         await setTransportMode(created, addTransportChoice);
       }
@@ -467,6 +472,7 @@ export default function StudentsPage() {
       studentId: student.studentId,
       nameKanji: student.nameKanji,
       nameEnglish: student.nameEnglish,
+      nameHiragana: student.nameHiragana,
     });
     setEditNameError(null);
   }
@@ -483,13 +489,19 @@ export default function StudentsPage() {
           studentId: editNameModal.studentId,
           nameKanji: editNameModal.nameKanji.trim(),
           nameEnglish: editNameModal.nameEnglish.trim(),
+          nameHiragana: editNameModal.nameHiragana.trim(),
         }),
       });
       if (!res.ok) throw new Error("failed");
       setStudents((prev) =>
         prev.map((s) =>
           s.studentId === editNameModal.studentId
-            ? { ...s, nameKanji: editNameModal.nameKanji.trim(), nameEnglish: editNameModal.nameEnglish.trim() }
+            ? {
+                ...s,
+                nameKanji: editNameModal.nameKanji.trim(),
+                nameEnglish: editNameModal.nameEnglish.trim(),
+                nameHiragana: editNameModal.nameHiragana.trim(),
+              }
             : s
         )
       );
@@ -1206,6 +1218,9 @@ export default function StudentsPage() {
                   {s.nameEnglish && (
                     <span className="text-xs text-gray-500 block">{s.nameEnglish}</span>
                   )}
+                  {s.nameHiragana && (
+                    <span className="text-xs text-gray-400 block">{s.nameHiragana}</span>
+                  )}
                   {transportByStudent[s.studentId] === "self" ? (
                     <p className="text-[10px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
                   ) : locationsByStudent[s.studentId] ? (
@@ -1331,6 +1346,9 @@ export default function StudentsPage() {
                       <span className="font-medium block">{s.nameKanji}</span>
                       {s.nameEnglish && (
                         <span className="text-xs block">{s.nameEnglish}</span>
+                      )}
+                      {s.nameHiragana && (
+                        <span className="text-xs block">{s.nameHiragana}</span>
                       )}
                     </div>
                     <button
@@ -2052,6 +2070,20 @@ export default function StudentsPage() {
                 value={editNameModal.nameEnglish}
                 onChange={(e) =>
                   setEditNameModal({ ...editNameModal, nameEnglish: e.target.value })
+                }
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              ひらがな名（自動入力・修正可）
+              <span className="text-xs font-normal text-gray-500">
+                Hiragana name (auto-filled from Romaji, fix if wrong)
+              </span>
+              <input
+                type="text"
+                value={editNameModal.nameHiragana}
+                onChange={(e) =>
+                  setEditNameModal({ ...editNameModal, nameHiragana: e.target.value })
                 }
                 className="border border-gray-300 rounded-lg px-3 py-2"
               />
