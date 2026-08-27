@@ -296,18 +296,25 @@ function PickupPageInner() {
                           {dayNumbers.map((day) => {
                             const date = `${year}-${pad2(month)}-${pad2(day)}`;
                             const dow = new Date(year, month - 1, day).getDay();
+                            const isWeekend = dow === 0 || dow === 6;
                             const draftKey = `${cellKey(s.studentId, date)}|${field}`;
                             const isSaving = savingKey === draftKey;
                             const isChecked = (drafts[draftKey] ?? "") !== "";
                             return (
                               <td
                                 key={day}
-                                onClick={() => !isSaving && toggleCheck(s.studentId, date, field)}
+                                onClick={() =>
+                                  !isSaving && !isWeekend && toggleCheck(s.studentId, date, field)
+                                }
                                 className={`text-center border border-gray-300 py-1 select-none ${
-                                  isSaving ? "opacity-40 cursor-wait" : "cursor-pointer"
+                                  isWeekend
+                                    ? "cursor-default"
+                                    : isSaving
+                                      ? "opacity-40 cursor-wait"
+                                      : "cursor-pointer"
                                 } ${cellBgClass(dow, field)}`}
                               >
-                                {isChecked ? (
+                                {isWeekend ? null : isChecked ? (
                                   <span className="inline-block w-6 h-6 rounded-full border-[3px] border-red-600" />
                                 ) : (
                                   <span className="text-gray-300 text-base leading-none">—</span>
