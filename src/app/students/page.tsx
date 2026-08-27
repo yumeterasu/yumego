@@ -624,11 +624,35 @@ export default function StudentsPage() {
     }
   }
 
+  // Downloads a backup first, same as 学期末リセット -- a class that already
+  // has real attendance history recorded loses its students from every
+  // roster-driven view (Dashboard, 年間まとめ...) the moment they're
+  // removed, even though the underlying records are only soft-hidden, not
+  // deleted. A backup means that's never a dead end even if nobody thinks
+  // to restore them via "削除した生徒を表示" right away.
   async function handleRemoveAll() {
     if (!selectedClass) return;
     setRemovingAll(true);
     setRemoveAllError(null);
     try {
+      const backupRes = await fetch(
+        `/api/export/reset-backup?class=${encodeURIComponent(selectedClass)}`
+      );
+      if (!backupRes.ok) throw new Error("backup failed");
+      const blob = await backupRes.blob();
+      if (blob.size === 0) throw new Error("empty backup");
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedClass.replace(/\s+/g, "_")}_remove-all-backup_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
       const res = await fetch("/api/students/remove-all", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -638,7 +662,9 @@ export default function StudentsPage() {
       setStudents([]);
       setShowRemoveAllModal(false);
     } catch {
-      setRemoveAllError("削除に失敗しました / Failed to remove");
+      setRemoveAllError(
+        "処理に失敗しました。バックアップが保存されていない場合、生徒は削除されていません / Failed — if the backup wasn't saved, nothing was removed"
+      );
     } finally {
       setRemovingAll(false);
     }
@@ -1545,10 +1571,19 @@ export default function StudentsPage() {
             </div>
 
             <p className="text-xs text-gray-400 text-center">
-              このクラスの生徒{students.length}名を全員一覧から削除します。過去の出席記録は残ります。よろしいですか？
+              このクラスの生徒{students.length}名を全員一覧から削除します。押すとまずバックアップExcelが自動でダウンロードされ、それから削除されます。過去の出席記録データ自体は残りますが、一覧上は表示されなくなります（「削除した生徒を表示」から個別に復帰は可能）。
               <span className="block">
-                Removes all {students.length} students in this class from the roster. Past
-                attendance stays intact. Continue?
+                Removes all {students.length} students in this class from the roster. Pressing
+                this first downloads a backup Excel automatically, then removes them. Past
+                attendance records aren&apos;t deleted, but stop showing on roster-driven pages
+                until restored individually.
+              </span>
+            </p>
+            <p className="text-[11px] text-amber-600 text-center">
+              このクラスがもう使われない（学期終了など）場合は、代わりに「学期末リセット」の方が適しています
+              <span className="block">
+                If this class is fully done being used (e.g. end of term), 学期末リセット below
+                is the more appropriate option instead
               </span>
             </p>
 
@@ -1569,7 +1604,7 @@ export default function StudentsPage() {
                 disabled={removingAll}
                 className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
               >
-                {removingAll ? "削除中... / Removing..." : "全員削除する / Remove all"}
+                {removingAll ? "処理中... / Processing..." : "全員削除する / Remove all"}
               </button>
             </div>
           </div>

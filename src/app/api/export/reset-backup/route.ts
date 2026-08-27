@@ -21,30 +21,36 @@ function headerRowStyle(row: ExcelJS.Row) {
 }
 
 // GET /api/export/reset-backup?class=...
-// Full-history backup for one class, generated right before the end-of-term
-// Reset button wipes its roster and its Coach Schedule/Headcount data. The
-// 年間まとめ and monthly sheets are built with the exact same layout as the
-// Dashboard's own 📊 Excel export buttons (see src/lib/exportSheets.ts) —
-// one sheet per fiscal year and per calendar month actually present in the
-// data, so nothing is lost even from years before the current one.
+// Full-history backup for one class, generated right before a roster-
+// clearing action (学期末リセット, or 全員削除 on the roster page) wipes it.
+// The 年間まとめ and monthly sheets are built with the exact same layout as
+// the Dashboard's own 📊 Excel export buttons (see src/lib/exportSheets.ts)
+// — one sheet per fiscal year and per calendar month actually present in
+// the data, so nothing is lost even from years before the current one.
+//
+// 専門コーチ (Coach Schedule/Headcount) sheets only apply to classes on the
+// 長/中/少 continuum -- classNameToBranchGrade() returns null for 小学生-
+// suffix "extra" classes, which simply never have that data, so those two
+// sheets are included only when it resolves rather than rejecting the
+// whole backup outright.
 export async function GET(req: NextRequest) {
   const className = req.nextUrl.searchParams.get("class");
   if (!className) {
     return NextResponse.json({ error: "Missing 'class' query param" }, { status: 400 });
   }
   const branchGrade = classNameToBranchGrade(className);
-  if (!branchGrade) {
-    return NextResponse.json({ error: "Unrecognized class name" }, { status: 400 });
-  }
-  const { branch, grade } = branchGrade;
 
   try {
     const [allStudents, attendance, categories, schedule, headcount] = await Promise.all([
       getAllStudentsByClass(className),
       getAllAttendanceForClass(className),
-      getSpecialistCategories(branch),
-      getAllSpecialistAttendanceForGrade(branch, grade),
-      getAllSpecialistParticipationForGrade(branch, grade),
+      branchGrade ? getSpecialistCategories(branchGrade.branch) : Promise.resolve([]),
+      branchGrade
+        ? getAllSpecialistAttendanceForGrade(branchGrade.branch, branchGrade.grade)
+        : Promise.resolve([]),
+      branchGrade
+        ? getAllSpecialistParticipationForGrade(branchGrade.branch, branchGrade.grade)
+        : Promise.resolve([]),
     ]);
 
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
@@ -104,23 +110,24 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 専門コーチスケジュール — every day this grade was checked off for
-    // each category. Categories themselves are branch-wide and NOT
-    // deleted (other grades in this branch may still use them).
-    const scheduleSheet = workbook.addWorksheet("コーチスケジュール");
-    headerRowStyle(scheduleSheet.addRow(["日付", "種目"]));
-    schedule.forEach((r) => {
-      scheduleSheet.addRow([r.date, categoryNameById.get(r.categoryId) ?? r.categoryId]);
-    });
-    scheduleSheet.columns = [{ width: 12 }, { width: 20 }];
+    // 専門コーチスケジュール／人数 — only exist for classes on the 長/中/少
+    // continuum (see branchGrade above); omitted entirely for 小学生-suffix
+    // classes rather than added as empty sheets.
+    if (branchGrade) {
+      const scheduleSheet = workbook.addWorksheet("コーチスケジュール");
+      headerRowStyle(scheduleSheet.addRow(["日付", "種目"]));
+      schedule.forEach((r) => {
+        scheduleSheet.addRow([r.date, categoryNameById.get(r.categoryId) ?? r.categoryId]);
+      });
+      scheduleSheet.columns = [{ width: 12 }, { width: 20 }];
 
-    // 専門コーチ人数 — participant counts per category per day.
-    const headcountSheet = workbook.addWorksheet("コーチ人数");
-    headerRowStyle(headcountSheet.addRow(["日付", "種目", "人数"]));
-    headcount.forEach((r) => {
-      headcountSheet.addRow([r.date, categoryNameById.get(r.categoryId) ?? r.categoryId, r.count]);
-    });
-    headcountSheet.columns = [{ width: 12 }, { width: 20 }, { width: 8 }];
+      const headcountSheet = workbook.addWorksheet("コーチ人数");
+      headerRowStyle(headcountSheet.addRow(["日付", "種目", "人数"]));
+      headcount.forEach((r) => {
+        headcountSheet.addRow([r.date, categoryNameById.get(r.categoryId) ?? r.categoryId, r.count]);
+      });
+      headcountSheet.columns = [{ width: 12 }, { width: 20 }, { width: 8 }];
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     const todayStr = new Date().toISOString().slice(0, 10);
