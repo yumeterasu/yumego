@@ -185,7 +185,7 @@ function PickupPageInner() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 print:hidden">
           <Link
             href="/select-class"
             className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
@@ -193,10 +193,29 @@ function PickupPageInner() {
           >
             🏠
           </Link>
+          <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
+          <button
+            onClick={() => window.print()}
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="印刷 / Print"
+          >
+            🖨️
+          </button>
+          <button
+            onClick={() =>
+              (window.location.href = `/api/export/pickup?branch=${encodeURIComponent(
+                branch
+              )}&month=${yearMonth}`)
+            }
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+            aria-label="Excelエクスポート / Excel Export"
+          >
+            📊
+          </button>
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4">
+      <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={goPrevMonth}
           className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
@@ -215,8 +234,11 @@ function PickupPageInner() {
           ▶
         </button>
       </div>
+      <p className="text-lg font-bold text-center hidden print:block">
+        {year}年{month}月
+      </p>
 
-      {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+      {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
       {loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
