@@ -253,9 +253,25 @@ function stripStrayQuotes(s: string): string {
   return s.replace(/^["“”]+/, "").replace(/["“”]+$/, "").trim();
 }
 
+function looksLikeRomaji(s: string): boolean {
+  const trimmed = s.trim();
+  return trimmed.length > 0 && /^[a-zA-Z\s]+$/.test(trimmed);
+}
+
+/**
+ * Best-effort Hiragana reading for a new student — normally derived from
+ * nameEnglish, but falls back to nameKanji itself when that field was
+ * filled in with a plain romaji string instead of actual kanji (seen in
+ * older records predating the separate English-name field).
+ */
+function deriveNameHiragana(nameKanji: string, nameEnglish: string): string {
+  const source = nameEnglish.trim() || (looksLikeRomaji(nameKanji) ? nameKanji : "");
+  return romajiToHiragana(source);
+}
+
 /** Append a new student row to the Students sheet. nameHiragana is
- *  auto-filled from nameEnglish via romajiToHiragana() -- a best-effort
- *  starting point the operator can correct via the name-edit screen. */
+ *  auto-filled -- a best-effort starting point the operator can correct
+ *  via the name-edit screen. */
 export async function addStudent(
   student: Omit<
     Student,
@@ -264,6 +280,7 @@ export async function addStudent(
 ): Promise<void> {
   const sheets = getSheetsClient();
   const [nextOrder] = await getNextSortOrders(sheets, 1);
+  const nameKanji = stripStrayQuotes(student.nameKanji);
   const nameEnglish = stripStrayQuotes(student.nameEnglish);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
@@ -273,7 +290,7 @@ export async function addStudent(
       values: [
         [
           student.studentId,
-          stripStrayQuotes(student.nameKanji),
+          nameKanji,
           nameEnglish,
           student.className,
           "TRUE",
@@ -282,7 +299,7 @@ export async function addStudent(
           "FALSE",
           "FALSE",
           String(nextOrder),
-          romajiToHiragana(nameEnglish),
+          deriveNameHiragana(nameKanji, nameEnglish),
         ],
       ],
     },
@@ -309,10 +326,11 @@ export async function addStudentsBulk(
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: students.map((s, i) => {
+        const nameKanji = stripStrayQuotes(s.nameKanji);
         const nameEnglish = stripStrayQuotes(s.nameEnglish);
         return [
           s.studentId,
-          stripStrayQuotes(s.nameKanji),
+          nameKanji,
           nameEnglish,
           s.className,
           "TRUE",
@@ -321,7 +339,7 @@ export async function addStudentsBulk(
           "FALSE",
           "FALSE",
           String(orders[i]),
-          romajiToHiragana(nameEnglish),
+          deriveNameHiragana(nameKanji, nameEnglish),
         ];
       }),
     },
