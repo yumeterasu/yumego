@@ -1143,22 +1143,16 @@ export default function StudentsPage() {
                   >
                     🚗 送迎
                   </button>
-                  {transportByStudent[s.studentId] !== "self" && (
+                  {transportByStudent[s.studentId] === "bus" && (
                     <button
                       onClick={() => openAddressModal(s)}
                       className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border ${
                         locationsByStudent[s.studentId]
                           ? "bg-green-50 text-green-700 border-green-300"
-                          : transportByStudent[s.studentId] === "bus"
-                            ? "bg-red-50 text-red-600 border-red-300"
-                            : "bg-white text-gray-500 border-gray-300"
+                          : "bg-red-50 text-red-600 border-red-300"
                       }`}
                     >
-                      {locationsByStudent[s.studentId]
-                        ? "🏠 住所 ✓"
-                        : transportByStudent[s.studentId] === "bus"
-                          ? "🏠 住所 ⚠️"
-                          : "🏠 住所"}
+                      {locationsByStudent[s.studentId] ? "🏠 住所 ✓" : "🏠 住所 ⚠️"}
                     </button>
                   )}
                   <button
