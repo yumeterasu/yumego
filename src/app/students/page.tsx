@@ -183,10 +183,6 @@ export default function StudentsPage() {
   const [loadingInactive, setLoadingInactive] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
-  const [showRemoveAllModal, setShowRemoveAllModal] = useState(false);
-  const [removingAll, setRemovingAll] = useState(false);
-  const [removeAllError, setRemoveAllError] = useState<string | null>(null);
-
   // End-of-term Reset: two-step confirm, then backup-download-then-delete.
   // Backup-only, no delete -- separate from the Reset flow below.
   const [backupAllStage, setBackupAllStage] = useState<
@@ -621,52 +617,6 @@ export default function StudentsPage() {
       setError("並び替えの保存に失敗しました / Failed to save the new order");
     } finally {
       setReorderSaving(false);
-    }
-  }
-
-  // Downloads a backup first, same as 学期末リセット -- a class that already
-  // has real attendance history recorded loses its students from every
-  // roster-driven view (Dashboard, 年間まとめ...) the moment they're
-  // removed, even though the underlying records are only soft-hidden, not
-  // deleted. A backup means that's never a dead end even if nobody thinks
-  // to restore them via "削除した生徒を表示" right away.
-  async function handleRemoveAll() {
-    if (!selectedClass) return;
-    setRemovingAll(true);
-    setRemoveAllError(null);
-    try {
-      const backupRes = await fetch(
-        `/api/export/reset-backup?class=${encodeURIComponent(selectedClass)}`
-      );
-      if (!backupRes.ok) throw new Error("backup failed");
-      const blob = await backupRes.blob();
-      if (blob.size === 0) throw new Error("empty backup");
-
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${selectedClass.replace(/\s+/g, "_")}_remove-all-backup_${new Date()
-        .toISOString()
-        .slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
-      const res = await fetch("/api/students/remove-all", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ className: selectedClass }),
-      });
-      if (!res.ok) throw new Error("failed");
-      setStudents([]);
-      setShowRemoveAllModal(false);
-    } catch {
-      setRemoveAllError(
-        "処理に失敗しました。バックアップが保存されていない場合、生徒は削除されていません / Failed — if the backup wasn't saved, nothing was removed"
-      );
-    } finally {
-      setRemovingAll(false);
     }
   }
 
@@ -1208,25 +1158,13 @@ export default function StudentsPage() {
                   </button>
                 </>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={startReorder}
-                    className="shrink-0 rounded-full border border-blue-300 text-blue-600 px-3 py-1 text-xs font-semibold"
-                  >
-                    🔀 並び替え / Reorder
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRemoveAllError(null);
-                      setShowRemoveAllModal(true);
-                    }}
-                    className="shrink-0 rounded-full border border-red-300 text-red-600 px-3 py-1 text-xs font-semibold"
-                  >
-                    全員削除 / Remove all
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={startReorder}
+                  className="shrink-0 rounded-full border border-blue-300 text-blue-600 px-3 py-1 text-xs font-semibold"
+                >
+                  🔀 並び替え / Reorder
+                </button>
               )}
             </div>
           )}
@@ -1539,74 +1477,6 @@ export default function StudentsPage() {
             >
               🗑 コーチ記録のみ削除 / Delete coach records only
             </button>
-          </div>
-        </div>
-      )}
-
-      {showRemoveAllModal && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
-          onClick={() => !removingAll && setShowRemoveAllModal(false)}
-        >
-          <div
-            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-bold text-center text-red-600">
-              全員削除の確認
-              <span className="block text-sm font-normal text-gray-500">
-                Confirm remove all
-              </span>
-            </h2>
-
-            <div className="bg-gray-50 rounded-xl p-4 flex flex-col gap-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">対象クラス / Class</span>
-                <span className="font-semibold">{selectedClass}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">対象人数 / Students</span>
-                <span className="font-semibold">{students.length}名 / {students.length}</span>
-              </div>
-            </div>
-
-            <p className="text-xs text-gray-400 text-center">
-              このクラスの生徒{students.length}名を全員一覧から削除します。押すとまずバックアップExcelが自動でダウンロードされ、それから削除されます。過去の出席記録データ自体は残りますが、一覧上は表示されなくなります（「削除した生徒を表示」から個別に復帰は可能）。
-              <span className="block">
-                Removes all {students.length} students in this class from the roster. Pressing
-                this first downloads a backup Excel automatically, then removes them. Past
-                attendance records aren&apos;t deleted, but stop showing on roster-driven pages
-                until restored individually.
-              </span>
-            </p>
-            <p className="text-[11px] text-amber-600 text-center">
-              このクラスがもう使われない（学期終了など）場合は、代わりに「学期末リセット」の方が適しています
-              <span className="block">
-                If this class is fully done being used (e.g. end of term), 学期末リセット below
-                is the more appropriate option instead
-              </span>
-            </p>
-
-            {removeAllError && (
-              <p className="text-red-600 text-sm text-center">{removeAllError}</p>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setShowRemoveAllModal(false)}
-                disabled={removingAll}
-                className="rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
-              >
-                キャンセル / Cancel
-              </button>
-              <button
-                onClick={handleRemoveAll}
-                disabled={removingAll}
-                className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
-              >
-                {removingAll ? "処理中... / Processing..." : "全員削除する / Remove all"}
-              </button>
-            </div>
           </div>
         </div>
       )}

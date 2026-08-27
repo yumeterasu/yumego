@@ -5,7 +5,8 @@ import { classNameToBranchGrade } from "@/lib/classes";
 // POST /api/students/reset
 // body: { className, rosterToo?: boolean }
 // The end-of-term Reset: soft-deletes every active student in the class
-// (recoverable, same as remove-all) AND permanently deletes this grade's
+// (recoverable individually via "削除した生徒を表示") AND permanently deletes
+// this grade's
 // Coach Schedule + Coach Headcount history (NOT recoverable — categories
 // themselves are branch-wide and untouched, other grades keep their data).
 //
