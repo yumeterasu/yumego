@@ -91,6 +91,10 @@ export default function StudentsPage() {
   const [addMode, setAddMode] = useState<AddMode>("single");
   const [nameKanji, setNameKanji] = useState("");
   const [nameEnglish, setNameEnglish] = useState("");
+  // 通学方法 picked before submitting the single-add form -- optional, no
+  // address field shown unless バス is picked (applied right after the
+  // student is created; see handleAddSingle).
+  const [addTransportChoice, setAddTransportChoice] = useState<TransportMode | null>(null);
   const [bulkText, setBulkText] = useState("");
   // For pasting a "名前" column where each cell has kanji+romaji on 2 lines
   // (e.g. the school's own roster spreadsheet) -- see parseBulkNamesTwoLine.
@@ -324,8 +328,33 @@ export default function StudentsPage() {
         }),
       });
       if (!res.ok) throw new Error("failed");
+      const { studentId } = await res.json();
+
+      // Apply the 通学方法 picked before submitting, if any -- constructed
+      // directly rather than re-reading `students` state, which wouldn't
+      // reflect this brand-new row yet inside this same function run.
+      // setTransportMode() already knows to open the address modal instead
+      // of setting バス directly when there's no address on file yet
+      // (always true here), same as the roster's own バス button.
+      if (addTransportChoice && selectedClass) {
+        const created: Student = {
+          studentId,
+          nameKanji: nameKanji.trim(),
+          nameEnglish: nameEnglish.trim(),
+          className: selectedClass,
+          active: true,
+          remark: "",
+          check1: false,
+          check2: false,
+          check3: false,
+          sortOrder: 0,
+        };
+        await setTransportMode(created, addTransportChoice);
+      }
+
       setNameKanji("");
       setNameEnglish("");
+      setAddTransportChoice(null);
       await loadStudents(selectedClass);
     } catch {
       setError("生徒の追加に失敗しました / Failed to add student");
@@ -895,6 +924,48 @@ export default function StudentsPage() {
                 placeholder="TARO YAMADA"
               />
             </label>
+            <div className="flex flex-col gap-1.5 text-sm">
+              <span>
+                通学方法（任意）
+                <span className="block text-xs font-normal text-gray-500">
+                  Transport (optional) — add now, or set it later from the roster below
+                </span>
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAddTransportChoice((prev) => (prev === "bus" ? null : "bus"))
+                  }
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold border ${
+                    addTransportChoice === "bus"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-500 border-gray-300"
+                  }`}
+                >
+                  🚌 バス
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAddTransportChoice((prev) => (prev === "self" ? null : "self"))
+                  }
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold border ${
+                    addTransportChoice === "self"
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : "bg-white text-gray-500 border-gray-300"
+                  }`}
+                >
+                  🚗 送迎
+                </button>
+              </div>
+              {addTransportChoice === "bus" && (
+                <p className="text-xs text-amber-600">
+                  🏠 追加すると住所の入力画面が開きます
+                  <span className="block">Adding will open the address screen next</span>
+                </p>
+              )}
+            </div>
             <button
               type="submit"
               disabled={saving || !nameKanji.trim()}
