@@ -228,6 +228,20 @@ async function getNextSortOrders(
   return Array.from({ length: count }, (_, i) => max + (i + 1) * 10);
 }
 
+/**
+ * Strips a stray leading/trailing quote mark (straight or curly) picked up
+ * when a browser pastes a spreadsheet cell that itself contained a line
+ * break — clipboard TSV export wraps such a cell in quotes per CSV escaping
+ * rules, and pasting "as plain text" carries the literal quote characters
+ * along instead of unescaping them (seen firsthand: a 2-line 名前 cell
+ * pasted via parseBulkNamesTwoLine left a leading " on the kanji line and
+ * a trailing " on the romaji line). Real names never intentionally start
+ * or end with a quote mark, so this is safe to always apply.
+ */
+function stripStrayQuotes(s: string): string {
+  return s.replace(/^["“”]+/, "").replace(/["“”]+$/, "").trim();
+}
+
 /** Append a new student row to the Students sheet. */
 export async function addStudent(
   student: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder">
@@ -242,8 +256,8 @@ export async function addStudent(
       values: [
         [
           student.studentId,
-          student.nameKanji,
-          student.nameEnglish,
+          stripStrayQuotes(student.nameKanji),
+          stripStrayQuotes(student.nameEnglish),
           student.className,
           "TRUE",
           "",
@@ -275,8 +289,8 @@ export async function addStudentsBulk(
     requestBody: {
       values: students.map((s, i) => [
         s.studentId,
-        s.nameKanji,
-        s.nameEnglish,
+        stripStrayQuotes(s.nameKanji),
+        stripStrayQuotes(s.nameEnglish),
         s.className,
         "TRUE",
         "",
@@ -350,7 +364,9 @@ export async function updateStudentName(
     spreadsheetId: SHEET_ID,
     range: `Students!B${rowNum}:C${rowNum}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[nameKanji, nameEnglish]] },
+    requestBody: {
+      values: [[stripStrayQuotes(nameKanji), stripStrayQuotes(nameEnglish)]],
+    },
   });
 }
 

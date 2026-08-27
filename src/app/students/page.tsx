@@ -11,6 +11,19 @@ import type { Student, StudentLocation, TransportMode } from "@/lib/sheets";
 type AddMode = "single" | "bulk";
 
 /**
+ * Strips a stray leading/trailing quote mark picked up when a browser
+ * pastes a spreadsheet cell that itself contained a line break -- clipboard
+ * TSV export wraps such a cell in quotes per CSV escaping rules, and
+ * pasting "as plain text" carries the literal quote characters along
+ * instead of unescaping them. Real names never intentionally start/end
+ * with a quote mark. (sheets.ts applies this too, server-side, as the
+ * authoritative pass -- this copy just keeps the preview list clean.)
+ */
+function stripStrayQuotes(s: string): string {
+  return s.replace(/^["“”]+/, "").replace(/["“”]+$/, "").trim();
+}
+
+/**
  * Parses the bulk-add textarea: one student per line. Accepts either a
  * straight paste of two adjacent spreadsheet columns (kanji + English,
  * which browsers paste as tab-separated) or manually typed "漢字,English"
@@ -23,10 +36,10 @@ function parseBulkNames(text: string): { nameKanji: string; nameEnglish: string 
     .filter((line) => line.length > 0)
     .map((line) => {
       const sepIdx = line.includes("\t") ? line.indexOf("\t") : line.indexOf(",");
-      if (sepIdx === -1) return { nameKanji: line, nameEnglish: "" };
+      if (sepIdx === -1) return { nameKanji: stripStrayQuotes(line), nameEnglish: "" };
       return {
-        nameKanji: line.slice(0, sepIdx).trim(),
-        nameEnglish: line.slice(sepIdx + 1).trim(),
+        nameKanji: stripStrayQuotes(line.slice(0, sepIdx)),
+        nameEnglish: stripStrayQuotes(line.slice(sepIdx + 1)),
       };
     })
     .filter((s) => s.nameKanji.length > 0);
@@ -47,7 +60,10 @@ function parseBulkNamesTwoLine(text: string): { nameKanji: string; nameEnglish: 
   const result: { nameKanji: string; nameEnglish: string }[] = [];
   for (let i = 0; i < lines.length; i += 2) {
     if (!lines[i]) continue;
-    result.push({ nameKanji: lines[i], nameEnglish: lines[i + 1] ?? "" });
+    result.push({
+      nameKanji: stripStrayQuotes(lines[i]),
+      nameEnglish: stripStrayQuotes(lines[i + 1] ?? ""),
+    });
   }
   return result;
 }
