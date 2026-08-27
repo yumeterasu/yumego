@@ -290,12 +290,10 @@ function PickupPageInner() {
                                 onClick={() => !isSaving && toggleCheck(s.studentId, date, field)}
                                 className={`text-center border border-gray-300 py-1 select-none ${
                                   isSaving ? "opacity-40 cursor-wait" : "cursor-pointer"
-                                } ${isWeekend ? "bg-orange-50/60" : ""} ${
-                                  isChecked ? "bg-green-50" : ""
-                                }`}
+                                } ${isWeekend ? "bg-orange-50/60" : ""}`}
                               >
                                 {isChecked ? (
-                                  <span className="text-green-600 text-base leading-none">✓</span>
+                                  <span className="inline-block w-6 h-6 rounded-full border-[3px] border-red-600" />
                                 ) : (
                                   <span className="text-gray-300 text-base leading-none">—</span>
                                 )}
