@@ -318,15 +318,10 @@ export default function StudentsPage() {
   }
 
   async function setTransportMode(student: Student, mode: TransportMode) {
-    // バス requires an address on file -- if there isn't one yet, open the
-    // address modal instead of setting the mode directly; the mode only
-    // actually gets set once that address is looked up and saved (see
-    // confirmSaveAddress()). Cancelling out of the modal leaves the mode
-    // untouched.
-    if (mode === "bus" && transportByStudent[student.studentId] !== "bus" && !locationsByStudent[student.studentId]) {
-      openAddressModal(student, { autoSetBusOnSave: true });
-      return;
-    }
+    // バス no longer forces an address to be entered up front -- setting
+    // the mode is immediate, and the 🏠住所 button (shown once mode is
+    // バス) still visually warns (⚠️) when one hasn't been added yet, but
+    // doesn't block anything. Address can be filled in whenever.
 
     // Toggling the same mode again clears it back to "not yet chosen".
     const nextMode: TransportMode | null = transportByStudent[student.studentId] === mode ? null : mode;
@@ -1049,8 +1044,8 @@ export default function StudentsPage() {
               </div>
               {addTransportChoice === "bus" && (
                 <p className="text-xs text-amber-600">
-                  🏠 追加すると住所の入力画面が開きます
-                  <span className="block">Adding will open the address screen next</span>
+                  🏠 住所は後からでも登録できます
+                  <span className="block">Address can be added later, no rush</span>
                 </p>
               )}
             </div>
