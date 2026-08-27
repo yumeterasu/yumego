@@ -145,6 +145,12 @@ export default function StudentsPage() {
   const [removeAllError, setRemoveAllError] = useState<string | null>(null);
 
   // End-of-term Reset: two-step confirm, then backup-download-then-delete.
+  // Backup-only, no delete -- separate from the Reset flow below.
+  const [backupAllStage, setBackupAllStage] = useState<
+    "idle" | "downloading" | "done" | "error"
+  >("idle");
+  const [backupAllError, setBackupAllError] = useState<string | null>(null);
+
   const [showResetModal1, setShowResetModal1] = useState(false);
   const [showResetModal2, setShowResetModal2] = useState(false);
   const [resetStage, setResetStage] = useState<
@@ -449,6 +455,38 @@ export default function StudentsPage() {
       setRemoveAllError("削除に失敗しました / Failed to remove");
     } finally {
       setRemovingAll(false);
+    }
+  }
+
+  // Just the download, no delete afterward — for "I want the data but
+  // don't want to reset anything" (same file /api/export/reset-backup
+  // already produces for the Reset flow below).
+  async function handleBackupAll() {
+    if (!selectedClass) return;
+    setBackupAllStage("downloading");
+    setBackupAllError(null);
+    try {
+      const backupRes = await fetch(
+        `/api/export/reset-backup?class=${encodeURIComponent(selectedClass)}`
+      );
+      if (!backupRes.ok) throw new Error("backup failed");
+      const blob = await backupRes.blob();
+      if (blob.size === 0) throw new Error("empty backup");
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${selectedClass.replace(/\s+/g, "_")}_backup_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setBackupAllStage("done");
+    } catch {
+      setBackupAllStage("error");
+      setBackupAllError("バックアップに失敗しました / Backup failed");
     }
   }
 
@@ -1049,6 +1087,42 @@ export default function StudentsPage() {
           </div>
         )}
       </div>
+
+      {hasBranchGrade && (
+        <div className="border border-blue-300 rounded-xl p-4 flex flex-col gap-2 bg-blue-50/40">
+          <h2 className="font-semibold text-blue-700">
+            バックアップのみ
+            <span className="block text-xs font-normal text-blue-500">
+              Back up all (no deletion)
+            </span>
+          </h2>
+          <p className="text-xs text-gray-500">
+            このクラスの生徒名簿・出席記録・専門コーチの記録をExcelファイルとしてダウンロードします。何も削除しません
+            <span className="block">
+              Downloads roster, attendance, and Coach Schedule/Headcount records as an Excel
+              file — nothing is deleted
+            </span>
+          </p>
+          <button
+            type="button"
+            onClick={handleBackupAll}
+            disabled={backupAllStage === "downloading"}
+            className="self-start rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+          >
+            {backupAllStage === "downloading"
+              ? "ダウンロード中... / Downloading..."
+              : "📥 バックアップ / Back up all"}
+          </button>
+          {backupAllStage === "done" && (
+            <p className="text-xs text-green-700">
+              ✅ ダウンロードフォルダに保存しました / Saved to your downloads folder
+            </p>
+          )}
+          {backupAllStage === "error" && backupAllError && (
+            <p className="text-xs text-red-600">{backupAllError}</p>
+          )}
+        </div>
+      )}
 
       {hasBranchGrade && (
         <div className="border-2 border-red-300 rounded-xl p-4 flex flex-col gap-2 bg-red-50/40">
