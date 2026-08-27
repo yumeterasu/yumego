@@ -650,6 +650,24 @@ export default function StudentsPage() {
     setReorderMode(true);
   }
 
+  // 生年月日順に並べる — oldest first (ascending birthDate, same convention
+  // as the bulk-import auto-sort); students with no birthDate on file go to
+  // the very top instead of being scattered by array order, so they're the
+  // first thing the operator notices and can go fix. Lands in the same
+  // unlocked 並び替え state as startReorder() -- still just a proposal
+  // until 保存 is pressed, キャンセル discards it like any other reorder.
+  function startBirthDateSort() {
+    const sorted = [...students].sort((a, b) => {
+      if (!a.birthDate && !b.birthDate) return 0;
+      if (!a.birthDate) return -1;
+      if (!b.birthDate) return 1;
+      return a.birthDate.localeCompare(b.birthDate);
+    });
+    setReorderSnapshot(students);
+    setStudents(sorted);
+    setReorderMode(true);
+  }
+
   function moveLocalOrder(index: number, direction: "up" | "down") {
     const neighborIndex = direction === "up" ? index - 1 : index + 1;
     if (neighborIndex < 0 || neighborIndex >= students.length) return;
@@ -1264,13 +1282,22 @@ export default function StudentsPage() {
                   </button>
                 </>
               ) : (
-                <button
-                  type="button"
-                  onClick={startReorder}
-                  className="shrink-0 rounded-full border border-blue-300 text-blue-600 px-3 py-1 text-xs font-semibold"
-                >
-                  🔀 並び替え / Reorder
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={startReorder}
+                    className="shrink-0 rounded-full border border-blue-300 text-blue-600 px-3 py-1 text-xs font-semibold"
+                  >
+                    🔀 並び替え / Reorder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startBirthDateSort}
+                    className="shrink-0 rounded-full border border-blue-300 text-blue-600 px-3 py-1 text-xs font-semibold"
+                  >
+                    🎂 生年月日順 / Sort by birth date
+                  </button>
+                </>
               )}
             </div>
           )}
