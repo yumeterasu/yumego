@@ -25,18 +25,17 @@ function classOrderIndex(className: string) {
   return idx === -1 ? CLASS_ORDER.length : idx;
 }
 
-// Sunday red, Saturday blue — same convention as the Dashboard's own
-// monthly grid (see weekendHeaderClasses/weekendCellClasses there).
+// Dark gray for both weekend days -- deliberately NOT the 出席確認/Dashboard
+// red-Sunday/blue-Saturday convention, so this page reads as visually
+// distinct from that one at a glance.
 function weekendHeaderClasses(dow: number): string {
-  if (dow === 0) return "bg-red-200 text-red-800";
-  if (dow === 6) return "bg-blue-200 text-blue-800";
+  if (dow === 0 || dow === 6) return "bg-gray-600 text-gray-50";
   return "bg-gray-50";
 }
 // Weekend color takes priority over the 降園 row's own light-orange tint
 // where the two would otherwise overlap.
 function cellBgClass(dow: number, field: "arrival" | "departure"): string {
-  if (dow === 0) return "bg-red-100";
-  if (dow === 6) return "bg-blue-100";
+  if (dow === 0 || dow === 6) return "bg-gray-300";
   return field === "departure" ? "bg-orange-50" : "";
 }
 
