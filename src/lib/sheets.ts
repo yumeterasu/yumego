@@ -75,7 +75,29 @@ export type Student = {
   check1: boolean;
   check2: boolean;
   check3: boolean;
+  /**
+   * Manual display order within a class (lower shows first) — e.g. the
+   * school lines students up by birthdate, which nothing in the sheet
+   * captures on its own, so this is a free-standing sort key the roster
+   * page's ↑/↓ buttons swap between neighbors. Every other list (Dashboard,
+   * 出席確認, 年間まとめ, exports, 送迎管理) reads students in this same
+   * order for free, since they all ultimately go through the functions
+   * below rather than re-sorting on their own.
+   */
+  sortOrder: number;
 };
+
+/** Parses column J (sort_order); blank/non-numeric rows sort after every
+ *  real value but keep their relative sheet order among each other, since
+ *  Array.prototype.sort is stable and they all map to the same fallback. */
+function parseSortOrder(raw: string | undefined): number {
+  const n = Number(raw);
+  return raw && Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+}
+
+function sortStudentsByOrder(students: Student[]): Student[] {
+  return [...students].sort((a, b) => a.sortOrder - b.sortOrder);
+}
 
 export type CheckColumn = "check1" | "check2" | "check3";
 const CHECK_COLUMN_LETTERS: Record<CheckColumn, string> = {
@@ -125,29 +147,32 @@ export type AttendanceRecord = {
   reason: string;
 };
 
-/** Read all students for a given class (active only). */
+/** Read all students for a given class (active only), in display order. */
 export async function getStudentsByClass(className: string): Promise<Student[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:I",
+    range: "Students!A2:J",
   });
 
   const rows = res.data.values ?? [];
 
-  return rows
-    .map((row): Student => ({
-      studentId: row[0] ?? "",
-      nameKanji: row[1] ?? "",
-      nameEnglish: row[2] ?? "",
-      className: row[3] ?? "",
-      active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
-      remark: row[5] ?? "",
-      check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
-      check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
-      check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
-    }))
-    .filter((s) => s.studentId && s.className === className && s.active);
+  return sortStudentsByOrder(
+    rows
+      .map((row): Student => ({
+        studentId: row[0] ?? "",
+        nameKanji: row[1] ?? "",
+        nameEnglish: row[2] ?? "",
+        className: row[3] ?? "",
+        active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
+        remark: row[5] ?? "",
+        check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
+        check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
+        check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
+        sortOrder: parseSortOrder(row[9]),
+      }))
+      .filter((s) => s.studentId && s.className === className && s.active)
+  );
 }
 
 /**
@@ -159,32 +184,59 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:I",
+    range: "Students!A2:J",
   });
   const rows = res.data.values ?? [];
-  return rows
-    .map((row): Student => ({
-      studentId: row[0] ?? "",
-      nameKanji: row[1] ?? "",
-      nameEnglish: row[2] ?? "",
-      className: row[3] ?? "",
-      active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
-      remark: row[5] ?? "",
-      check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
-      check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
-      check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
-    }))
-    .filter((s) => s.studentId && s.active && s.className.startsWith(branch));
+  return sortStudentsByOrder(
+    rows
+      .map((row): Student => ({
+        studentId: row[0] ?? "",
+        nameKanji: row[1] ?? "",
+        nameEnglish: row[2] ?? "",
+        className: row[3] ?? "",
+        active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
+        remark: row[5] ?? "",
+        check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
+        check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
+        check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
+        sortOrder: parseSortOrder(row[9]),
+      }))
+      .filter((s) => s.studentId && s.active && s.className.startsWith(branch))
+  );
+}
+
+/**
+ * Next free sort_order value(s) — one past the current sheet-wide max,
+ * stepping by 10 so newly-added students land at the bottom of the
+ * display order by default (same as today's plain append), leaving room
+ * to move them up later without renumbering anyone else.
+ */
+async function getNextSortOrders(
+  sheets: ReturnType<typeof getSheetsClient>,
+  count: number
+): Promise<number[]> {
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Students!J2:J",
+  });
+  const rows = res.data.values ?? [];
+  let max = 0;
+  for (const row of rows) {
+    const n = Number(row[0]);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return Array.from({ length: count }, (_, i) => max + (i + 1) * 10);
 }
 
 /** Append a new student row to the Students sheet. */
 export async function addStudent(
-  student: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3">
+  student: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder">
 ): Promise<void> {
   const sheets = getSheetsClient();
+  const [nextOrder] = await getNextSortOrders(sheets, 1);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:I",
+    range: "Students!A:J",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -198,6 +250,7 @@ export async function addStudent(
           "FALSE",
           "FALSE",
           "FALSE",
+          String(nextOrder),
         ],
       ],
     },
@@ -210,16 +263,17 @@ export async function addStudent(
  * doesn't mean N separate round trips (and N chances to hit quota).
  */
 export async function addStudentsBulk(
-  students: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3">[]
+  students: Omit<Student, "active" | "remark" | "check1" | "check2" | "check3" | "sortOrder">[]
 ): Promise<void> {
   if (students.length === 0) return;
   const sheets = getSheetsClient();
+  const orders = await getNextSortOrders(sheets, students.length);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:I",
+    range: "Students!A:J",
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: students.map((s) => [
+      values: students.map((s, i) => [
         s.studentId,
         s.nameKanji,
         s.nameEnglish,
@@ -229,6 +283,7 @@ export async function addStudentsBulk(
         "FALSE",
         "FALSE",
         "FALSE",
+        String(orders[i]),
       ]),
     },
   });
@@ -242,22 +297,25 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:I",
+    range: "Students!A2:J",
   });
   const rows = res.data.values ?? [];
-  return rows
-    .map((row): Student => ({
-      studentId: row[0] ?? "",
-      nameKanji: row[1] ?? "",
-      nameEnglish: row[2] ?? "",
-      className: row[3] ?? "",
-      active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
-      remark: row[5] ?? "",
-      check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
-      check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
-      check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
-    }))
-    .filter((s) => s.studentId && s.className === className);
+  return sortStudentsByOrder(
+    rows
+      .map((row): Student => ({
+        studentId: row[0] ?? "",
+        nameKanji: row[1] ?? "",
+        nameEnglish: row[2] ?? "",
+        className: row[3] ?? "",
+        active: (row[4] ?? "").toString().toUpperCase() === "TRUE",
+        remark: row[5] ?? "",
+        check1: (row[6] ?? "").toString().toUpperCase() === "TRUE",
+        check2: (row[7] ?? "").toString().toUpperCase() === "TRUE",
+        check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
+        sortOrder: parseSortOrder(row[9]),
+      }))
+      .filter((s) => s.studentId && s.className === className)
+  );
 }
 
 async function findStudentRowNumber(
@@ -310,6 +368,80 @@ export async function updateStudentRemark(
     range: `Students!F${rowNum}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[remark]] },
+  });
+}
+
+/**
+ * Swaps a student's display position with its neighbor within the same
+ * class's ACTIVE roster (matching what the roster page actually shows) --
+ * a no-op if the student is already at that end of the list, or isn't
+ * found/isn't active. Every page that lists students by class picks this
+ * order up automatically since they all read through getStudentsByClass/
+ * getAllStudentsByClass/getStudentsByBranch, which sort by sort_order.
+ */
+export async function moveStudentOrder(
+  studentId: string,
+  direction: "up" | "down"
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:J",
+  });
+  const rows = res.data.values ?? [];
+
+  const target = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .find(({ row }) => (row[0] ?? "") === studentId);
+  if (!target) return;
+
+  const className = target.row[3] ?? "";
+  const isActive = (target.row[4] ?? "").toString().toUpperCase() === "TRUE";
+  if (!isActive) return;
+
+  const siblings = rows
+    .map((row, i) => ({
+      studentId: row[0] ?? "",
+      rowNum: i + 2,
+      sortOrder: parseSortOrder(row[9]),
+    }))
+    .filter((_, i) => {
+      const row = rows[i];
+      return (
+        (row[0] ?? "") &&
+        (row[3] ?? "") === className &&
+        (row[4] ?? "").toString().toUpperCase() === "TRUE"
+      );
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const idx = siblings.findIndex((s) => s.studentId === studentId);
+  if (idx === -1) return;
+  const neighborIdx = direction === "up" ? idx - 1 : idx + 1;
+  if (neighborIdx < 0 || neighborIdx >= siblings.length) return; // already at that end
+
+  const a = siblings[idx];
+  const b = siblings[neighborIdx];
+  // If either side never got backfilled (shouldn't happen post-migration,
+  // but parseSortOrder falls back to a shared sentinel for blanks), give
+  // it a real distinct value based on its row rather than writing the
+  // sentinel itself into the sheet.
+  const aOrder = Number.isFinite(a.sortOrder) && a.sortOrder !== Number.MAX_SAFE_INTEGER
+    ? a.sortOrder
+    : a.rowNum * 10;
+  const bOrder = Number.isFinite(b.sortOrder) && b.sortOrder !== Number.MAX_SAFE_INTEGER
+    ? b.sortOrder
+    : b.rowNum * 10;
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: [
+        { range: `Students!J${a.rowNum}`, values: [[String(bOrder)]] },
+        { range: `Students!J${b.rowNum}`, values: [[String(aOrder)]] },
+      ],
+    },
   });
 }
 

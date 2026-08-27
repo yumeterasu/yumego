@@ -82,6 +82,7 @@ export default function StudentsPage() {
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
 
   // 名前の修正 — takes effect everywhere the name is shown, since every
   // page reads nameKanji/nameEnglish live from the same Students row.
@@ -435,6 +436,41 @@ export default function StudentsPage() {
       setError("更新に失敗しました / Failed to update");
     } finally {
       setWithdrawingId(null);
+    }
+  }
+
+  // 並び替え — the school lines students up by birthdate (or whatever
+  // order they prefer), which nothing else in the sheet captures, and a
+  // newly-enrolled child needs to slot in mid-list rather than always
+  // landing at the bottom. Swaps with the immediate neighbor; optimistic
+  // locally (the list is already in display order client-side) with a
+  // full reload on failure so the roster never drifts out of sync with
+  // the sheet.
+  async function handleMoveOrder(index: number, direction: "up" | "down") {
+    const student = students[index];
+    if (!student) return;
+    const neighborIndex = direction === "up" ? index - 1 : index + 1;
+    if (neighborIndex < 0 || neighborIndex >= students.length) return;
+
+    setReorderingId(student.studentId);
+    setError(null);
+    setStudents((prev) => {
+      const next = [...prev];
+      [next[index], next[neighborIndex]] = [next[neighborIndex], next[index]];
+      return next;
+    });
+    try {
+      const res = await fetch("/api/students", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: student.studentId, moveOrder: direction }),
+      });
+      if (!res.ok) throw new Error("failed");
+    } catch {
+      setError("並び替えに失敗しました / Failed to reorder");
+      if (selectedClass) await loadStudents(selectedClass); // resync with the sheet
+    } finally {
+      setReorderingId(null);
     }
   }
 
@@ -953,11 +989,31 @@ export default function StudentsPage() {
           </p>
         ) : (
           <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
-            {students.map((s) => (
+            {students.map((s, index) => (
               <li
                 key={s.studentId}
                 className="px-4 py-2.5 leading-tight flex items-center gap-3 flex-wrap"
               >
+                <div className="flex flex-col shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveOrder(index, "up")}
+                    disabled={index === 0 || reorderingId === s.studentId}
+                    className="text-gray-400 hover:text-blue-500 disabled:opacity-20 leading-none text-xs px-1"
+                    aria-label="上へ移動 / Move up"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveOrder(index, "down")}
+                    disabled={index === students.length - 1 || reorderingId === s.studentId}
+                    className="text-gray-400 hover:text-blue-500 disabled:opacity-20 leading-none text-xs px-1"
+                    aria-label="下へ移動 / Move down"
+                  >
+                    ▼
+                  </button>
+                </div>
                 <div className="min-w-0 flex-1 basis-48">
                   <span className="font-medium block">{s.nameKanji}</span>
                   {s.nameEnglish && (
