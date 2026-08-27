@@ -220,7 +220,7 @@ function PickupPageInner() {
                   氏名
                   <span className="block text-[9px] font-normal text-gray-400">Name</span>
                 </th>
-                <th className="sticky left-28 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-16">
+                <th className="sticky left-28 bg-gray-100 border border-gray-300 px-1 py-1 text-center whitespace-nowrap z-10 w-11">
                   —
                 </th>
                 {dayNumbers.map((day) => {
@@ -229,7 +229,7 @@ function PickupPageInner() {
                   return (
                     <th
                       key={day}
-                      className={`border border-gray-300 px-1 py-1 text-center w-24 ${
+                      className={`border border-gray-300 px-0.5 py-1 text-center w-10 ${
                         isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
                       }`}
                     >
@@ -274,7 +274,7 @@ function PickupPageInner() {
                               )}
                             </td>
                           )}
-                          <td className="sticky left-28 bg-white border border-gray-300 px-2 py-1 text-center whitespace-nowrap text-xs text-gray-500 z-10">
+                          <td className="sticky left-28 bg-white border border-gray-300 px-1 py-1 text-center whitespace-nowrap text-xs text-gray-500 z-10">
                             {field === "arrival" ? "登園" : "降園"}
                           </td>
                           {dayNumbers.map((day) => {
