@@ -68,6 +68,34 @@ function parseBulkNamesTwoLine(text: string): { nameKanji: string; nameEnglish: 
   return result;
 }
 
+/** Normalizes one 生年月日 line to "YYYY-MM-DD". Accepts /, -, or . as the
+ *  separator and single- or double-digit month/day (e.g. "2020/4/8" as well
+ *  as "2020-04-08"). Returns "" if the line is blank or unrecognized. */
+function normalizeBirthDate(raw: string): string {
+  const m = raw.trim().match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
+  if (!m) return "";
+  const [, y, mo, d] = m;
+  const month = Number(mo);
+  const day = Number(d);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  return `${y}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * Splits the optional 生年月日 textarea into one raw line per row, meant to
+ * line up 1:1 with the name list above it (e.g. pasting the "生年月日"
+ * column straight out of an external roster, same row order). Deliberately
+ * keeps blank lines in the MIDDLE as-is -- a specific row with no birth
+ * date on file -- rather than filtering them out and shifting every
+ * following row out of alignment; only a trailing blank line or two (a
+ * common paste artifact) gets dropped.
+ */
+function splitBulkBirthDateLines(text: string): string[] {
+  const rawLines = text.split("\n").map((l) => l.trim());
+  while (rawLines.length && rawLines[rawLines.length - 1] === "") rawLines.pop();
+  return rawLines;
+}
+
 /** Free, no-API-key map preview embed (OpenStreetMap's official iframe export). */
 function osmEmbedUrl(lat: number, lng: number): string {
   const delta = 0.004; // roughly a few hundred meters of context around the pin
@@ -99,6 +127,11 @@ export default function StudentsPage() {
   // For pasting a "名前" column where each cell has kanji+romaji on 2 lines
   // (e.g. the school's own roster spreadsheet) -- see parseBulkNamesTwoLine.
   const [bulkTwoLineMode, setBulkTwoLineMode] = useState(true);
+  // Optional 生年月日 column, pasted separately (it's a non-adjacent column
+  // in most rosters) -- one line per student, same row order as bulkText.
+  // Also drives the batch's initial display order (oldest first) -- see
+  // addStudentsBulk().
+  const [bulkBirthDatesText, setBulkBirthDatesText] = useState("");
   const [saving, setSaving] = useState(false);
 
   const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
@@ -122,6 +155,7 @@ export default function StudentsPage() {
     nameKanji: string;
     nameEnglish: string;
     nameHiragana: string;
+    birthDate: string;
   } | null>(null);
   const [editNameSaving, setEditNameSaving] = useState(false);
   const [editNameError, setEditNameError] = useState<string | null>(null);
@@ -428,6 +462,7 @@ export default function StudentsPage() {
           check3: false,
           sortOrder: 0,
           nameHiragana: "",
+          birthDate: "",
         };
         await setTransportMode(created, addTransportChoice);
       }
@@ -443,10 +478,30 @@ export default function StudentsPage() {
     }
   }
 
-  const bulkParsed = bulkTwoLineMode ? parseBulkNamesTwoLine(bulkText) : parseBulkNames(bulkText);
+  const bulkNames = bulkTwoLineMode ? parseBulkNamesTwoLine(bulkText) : parseBulkNames(bulkText);
+  // Optional -- an empty textarea means "no birth dates for this batch",
+  // same as before this existed. Once anything is pasted there, every row
+  // must line up with a valid date before 追加 is allowed (see
+  // canSubmitBulk below), so a bad paste is caught here rather than after.
+  const birthDatesProvided = bulkBirthDatesText.trim().length > 0;
+  const bulkBirthDateRawLines = birthDatesProvided
+    ? splitBulkBirthDateLines(bulkBirthDatesText)
+    : [];
+  const bulkParsed = bulkNames.map((n, i) => {
+    const raw = bulkBirthDateRawLines[i] ?? "";
+    return { ...n, birthDate: normalizeBirthDate(raw), birthDateRaw: raw };
+  });
+  const birthDateCountMismatch =
+    birthDatesProvided && bulkBirthDateRawLines.length !== bulkNames.length;
+  const birthDateProblemCount = birthDatesProvided
+    ? bulkParsed.filter((p) => !p.birthDate).length
+    : 0;
+  const canSubmitBulk =
+    bulkParsed.length > 0 &&
+    !(birthDatesProvided && (birthDateCountMismatch || birthDateProblemCount > 0));
 
   async function handleAddBulk() {
-    if (!selectedClass || bulkParsed.length === 0) return;
+    if (!selectedClass || !canSubmitBulk) return;
 
     setSaving(true);
     setError(null);
@@ -454,10 +509,18 @@ export default function StudentsPage() {
       const res = await fetch("/api/students/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ className: selectedClass, students: bulkParsed }),
+        body: JSON.stringify({
+          className: selectedClass,
+          students: bulkParsed.map(({ nameKanji, nameEnglish, birthDate }) => ({
+            nameKanji,
+            nameEnglish,
+            birthDate,
+          })),
+        }),
       });
       if (!res.ok) throw new Error("failed");
       setBulkText("");
+      setBulkBirthDatesText("");
       await loadStudents(selectedClass);
     } catch {
       setError("一括追加に失敗しました / Failed to bulk-add students");
@@ -472,6 +535,7 @@ export default function StudentsPage() {
       nameKanji: student.nameKanji,
       nameEnglish: student.nameEnglish,
       nameHiragana: student.nameHiragana,
+      birthDate: student.birthDate,
     });
     setEditNameError(null);
   }
@@ -489,6 +553,7 @@ export default function StudentsPage() {
           nameKanji: editNameModal.nameKanji.trim(),
           nameEnglish: editNameModal.nameEnglish.trim(),
           nameHiragana: editNameModal.nameHiragana.trim(),
+          birthDate: editNameModal.birthDate,
         }),
       });
       if (!res.ok) throw new Error("failed");
@@ -500,6 +565,7 @@ export default function StudentsPage() {
                 nameKanji: editNameModal.nameKanji.trim(),
                 nameEnglish: editNameModal.nameEnglish.trim(),
                 nameHiragana: editNameModal.nameHiragana.trim(),
+                birthDate: editNameModal.birthDate,
               }
             : s
         )
@@ -1094,6 +1160,41 @@ export default function StudentsPage() {
               />
             </label>
 
+            <label className="flex flex-col gap-1 text-sm">
+              生年月日（任意・1行1人、上の名前と同じ順番で貼り付け）
+              <span className="text-xs font-normal text-gray-500">
+                Birth dates (optional) — one per line, same row order as the names above.
+                Paste the "生年月日" column from an existing roster — it also sets the
+                initial order (oldest first), so ↑↓ reordering usually isn't needed after
+              </span>
+              <textarea
+                value={bulkBirthDatesText}
+                onChange={(e) => setBulkBirthDatesText(e.target.value)}
+                rows={4}
+                placeholder={"2020/04/08\n2020/4/14\n2020/4/28"}
+                className="border rounded px-3 py-2 font-mono text-sm"
+              />
+            </label>
+            {birthDateCountMismatch && (
+              <p className="text-xs text-red-600">
+                ⚠️ 生年月日の行数（{bulkBirthDateRawLines.length}）が名前の人数（
+                {bulkNames.length}）と合いません
+                <span className="block">
+                  Birth date line count ({bulkBirthDateRawLines.length}) doesn&apos;t match the
+                  number of names ({bulkNames.length})
+                </span>
+              </p>
+            )}
+            {!birthDateCountMismatch && birthDateProblemCount > 0 && (
+              <p className="text-xs text-red-600">
+                ⚠️ 読み取れない生年月日が{birthDateProblemCount}件あります（下のプレビューで確認）
+                <span className="block">
+                  {birthDateProblemCount} birth date(s) couldn&apos;t be read — check the preview
+                  below
+                </span>
+              </p>
+            )}
+
             {bulkParsed.length > 0 && (
               <div className="border rounded-lg p-2 max-h-40 overflow-y-auto">
                 <p className="text-xs font-semibold text-gray-500 mb-1">
@@ -1104,6 +1205,11 @@ export default function StudentsPage() {
                     <li key={i} className="py-1 flex justify-between gap-2">
                       <span>{p.nameKanji}</span>
                       <span className="text-gray-400">{p.nameEnglish || "—"}</span>
+                      {birthDatesProvided && (
+                        <span className={p.birthDate ? "text-gray-400" : "text-red-600 font-semibold"}>
+                          {p.birthDate || (p.birthDateRaw ? `⚠️ "${p.birthDateRaw}"` : "⚠️ 未入力")}
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1116,7 +1222,7 @@ export default function StudentsPage() {
             <button
               type="button"
               onClick={handleAddBulk}
-              disabled={saving || bulkParsed.length === 0}
+              disabled={saving || !canSubmitBulk}
               className="rounded-full bg-green-600 text-white py-2 disabled:opacity-40"
             >
               {saving
@@ -1241,6 +1347,9 @@ export default function StudentsPage() {
                   )}
                   {s.nameHiragana && (
                     <span className="text-xs text-gray-400 block">{s.nameHiragana}</span>
+                  )}
+                  {s.birthDate && (
+                    <span className="text-[10px] text-gray-400 block">🎂 {s.birthDate}</span>
                   )}
                   {transportByStudent[s.studentId] === "self" ? (
                     <p className="text-[10px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
@@ -2049,6 +2158,18 @@ export default function StudentsPage() {
                 value={editNameModal.nameHiragana}
                 onChange={(e) =>
                   setEditNameModal({ ...editNameModal, nameHiragana: e.target.value })
+                }
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              生年月日（任意）
+              <span className="text-xs font-normal text-gray-500">Birth date (optional)</span>
+              <input
+                type="date"
+                value={editNameModal.birthDate}
+                onChange={(e) =>
+                  setEditNameModal({ ...editNameModal, birthDate: e.target.value })
                 }
                 className="border border-gray-300 rounded-lg px-3 py-2"
               />

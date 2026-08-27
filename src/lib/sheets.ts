@@ -94,6 +94,9 @@ export type Student = {
    * two name fields.
    */
   nameHiragana: string;
+  /** "YYYY-MM-DD", "" if not recorded. Drives the default (oldest-first)
+   *  sort order for a bulk-imported batch -- see addStudentsBulk. */
+  birthDate: string;
 };
 
 /** Parses column J (sort_order); blank/non-numeric rows sort after every
@@ -161,7 +164,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:K",
+    range: "Students!A2:L",
   });
 
   const rows = res.data.values ?? [];
@@ -180,6 +183,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
         check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
         sortOrder: parseSortOrder(row[9]),
         nameHiragana: row[10] ?? "",
+        birthDate: row[11] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className && s.active)
   );
@@ -194,7 +198,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:K",
+    range: "Students!A2:L",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -211,6 +215,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
         check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
         sortOrder: parseSortOrder(row[9]),
         nameHiragana: row[10] ?? "",
+        birthDate: row[11] ?? "",
       }))
       .filter((s) => s.studentId && s.active && s.className.startsWith(branch))
   );
@@ -271,7 +276,7 @@ function deriveNameHiragana(nameKanji: string, nameEnglish: string): string {
 
 /** Append a new student row to the Students sheet. nameHiragana is
  *  auto-filled -- a best-effort starting point the operator can correct
- *  via the name-edit screen. */
+ *  via the name-edit screen. birthDate is optional ("" if not given). */
 export async function addStudent(
   student: Omit<
     Student,
@@ -284,7 +289,7 @@ export async function addStudent(
   const nameEnglish = stripStrayQuotes(student.nameEnglish);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:K",
+    range: "Students!A:L",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -300,6 +305,7 @@ export async function addStudent(
           "FALSE",
           String(nextOrder),
           deriveNameHiragana(nameKanji, nameEnglish),
+          student.birthDate ?? "",
         ],
       ],
     },
@@ -310,6 +316,15 @@ export async function addStudent(
  * Append many new student rows in a single request — used by the bulk
  * "paste one name per line" add tool so registering a whole new intake
  * doesn't mean N separate round trips (and N chances to hit quota).
+ *
+ * When EVERY student in the batch has a birthDate, the batch is sorted
+ * oldest-first (ascending birthDate, matching how Japanese preschools
+ * already line kids up -- an April birthday is the "oldest" within a
+ * April-start school year) before sort_order is assigned, so a bulk
+ * import from an existing birthdate-sorted roster lands in the right
+ * order immediately instead of needing manual ↑↓ afterward. If even one
+ * student is missing a birthDate, the batch keeps whatever order it was
+ * passed in (paste order), same as before this existed.
  */
 export async function addStudentsBulk(
   students: Omit<
@@ -320,12 +335,18 @@ export async function addStudentsBulk(
   if (students.length === 0) return;
   const sheets = getSheetsClient();
   const orders = await getNextSortOrders(sheets, students.length);
+
+  const allHaveBirthDates = students.every((s) => (s.birthDate ?? "").trim());
+  const ordered = allHaveBirthDates
+    ? [...students].sort((a, b) => (a.birthDate ?? "").localeCompare(b.birthDate ?? ""))
+    : students;
+
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:K",
+    range: "Students!A:L",
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: students.map((s, i) => {
+      values: ordered.map((s, i) => {
         const nameKanji = stripStrayQuotes(s.nameKanji);
         const nameEnglish = stripStrayQuotes(s.nameEnglish);
         return [
@@ -340,6 +361,7 @@ export async function addStudentsBulk(
           "FALSE",
           String(orders[i]),
           deriveNameHiragana(nameKanji, nameEnglish),
+          s.birthDate ?? "",
         ];
       }),
     },
@@ -354,7 +376,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:K",
+    range: "Students!A2:L",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -371,6 +393,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
         check3: (row[8] ?? "").toString().toUpperCase() === "TRUE",
         sortOrder: parseSortOrder(row[9]),
         nameHiragana: row[10] ?? "",
+        birthDate: row[11] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className)
   );
@@ -390,16 +413,19 @@ async function findStudentRowNumber(
 }
 
 /**
- * Corrects a student's name in place -- every page reads nameKanji/
- * nameEnglish/nameHiragana live from this same row, so this is the one
- * place a fix needs to happen for it to show up everywhere (Dashboard,
- * 出席確認, 年間まとめ, 送迎管理, etc.).
+ * Corrects a student's name (and birth date) in place -- every page reads
+ * nameKanji/nameEnglish/nameHiragana/birthDate live from this same row, so
+ * this is the one place a fix needs to happen for it to show up everywhere
+ * (Dashboard, 出席確認, 年間まとめ, 送迎管理, etc.). Doesn't touch
+ * sort_order -- correcting a birth date after the fact doesn't retroactively
+ * reshuffle the roster; use the roster page's own 並び替え for that.
  */
 export async function updateStudentName(
   studentId: string,
   nameKanji: string,
   nameEnglish: string,
-  nameHiragana: string
+  nameHiragana: string,
+  birthDate: string
 ): Promise<void> {
   const sheets = getSheetsClient();
   const rowNum = await findStudentRowNumber(sheets, studentId);
@@ -417,6 +443,10 @@ export async function updateStudentName(
         {
           range: `Students!K${rowNum}`,
           values: [[stripStrayQuotes(nameHiragana)]],
+        },
+        {
+          range: `Students!L${rowNum}`,
+          values: [[birthDate]],
         },
       ],
     },

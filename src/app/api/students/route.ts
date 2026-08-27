@@ -13,6 +13,7 @@ import {
 import { randomUUID } from "crypto";
 
 const CHECK_COLUMNS: CheckColumn[] = ["check1", "check2", "check3"];
+const BIRTH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // GET /api/students?class=プロンポン　年長[&includeInactive=true]
 export async function GET(req: NextRequest) {
@@ -40,14 +41,21 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/students  { nameKanji, nameEnglish, className }
+// POST /api/students  { nameKanji, nameEnglish, className, birthDate? }
+// birthDate, if given, must be "YYYY-MM-DD".
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { nameKanji, nameEnglish, className } = body ?? {};
+  const { nameKanji, nameEnglish, className, birthDate } = body ?? {};
 
   if (!nameKanji || !className) {
     return NextResponse.json(
       { error: "Missing nameKanji or className" },
+      { status: 400 }
+    );
+  }
+  if (birthDate && !BIRTH_DATE_RE.test(birthDate)) {
+    return NextResponse.json(
+      { error: "birthDate must be YYYY-MM-DD" },
       { status: 400 }
     );
   }
@@ -59,6 +67,7 @@ export async function POST(req: NextRequest) {
       nameKanji,
       nameEnglish: nameEnglish ?? "",
       className,
+      birthDate: birthDate ?? "",
     });
     return NextResponse.json({ studentId });
   } catch (err) {
@@ -72,9 +81,10 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/students  { studentId, remark? } or { studentId, column, value }
 // or { studentId, active } to withdraw/graduate (false) or restore (true)
-// or { studentId, nameKanji, nameEnglish?, nameHiragana? } to correct a
-// student's name -- takes effect everywhere the name is shown, since it's
-// all read live from this same row.
+// or { studentId, nameKanji, nameEnglish?, nameHiragana?, birthDate? } to
+// correct a student's name/birth date -- takes effect everywhere it's
+// shown, since it's all read live from this same row. birthDate, if given
+// and non-empty, must be "YYYY-MM-DD"; pass "" to clear it.
 // or { studentId, moveToClassName } to transfer a student to a different
 // class -- see updateStudentClass() for exactly what this does and doesn't
 // touch (historical records stay put; StudentLocations/Transport/PickupLog
@@ -93,6 +103,7 @@ export async function PATCH(req: NextRequest) {
     nameKanji,
     nameEnglish,
     nameHiragana,
+    birthDate,
     moveToClassName,
   } = body ?? {};
 
@@ -113,11 +124,16 @@ export async function PATCH(req: NextRequest) {
       if (!nameKanji.trim()) {
         return NextResponse.json({ error: "nameKanji cannot be empty" }, { status: 400 });
       }
+      const trimmedBirthDate = (birthDate ?? "").trim();
+      if (trimmedBirthDate && !BIRTH_DATE_RE.test(trimmedBirthDate)) {
+        return NextResponse.json({ error: "birthDate must be YYYY-MM-DD" }, { status: 400 });
+      }
       await updateStudentName(
         studentId,
         nameKanji.trim(),
         (nameEnglish ?? "").trim(),
-        (nameHiragana ?? "").trim()
+        (nameHiragana ?? "").trim(),
+        trimmedBirthDate
       );
       return NextResponse.json({ ok: true });
     }
