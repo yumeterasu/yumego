@@ -254,7 +254,17 @@ function PickupPageInner() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2 print:hidden">
+        <div className="flex items-center gap-2 flex-wrap print:hidden">
+          {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
+            <button
+              type="button"
+              onClick={openCheckin}
+              className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
+            >
+              ✅ 登園確認
+              <span className="block text-[10px] font-normal opacity-70">Arrival check-in</span>
+            </button>
+          )}
           <Link
             href="/select-class"
             className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
@@ -262,15 +272,6 @@ function PickupPageInner() {
           >
             🏠
           </Link>
-          {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
-            <button
-              type="button"
-              onClick={openCheckin}
-              className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold shrink-0"
-            >
-              ✅ 登園確認
-            </button>
-          )}
           <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
           <button
             onClick={() => window.print()}
