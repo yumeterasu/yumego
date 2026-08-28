@@ -2841,9 +2841,27 @@ export async function getBusPatternsForRange(
 
 /** Convenience wrapper for a single month ("YYYY-MM"). */
 export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  return getBusPatternsForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`);
+  // Deliberately NOT getBusPatternsForRange(monthStart, monthEnd) -- that
+  // uses the inclusive getBusWeekBucketsForRange, which would show a
+  // shared boundary week under both adjacent months' GETs even though
+  // setBusPatternForMonths (the write side) only lets ONE of them
+  // actually touch it. Going through getBusWeekBucketsForMonth instead
+  // keeps read and write looking at the exact same (exclusive) week set.
+  const weekStarts = new Set(getBusWeekBucketsForMonth(yearMonth).map((b) => b.weekStart));
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusPattern!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): StudentBusPattern => ({
+      studentId: (row[0] ?? "").toString(),
+      weekStart: (row[1] ?? "").toString(),
+      arrivalMode: parseBusLegMode(row[2]),
+      departureMode: parseBusLegMode(row[3]),
+    }))
+    .filter((p) => p.studentId && weekStarts.has(p.weekStart));
 }
 
 /** Every recorded (non-default) week for one student, oldest first --
