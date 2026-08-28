@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getBusPatternsForWeek,
+  getBusPatternsForMonth,
   getBusPatternHistory,
   setBusPattern,
   BusLegMode,
@@ -8,14 +9,17 @@ import {
 
 const VALID_LEG_MODES: BusLegMode[] = ["bus", "self"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const YEAR_MONTH_RE = /^\d{4}-\d{2}$/;
 
-// GET /api/students/bus-pattern?week=YYYY-MM-DD -> { patterns } (every
-// recorded exception for that school week (Monday date), across all
-// students -- same all-students-then-filter-by-studentId shape as the old
-// /api/students/transport)
+// GET /api/students/bus-pattern?month=YYYY-MM -> { patterns } (every
+// recorded exception across every school week overlapping that month, so
+// バス・送迎設定 can show the whole month's weeks at once)
+// GET /api/students/bus-pattern?week=YYYY-MM-DD -> { patterns } (just one
+// school week, by its Monday date)
 // GET /api/students/bus-pattern?studentId=... -> { history } (every
 // recorded week for that one student, oldest first)
 export async function GET(req: NextRequest) {
+  const month = req.nextUrl.searchParams.get("month");
   const week = req.nextUrl.searchParams.get("week");
   const studentId = req.nextUrl.searchParams.get("studentId");
 
@@ -24,9 +28,16 @@ export async function GET(req: NextRequest) {
       const history = await getBusPatternHistory(studentId);
       return NextResponse.json({ history });
     }
+    if (month) {
+      if (!YEAR_MONTH_RE.test(month)) {
+        return NextResponse.json({ error: "Invalid month (expected YYYY-MM)" }, { status: 400 });
+      }
+      const patterns = await getBusPatternsForMonth(month);
+      return NextResponse.json({ patterns });
+    }
     if (!week || !DATE_RE.test(week)) {
       return NextResponse.json(
-        { error: "Missing or invalid 'week' (expected YYYY-MM-DD, the Monday) or 'studentId'" },
+        { error: "Missing or invalid 'month'/'week'/'studentId'" },
         { status: 400 }
       );
     }

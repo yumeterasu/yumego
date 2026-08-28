@@ -2781,6 +2781,28 @@ export async function getBusPatternsForWeek(weekStart: string): Promise<StudentB
     .filter((p) => p.studentId && p.weekStart === weekStart);
 }
 
+/** Every recorded (non-default) pattern for every school week that
+ *  overlaps this month, across all students -- powers バス・送迎設定's
+ *  "every week of the month at once" view (one sheet read, filtered down
+ *  to just the weekStarts that fall in this month per getBusWeekBucketsForMonth). */
+export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
+  const weekStarts = new Set(getBusWeekBucketsForMonth(yearMonth).map((b) => b.weekStart));
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusPattern!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): StudentBusPattern => ({
+      studentId: (row[0] ?? "").toString(),
+      weekStart: (row[1] ?? "").toString(),
+      arrivalMode: parseBusLegMode(row[2]),
+      departureMode: parseBusLegMode(row[3]),
+    }))
+    .filter((p) => p.studentId && weekStarts.has(p.weekStart));
+}
+
 /** Every recorded (non-default) week for one student, oldest first --
  *  the week-by-week history view (defaults/unset weeks aren't included,
  *  since they're implicitly 来:自分／帰:自分, no bus). */
