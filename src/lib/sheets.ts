@@ -1874,6 +1874,62 @@ export async function upsertPickupRecord(
   });
 }
 
+/**
+ * Marks the SAME field "TRUE" for many students on one date in one batched
+ * write -- backs 送迎管理's "本日は全員登園" bulk button (default everyone
+ * present for today, tap individual absentees off afterward via the
+ * regular per-cell toggle, same as any other day). Existing rows are
+ * updated in place; a student with no PickupLog row yet for this date
+ * gets one appended (their other field starts blank).
+ */
+export async function bulkSetPickupField(
+  date: string,
+  studentIds: string[],
+  field: "arrival" | "departure"
+): Promise<void> {
+  if (studentIds.length === 0) return;
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "PickupLog!A2:D",
+  });
+  const rows = existing.data.values ?? [];
+  const rowNumByKey = new Map<string, number>();
+  rows.forEach((row, i) => {
+    rowNumByKey.set(`${row[0] ?? ""}|${row[1] ?? ""}`, i + 2);
+  });
+
+  const colLetter = field === "arrival" ? "C" : "D";
+  const updates: { range: string; values: string[][] }[] = [];
+  const appends: string[][] = [];
+
+  for (const studentId of studentIds) {
+    const rowNum = rowNumByKey.get(`${date}|${studentId}`);
+    if (rowNum !== undefined) {
+      updates.push({ range: `PickupLog!${colLetter}${rowNum}`, values: [["TRUE"]] });
+    } else {
+      appends.push(
+        field === "arrival" ? [date, studentId, "TRUE", ""] : [date, studentId, "", "TRUE"]
+      );
+    }
+  }
+
+  if (updates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: "RAW", data: updates },
+    });
+  }
+  if (appends.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "PickupLog!A:D",
+      valueInputOption: "RAW",
+      requestBody: { values: appends },
+    });
+  }
+}
+
 // カレンダー管理 — school-wide holiday master list (date + optional label,
 // e.g. "Songkran"), viewed all 12 months of a fiscal year at once. Every
 // class's own calendar shows these as its default, but can independently

@@ -56,8 +56,11 @@ function PickupPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [checkinAllSaving, setCheckinAllSaving] = useState(false);
 
   const yearMonth = `${year}-${pad2(month)}`;
+  const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  const isViewingCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
 
   const load = useCallback(async () => {
     if (!branch) return;
@@ -154,6 +157,51 @@ function PickupPageInner() {
     }
   }
 
+  // 本日は全員登園 — default everyone present for today; tap individual
+  // absentees off afterward via the normal per-cell toggle above, same as
+  // any other day. One batched write for the whole branch roster instead
+  // of tapping in each present student one at a time.
+  async function handleCheckInAllToday() {
+    if (
+      !window.confirm(
+        "本日、全員を登園済みにします。すでに外したチェックがあれば上書きされます。よろしいですか？\n\nMark everyone as arrived today. Any already-unchecked students will be overwritten back to present. Continue?"
+      )
+    ) {
+      return;
+    }
+    setCheckinAllSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: todayStr, studentIds: students.map((s) => s.studentId) }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setDrafts((prev) => {
+        const next = { ...prev };
+        for (const s of students) {
+          next[`${cellKey(s.studentId, todayStr)}|arrival`] = "TRUE";
+        }
+        return next;
+      });
+      for (const s of students) {
+        const key = cellKey(s.studentId, todayStr);
+        const saved = savedRef.current.get(key);
+        savedRef.current.set(key, {
+          date: todayStr,
+          studentId: s.studentId,
+          arrivalTime: "TRUE",
+          departureTime: saved?.departureTime ?? "",
+        });
+      }
+    } catch {
+      setError("一括登園の保存に失敗しました / Failed to check everyone in");
+    } finally {
+      setCheckinAllSaving(false);
+    }
+  }
+
   if (!branch) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
@@ -237,6 +285,21 @@ function PickupPageInner() {
       <p className="text-lg font-bold text-center hidden print:block">
         {year}年{month}月
       </p>
+
+      {isViewingCurrentMonth && students.length > 0 && (
+        <div className="flex justify-center print:hidden">
+          <button
+            type="button"
+            onClick={handleCheckInAllToday}
+            disabled={checkinAllSaving}
+            className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+          >
+            {checkinAllSaving
+              ? "保存中... / Saving..."
+              : "✅ 本日は全員登園にする / Mark everyone as arrived today"}
+          </button>
+        </div>
+      )}
 
       {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
