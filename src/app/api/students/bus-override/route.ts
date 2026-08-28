@@ -1,19 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBusOverridesForMonth, setBusOverride, clearBusOverride, BusLegMode } from "@/lib/sheets";
+import {
+  getBusOverridesForMonth,
+  getBusOverridesForRange,
+  setBusOverride,
+  clearBusOverride,
+  BusLegMode,
+} from "@/lib/sheets";
 
 const VALID_LEG_MODES: BusLegMode[] = ["bus", "self"];
 const YEAR_MONTH_RE = /^\d{4}-\d{2}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// GET /api/students/bus-override?month=YYYY-MM -> { overrides }
-// Every one-off single-day exception falling in that month, across all
-// students -- layered on top of that day's school-week 週次バスパターン.
+// GET /api/students/bus-override?start=YYYY-MM-DD&end=YYYY-MM-DD ->
+// { overrides } (every one-off single-day exception in that date range,
+// so バス・送迎設定 can show a whole term's exceptions at once)
+// GET /api/students/bus-override?month=YYYY-MM -> { overrides } (same,
+// for just one month) -- layered on top of that day's school-week
+// 週次バスパターン either way.
 export async function GET(req: NextRequest) {
+  const start = req.nextUrl.searchParams.get("start");
+  const end = req.nextUrl.searchParams.get("end");
   const month = req.nextUrl.searchParams.get("month");
-  if (!month || !YEAR_MONTH_RE.test(month)) {
-    return NextResponse.json({ error: "Missing or invalid 'month' (expected YYYY-MM)" }, { status: 400 });
-  }
+
   try {
+    if (start || end) {
+      if (!start || !DATE_RE.test(start) || !end || !DATE_RE.test(end)) {
+        return NextResponse.json(
+          { error: "Invalid start/end (expected YYYY-MM-DD)" },
+          { status: 400 }
+        );
+      }
+      const overrides = await getBusOverridesForRange(start, end);
+      return NextResponse.json({ overrides });
+    }
+    if (!month || !YEAR_MONTH_RE.test(month)) {
+      return NextResponse.json(
+        { error: "Missing or invalid 'start'/'end' or 'month' (expected YYYY-MM)" },
+        { status: 400 }
+      );
+    }
     const overrides = await getBusOverridesForMonth(month);
     return NextResponse.json({ overrides });
   } catch (err) {

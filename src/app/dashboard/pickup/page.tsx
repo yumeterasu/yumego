@@ -19,26 +19,36 @@ function weekStartForDate(dateStr: string): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
-/** Buckets every weekday of a month into its school weeks (Mon-Fri) --
- *  mirrors getBusWeekBucketsForMonth() in src/lib/sheets.ts. */
-function getBusWeekBucketsForMonth(yearMonth: string): BusWeekBucket[] {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const numDays = daysInMonth(y, m);
+/** Buckets every weekday in [startDate, endDate] into its school weeks
+ *  (Mon-Fri) -- mirrors getBusWeekBucketsForRange() in src/lib/sheets.ts.
+ *  A week whose Mon-Fri span crosses a month boundary becomes a single
+ *  bucket covering both months (no per-month splitting/duplication), so
+ *  this is safe to call across a whole term at once. */
+function getBusWeekBucketsForRange(startDate: string, endDate: string): BusWeekBucket[] {
   const buckets = new Map<string, string[]>();
-  for (let day = 1; day <= numDays; day++) {
-    const dow = new Date(y, m - 1, day).getDay();
-    if (dow === 0 || dow === 6) continue;
-    const dateStr = `${y}-${pad2(m)}-${pad2(day)}`;
-    const weekStart = weekStartForDate(dateStr);
-    if (!buckets.has(weekStart)) buckets.set(weekStart, []);
-    buckets.get(weekStart)!.push(dateStr);
+  const cur = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) {
+      const dateStr = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+      const weekStart = weekStartForDate(dateStr);
+      if (!buckets.has(weekStart)) buckets.set(weekStart, []);
+      buckets.get(weekStart)!.push(dateStr);
+    }
+    cur.setDate(cur.getDate() + 1);
   }
   return Array.from(buckets.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([weekStart, days]) => {
-      const first = Number(days[0].slice(-2));
-      const last = Number(days[days.length - 1].slice(-2));
-      const label = first === last ? `${first}` : `${first}-${last}`;
+      const first = days[0];
+      const last = days[days.length - 1];
+      const fm = Number(first.slice(5, 7));
+      const fd = Number(first.slice(8, 10));
+      const lm = Number(last.slice(5, 7));
+      const ld = Number(last.slice(8, 10));
+      const label =
+        fm === lm ? (fd === ld ? `${fd}` : `${fd}-${ld}`) : `${fm}/${fd}-${lm}/${ld}`;
       return { weekStart, days, label };
     });
 }
@@ -49,6 +59,30 @@ const BUS_MODE_OPTIONS: { value: string; label: string }[] = [
   { value: "bus_self", label: "🚌→🚗 帰り自分" },
   { value: "self_bus", label: "🚗→🚌 行き自分" },
 ];
+
+// 学期 (school term) -- バス・送迎設定 pages by term, not by single month,
+// since a bus/pickup pattern rarely changes mid-term and staff want to see
+// a whole term's weeks together. Matches the Japanese school year exactly
+// (see 祝日カレンダー（マスター）'s own FISCAL_MONTHS, same April-start
+// convention).
+const BUS_TERMS: { months: number[] }[] = [
+  { months: [4, 5, 6, 7, 8] },
+  { months: [9, 10, 11, 12] },
+  { months: [1, 2, 3] },
+];
+
+function defaultFiscalYearStart(): number {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  return m >= 4 ? y : y - 1;
+}
+
+function busTermIndexForMonth(m: number): number {
+  if (m >= 4 && m <= 8) return 0;
+  if (m >= 9 && m <= 12) return 1;
+  return 2;
+}
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 // Display order for grouping the roster — 小学生 last, matching how it
@@ -122,13 +156,15 @@ function PickupPageInner() {
   // バス・送迎設定 — 通学方法 lives here now, not on 生徒管理, since in
   // practice it turned out to change week to week (sometimes month to
   // month) per student rather than being a fixed thing set once at
-  // registration. Every school week of the viewed month is shown at once
-  // (busPatternsByWeek, keyed by weekStart then studentId) rather than
-  // picking one week at a time; one-off single-day overrides
-  // (busOverridesByStudent) are scoped to the whole viewed month too, and
-  // rendered under whichever week block their date falls in.
+  // registration. Paged by 学期 (school term: 4-8月/9-12月/1-3月) rather
+  // than by the main day-grid's single-month nav, since a bus/pickup
+  // pattern rarely changes mid-term and staff want a whole term's weeks
+  // visible together -- has its own independent year/term state below,
+  // separate from the main grid's year/month.
   const [showBusSettings, setShowBusSettings] = useState(false);
   const [busSettingsLoading, setBusSettingsLoading] = useState(false);
+  const [busTermFiscalYear, setBusTermFiscalYear] = useState(defaultFiscalYearStart);
+  const [busTermIndex, setBusTermIndex] = useState(() => busTermIndexForMonth(now.getMonth() + 1));
   const [busPatternsByWeek, setBusPatternsByWeek] = useState<
     Record<string, Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }>>
   >({});
@@ -185,23 +221,52 @@ function PickupPageInner() {
     load();
   }, [load]);
 
-  // Every school week overlapping the viewed month, in order -- the
-  // バス・送迎設定 screen renders one section per bucket, all at once.
-  const weekBuckets = getBusWeekBucketsForMonth(yearMonth);
+  // バス・送迎設定's own term (学期) navigation -- 4-8月/9-12月/1-3月,
+  // independent of the main grid's year/month above.
+  const busTermMonths = BUS_TERMS[busTermIndex].months;
+  const busTermMonthYears = busTermMonths.map((m) => ({
+    year: m >= 4 ? busTermFiscalYear : busTermFiscalYear + 1,
+    month: m,
+  }));
+  const busTermStartDate = `${busTermMonthYears[0].year}-${pad2(busTermMonthYears[0].month)}-01`;
+  const busTermLastMY = busTermMonthYears[busTermMonthYears.length - 1];
+  const busTermEndDate = `${busTermLastMY.year}-${pad2(busTermLastMY.month)}-${pad2(daysInMonth(busTermLastMY.year, busTermLastMY.month))}`;
+  const busTermLabel = `${busTermFiscalYear}年度 ${busTermMonths[0]}-${busTermMonths[busTermMonths.length - 1]}月`;
+
+  function goPrevBusTerm() {
+    if (busTermIndex === 0) {
+      setBusTermFiscalYear((y) => y - 1);
+      setBusTermIndex(2);
+    } else {
+      setBusTermIndex((i) => i - 1);
+    }
+  }
+  function goNextBusTerm() {
+    if (busTermIndex === 2) {
+      setBusTermFiscalYear((y) => y + 1);
+      setBusTermIndex(0);
+    } else {
+      setBusTermIndex((i) => i + 1);
+    }
+  }
+
+  // Every school week overlapping the viewed term, in order -- the
+  // バス・送迎設定 screen renders one column per bucket, all at once.
+  const weekBuckets = getBusWeekBucketsForRange(busTermStartDate, busTermEndDate);
 
   useEffect(() => {
     if (!showBusSettings) return;
     loadBusSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBusSettings, yearMonth]);
+  }, [showBusSettings, busTermFiscalYear, busTermIndex]);
 
   async function loadBusSettings() {
     setBusSettingsLoading(true);
     setError(null);
     try {
       const [patternRes, overrideRes, locationRes] = await Promise.all([
-        fetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
-        fetch(`/api/students/bus-override?month=${encodeURIComponent(yearMonth)}`),
+        fetch(`/api/students/bus-pattern?start=${busTermStartDate}&end=${busTermEndDate}`),
+        fetch(`/api/students/bus-override?start=${busTermStartDate}&end=${busTermEndDate}`),
         fetch("/api/students/location"),
       ]);
       if (patternRes.ok) {
@@ -280,7 +345,8 @@ function PickupPageInner() {
 
   function openOverrideForm(student: Student) {
     setOverrideFormFor(student.studentId);
-    const defaultDate = isViewingCurrentMonth ? todayStr : `${yearMonth}-01`;
+    const defaultDate =
+      todayStr >= busTermStartDate && todayStr <= busTermEndDate ? todayStr : busTermStartDate;
     setOverrideDate(defaultDate);
     const weekStart = weekStartForDate(defaultDate);
     const pattern = busPatternsByWeek[weekStart]?.[student.studentId];
@@ -565,28 +631,52 @@ function PickupPageInner() {
         </div>
       </div>
 
-      <div className="flex items-center justify-center gap-4 print:hidden">
-        <button
-          onClick={goPrevMonth}
-          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-          aria-label="前の月 / Previous month"
-        >
-          ◀
-        </button>
-        <p className="text-lg font-bold w-32 text-center">
-          {year}年{month}月
-        </p>
-        <button
-          onClick={goNextMonth}
-          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-          aria-label="次の月 / Next month"
-        >
-          ▶
-        </button>
-      </div>
-      <p className="text-lg font-bold text-center hidden print:block">
-        {year}年{month}月
-      </p>
+      {!showBusSettings && (
+        <>
+          <div className="flex items-center justify-center gap-4 print:hidden">
+            <button
+              onClick={goPrevMonth}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+              aria-label="前の月 / Previous month"
+            >
+              ◀
+            </button>
+            <p className="text-lg font-bold w-32 text-center">
+              {year}年{month}月
+            </p>
+            <button
+              onClick={goNextMonth}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+              aria-label="次の月 / Next month"
+            >
+              ▶
+            </button>
+          </div>
+          <p className="text-lg font-bold text-center hidden print:block">
+            {year}年{month}月
+          </p>
+        </>
+      )}
+
+      {showBusSettings && (
+        <div className="flex items-center justify-center gap-4 print:hidden">
+          <button
+            onClick={goPrevBusTerm}
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+            aria-label="前の学期 / Previous term"
+          >
+            ◀
+          </button>
+          <p className="text-lg font-bold w-40 text-center">{busTermLabel}</p>
+          <button
+            onClick={goNextBusTerm}
+            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+            aria-label="次の学期 / Next term"
+          >
+            ▶
+          </button>
+        </div>
+      )}
 
       {!showCheckin && !showBusSettings && students.length > 0 && (
         <div className="flex items-center justify-center gap-3 flex-wrap print:hidden">
@@ -596,7 +686,7 @@ function PickupPageInner() {
           >
             🚌 バス・送迎設定
             <span className="block text-[10px] font-normal opacity-70">
-              Bus/pickup settings for {yearMonth}
+              Bus/pickup settings, by term
             </span>
           </button>
           <button
@@ -624,9 +714,9 @@ function PickupPageInner() {
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
             <p className="text-sm text-gray-600">
-              {yearMonth} の通学方法（バス・送迎）を週ごとに設定します
+              {busTermLabel} の通学方法（バス・送迎）を週ごとに設定します
               <span className="block text-xs text-gray-400">
-                Set each student&apos;s bus/pickup pattern, week by week, for {yearMonth}
+                Set each student&apos;s bus/pickup pattern, week by week, for {busTermLabel}
               </span>
             </p>
             <button
@@ -644,22 +734,51 @@ function PickupPageInner() {
               <table className="text-sm border-collapse min-w-max w-full">
                 <thead>
                   <tr>
-                    <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-40">
+                    <th
+                      rowSpan={2}
+                      className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-40"
+                    >
                       氏名
                       <span className="block text-[9px] font-normal text-gray-400">Name</span>
                     </th>
+                    {(() => {
+                      // Merge consecutive week columns that fall under the
+                      // same month (a boundary week counts under its
+                      // Monday's month) into one spanning header cell.
+                      const groups: { label: string; count: number }[] = [];
+                      for (const b of weekBuckets) {
+                        const groupLabel = `${Number(b.weekStart.slice(5, 7))}月`;
+                        const last = groups[groups.length - 1];
+                        if (last && last.label === groupLabel) last.count++;
+                        else groups.push({ label: groupLabel, count: 1 });
+                      }
+                      return groups.map((g, i) => (
+                        <th
+                          key={i}
+                          colSpan={g.count}
+                          className="border border-gray-300 px-1 py-1 text-center bg-gray-200 text-xs font-semibold"
+                        >
+                          {g.label}
+                        </th>
+                      ));
+                    })()}
+                    <th
+                      rowSpan={2}
+                      className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-16"
+                    >
+                      特例
+                      <span className="block text-[9px] font-normal text-gray-400">Exception</span>
+                    </th>
+                  </tr>
+                  <tr>
                     {weekBuckets.map((b) => (
                       <th
                         key={b.weekStart}
                         className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-28"
                       >
-                        {month}/{b.label}
+                        {b.label}
                       </th>
                     ))}
-                    <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-16">
-                      特例
-                      <span className="block text-[9px] font-normal text-gray-400">Exception</span>
-                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -802,8 +921,8 @@ function PickupPageInner() {
                                       <input
                                         type="date"
                                         value={overrideDate}
-                                        min={`${yearMonth}-01`}
-                                        max={`${yearMonth}-${pad2(daysInMonth(year, month))}`}
+                                        min={busTermStartDate}
+                                        max={busTermEndDate}
                                         onChange={(e) => setOverrideDate(e.target.value)}
                                         className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
                                       />

@@ -2714,34 +2714,47 @@ export function weekStartForDate(dateStr: string): string {
 
 export type BusWeekBucket = { weekStart: string; days: string[]; label: string };
 
-/** Buckets every weekday of a given month ("YYYY-MM") into its school
- *  weeks (Mon-Fri), keyed by that week's Monday -- which may itself fall
- *  in the previous/next month for a week that spans a month boundary (the
- *  bucket only lists the days actually inside `yearMonth`, so a split
- *  week shows up as a shorter, partial bucket on each side, but both
- *  sides share the same weekStart key -- setting the pattern from either
- *  month's view edits the same underlying week). Used to render the week
- *  picker on バス・送迎設定. */
-export function getBusWeekBucketsForMonth(yearMonth: string): BusWeekBucket[] {
-  const [y, m] = yearMonth.split("-").map(Number);
-  const numDays = new Date(y, m, 0).getDate();
+/** Buckets every weekday in [startDate, endDate] into its school weeks
+ *  (Mon-Fri), keyed by that week's Monday. A week whose Mon-Fri span
+ *  crosses a month boundary becomes a single bucket covering both months
+ *  (its `days` just contains whichever weekdays fall in the range) --
+ *  safe to call across a whole term (see BUS_TERMS in the pickup page) or
+ *  even a single month without ever splitting or duplicating a week. Used
+ *  to render the week columns on バス・送迎設定. */
+export function getBusWeekBucketsForRange(startDate: string, endDate: string): BusWeekBucket[] {
   const buckets = new Map<string, string[]>();
-  for (let day = 1; day <= numDays; day++) {
-    const dow = new Date(y, m - 1, day).getDay();
-    if (dow === 0 || dow === 6) continue; // no school on weekends
-    const dateStr = `${y}-${pad2(m)}-${pad2(day)}`;
-    const weekStart = weekStartForDate(dateStr);
-    if (!buckets.has(weekStart)) buckets.set(weekStart, []);
-    buckets.get(weekStart)!.push(dateStr);
+  const cur = new Date(startDate + "T00:00:00");
+  const end = new Date(endDate + "T00:00:00");
+  while (cur <= end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) {
+      const dateStr = `${cur.getFullYear()}-${pad2(cur.getMonth() + 1)}-${pad2(cur.getDate())}`;
+      const weekStart = weekStartForDate(dateStr);
+      if (!buckets.has(weekStart)) buckets.set(weekStart, []);
+      buckets.get(weekStart)!.push(dateStr);
+    }
+    cur.setDate(cur.getDate() + 1);
   }
   return Array.from(buckets.entries())
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([weekStart, days]) => {
-      const first = Number(days[0].slice(-2));
-      const last = Number(days[days.length - 1].slice(-2));
-      const label = first === last ? `${first}` : `${first}-${last}`;
+      const first = days[0];
+      const last = days[days.length - 1];
+      const fm = Number(first.slice(5, 7));
+      const fd = Number(first.slice(8, 10));
+      const lm = Number(last.slice(5, 7));
+      const ld = Number(last.slice(8, 10));
+      const label =
+        fm === lm ? (fd === ld ? `${fd}` : `${fd}-${ld}`) : `${fm}/${fd}-${lm}/${ld}`;
       return { weekStart, days, label };
     });
+}
+
+/** Convenience wrapper for a single month ("YYYY-MM"). */
+export function getBusWeekBucketsForMonth(yearMonth: string): BusWeekBucket[] {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return getBusWeekBucketsForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`);
 }
 
 /** Every recorded (non-default, i.e. involves a bus leg) pattern for one
@@ -2764,11 +2777,14 @@ export async function getBusPatternsForWeek(weekStart: string): Promise<StudentB
 }
 
 /** Every recorded (non-default) pattern for every school week that
- *  overlaps this month, across all students -- powers バス・送迎設定's
- *  "every week of the month at once" view (one sheet read, filtered down
- *  to just the weekStarts that fall in this month per getBusWeekBucketsForMonth). */
-export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
-  const weekStarts = new Set(getBusWeekBucketsForMonth(yearMonth).map((b) => b.weekStart));
+ *  overlaps [startDate, endDate], across all students -- powers
+ *  バス・送迎設定's "every week of the term at once" view (one sheet
+ *  read, filtered down to just the weekStarts in range). */
+export async function getBusPatternsForRange(
+  startDate: string,
+  endDate: string
+): Promise<StudentBusPattern[]> {
+  const weekStarts = new Set(getBusWeekBucketsForRange(startDate, endDate).map((b) => b.weekStart));
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
@@ -2783,6 +2799,13 @@ export async function getBusPatternsForMonth(yearMonth: string): Promise<Student
       departureMode: parseBusLegMode(row[3]),
     }))
     .filter((p) => p.studentId && weekStarts.has(p.weekStart));
+}
+
+/** Convenience wrapper for a single month ("YYYY-MM"). */
+export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return getBusPatternsForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`);
 }
 
 /** Every recorded (non-default) week for one student, oldest first --
@@ -2882,8 +2905,12 @@ export type StudentBusOverride = {
   departureMode: BusLegMode;
 };
 
-/** Every override date falling within one month, across all students. */
-export async function getBusOverridesForMonth(yearMonth: string): Promise<StudentBusOverride[]> {
+/** Every override date falling within [startDate, endDate], across all
+ *  students. */
+export async function getBusOverridesForRange(
+  startDate: string,
+  endDate: string
+): Promise<StudentBusOverride[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
@@ -2897,7 +2924,14 @@ export async function getBusOverridesForMonth(yearMonth: string): Promise<Studen
       arrivalMode: parseBusLegMode(row[2]),
       departureMode: parseBusLegMode(row[3]),
     }))
-    .filter((o) => o.studentId && o.date.startsWith(yearMonth));
+    .filter((o) => o.studentId && o.date >= startDate && o.date <= endDate);
+}
+
+/** Convenience wrapper for a single month ("YYYY-MM"). */
+export async function getBusOverridesForMonth(yearMonth: string): Promise<StudentBusOverride[]> {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return getBusOverridesForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`);
 }
 
 /** Sets (or replaces) one student's override for one specific date. */
