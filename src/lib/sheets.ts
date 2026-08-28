@@ -3,25 +3,32 @@ import { romajiToHiragana } from "./romajiToHiragana";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 
-function getAuth() {
+// Cached at module scope so a warm serverless instance reuses the same
+// JWT client (and the access token it internally caches/auto-refreshes)
+// across requests, instead of re-creating a fresh client -- and paying a
+// fresh OAuth token-exchange round trip -- on literally every single
+// sheets.ts function call. A cold start still pays for it once, but every
+// call after that on the same warm instance skips it.
+let cachedSheetsClient: ReturnType<typeof google.sheets> | null = null;
+
+function getSheetsClient() {
+  if (cachedSheetsClient) return cachedSheetsClient;
+
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = process.env.GOOGLE_PRIVATE_KEY;
-
   if (!email || !key) {
     throw new Error(
       "Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY env vars"
     );
   }
 
-  return new google.auth.JWT({
+  const auth = new google.auth.JWT({
     email,
     key: key.replace(/\\n/g, "\n"),
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
-}
-
-function getSheetsClient() {
-  return google.sheets({ version: "v4", auth: getAuth() });
+  cachedSheetsClient = google.sheets({ version: "v4", auth });
+  return cachedSheetsClient;
 }
 
 /**
@@ -2890,27 +2897,110 @@ export async function setBusPattern(
 }
 
 /**
- * Sets one student's pattern uniformly across every school week in one
- * month -- the storage itself stays per-week (StudentBusPattern is still
- * keyed by weekStart, see setBusPattern above), but バス・送迎設定 only
- * ever writes through this now, one whole month at a time, since per-week
- * control turned out to be finer than staff actually wanted day to day
- * (single-day exceptions are still handled separately by
- * StudentBusOverride). A week that spans this month's boundary into an
- * adjacent month is included too (same weekStart either side owns it, as
- * documented on getBusWeekBucketsForRange), so setting August also
- * touches the tail end of a July/August boundary week.
+ * Sets one student's pattern uniformly across every school week touched
+ * by the given months -- the storage itself stays per-week
+ * (StudentBusPattern is still keyed by weekStart, see setBusPattern
+ * above), but バス・送迎設定 only ever writes through this now (one month
+ * at a time, or the whole term at once for the "change the first month"
+ * cascade), since per-week control turned out to be finer than staff
+ * actually wanted day to day (single-day exceptions are still handled
+ * separately by StudentBusOverride). A week spanning a month's boundary
+ * into an adjacent month is included too (same weekStart either side owns
+ * it, as documented on getBusWeekBucketsForRange).
+ *
+ * Unlike looping setBusPattern() once per week (the original
+ * implementation -- correct, but painfully slow: a 5-month term cascade
+ * meant roughly 25 weeks x 2 Sheets API calls each), this does ONE read
+ * of the whole sheet up front and then at most 3 more calls total no
+ * matter how many weeks are touched: one values.batchUpdate for every
+ * cell that just needs its arrival/departure updated, one append for
+ * every brand-new row, and one batchUpdate (deleteDimension) for every
+ * row reverting to the default and getting removed.
  */
+export async function setBusPatternForMonths(
+  studentId: string,
+  yearMonths: string[],
+  arrivalMode: BusLegMode,
+  departureMode: BusLegMode
+): Promise<void> {
+  const weekStarts = new Set<string>();
+  for (const yearMonth of yearMonths) {
+    for (const b of getBusWeekBucketsForMonth(yearMonth)) weekStarts.add(b.weekStart);
+  }
+
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusPattern!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const existingRowNumByWeek = new Map<string, number>();
+  rows.forEach((row, idx) => {
+    if ((row[0] ?? "") === studentId) {
+      existingRowNumByWeek.set((row[1] ?? "").toString(), idx + 2); // 1-based sheet row
+    }
+  });
+
+  const isDefault = arrivalMode === "self" && departureMode === "self";
+  const cellUpdates: { range: string; values: string[][] }[] = [];
+  const appendRows: string[][] = [];
+  const deleteRowNums: number[] = [];
+
+  for (const weekStart of weekStarts) {
+    const rowNum = existingRowNumByWeek.get(weekStart);
+    if (isDefault) {
+      if (rowNum !== undefined) deleteRowNums.push(rowNum);
+      continue;
+    }
+    if (rowNum !== undefined) {
+      cellUpdates.push({
+        range: `StudentBusPattern!C${rowNum}:D${rowNum}`,
+        values: [[arrivalMode, departureMode]],
+      });
+    } else {
+      appendRows.push([studentId, weekStart, arrivalMode, departureMode]);
+    }
+  }
+
+  if (cellUpdates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: "USER_ENTERED", data: cellUpdates },
+    });
+  }
+  if (appendRows.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "StudentBusPattern!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: appendRows },
+    });
+  }
+  if (deleteRowNums.length > 0) {
+    const sheetId = await getSheetIdByTitle(sheets, "StudentBusPattern");
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: deleteRowNums
+          .sort((a, b) => b - a) // descending, so row numbers don't shift mid-delete
+          .map((rowNum) => ({
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          })),
+      },
+    });
+  }
+}
+
+/** Convenience wrapper for a single month. */
 export async function setBusPatternForMonth(
   studentId: string,
   yearMonth: string,
   arrivalMode: BusLegMode,
   departureMode: BusLegMode
 ): Promise<void> {
-  const weekStarts = getBusWeekBucketsForMonth(yearMonth).map((b) => b.weekStart);
-  for (const weekStart of weekStarts) {
-    await setBusPattern(studentId, weekStart, arrivalMode, departureMode);
-  }
+  return setBusPatternForMonths(studentId, [yearMonth], arrivalMode, departureMode);
 }
 
 // 単日バス例外 — a one-off override for a single calendar date, layered on

@@ -327,19 +327,15 @@ function PickupPageInner() {
     return undefined;
   }
 
-  /** manageSavingState=false is for the cascade wrapper below, which owns
-   *  the saving indicator itself across the whole loop instead of letting
-   *  each individual month call flicker it on and off. */
   async function setBusPatternForMonth(
     student: Student,
     year: number,
     month: number,
     arrivalMode: BusLegMode,
-    departureMode: BusLegMode,
-    manageSavingState = true
+    departureMode: BusLegMode
   ) {
     const yearMonth = `${year}-${pad2(month)}`;
-    if (manageSavingState) setBusPatternSavingId(`${student.studentId}|${yearMonth}`);
+    setBusPatternSavingId(`${student.studentId}|${yearMonth}`);
     setError(null);
     try {
       const res = await fetch("/api/students/bus-pattern", {
@@ -369,7 +365,7 @@ function PickupPageInner() {
     } catch {
       setError("バス・送迎設定の更新に失敗しました / Failed to update bus/pickup setting");
     } finally {
-      if (manageSavingState) setBusPatternSavingId(null);
+      setBusPatternSavingId(null);
     }
   }
 
@@ -391,9 +387,35 @@ function PickupPageInner() {
     setBusPatternSavingId(busTermCascadeKey(student.studentId));
     setError(null);
     try {
+      // One batched request covering every month in the term, instead of
+      // looping a separate PATCH per month -- the old loop meant a
+      // 5-month term cascade could take 10+ sequential Sheets API round
+      // trips; this is a single one.
+      const months = busTermMonthYears.map((my) => `${my.year}-${pad2(my.month)}`);
+      const res = await fetch("/api/students/bus-pattern", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId: student.studentId, months, arrivalMode, departureMode }),
+      });
+      if (!res.ok) throw new Error("failed");
+      const weekStarts = new Set<string>();
       for (const my of busTermMonthYears) {
-        await setBusPatternForMonth(student, my.year, my.month, arrivalMode, departureMode, false);
+        for (const ws of busMonthWeekStarts(my.year, my.month)) weekStarts.add(ws);
       }
+      setBusPatternsByWeek((prev) => {
+        const next = { ...prev };
+        for (const weekStart of weekStarts) {
+          next[weekStart] = { ...(next[weekStart] ?? {}) };
+          if (arrivalMode === "self" && departureMode === "self") {
+            delete next[weekStart][student.studentId];
+          } else {
+            next[weekStart][student.studentId] = { arrivalMode, departureMode };
+          }
+        }
+        return next;
+      });
+    } catch {
+      setError("バス・送迎設定の更新に失敗しました / Failed to update bus/pickup setting");
     } finally {
       setBusPatternSavingId(null);
     }

@@ -6,6 +6,7 @@ import {
   getBusPatternHistory,
   setBusPattern,
   setBusPatternForMonth,
+  setBusPatternForMonths,
   BusLegMode,
 } from "@/lib/sheets";
 
@@ -66,18 +67,21 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// PATCH /api/students/bus-pattern  { studentId, months: ["YYYY-MM", ...], arrivalMode, departureMode }
+// Sets the pattern uniformly across every school week touched by ALL of
+// those months, in one batched write regardless of how many months/weeks
+// are involved -- powers the term-cascade action (changing the term's
+// first month applies to the rest of the term too; see setBusPatternForMonths
+// in sheets.ts for why this exists instead of looping single-month calls).
 // PATCH /api/students/bus-pattern  { studentId, month: "YYYY-MM", arrivalMode, departureMode }
-// Sets the pattern uniformly across every school week in that month --
-// バス・送迎設定's normal write path now (per-week control turned out to
-// be finer than staff wanted; see setBusPatternForMonth in sheets.ts).
+// Same, for just one month.
 // PATCH /api/students/bus-pattern  { studentId, week: "YYYY-MM-DD", arrivalMode, departureMode }
-// Sets just one school week (still supported for callers that want
-// finer control). Either way, setting both legs back to "self"/"self"
-// (the default) clears the stored exception rather than leaving a
-// redundant row.
+// Sets just one school week (still supported for callers that want finer
+// control). Either way, setting both legs back to "self"/"self" (the
+// default) clears the stored exception rather than leaving a redundant row.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, month, week, arrivalMode, departureMode } = body ?? {};
+  const { studentId, months, month, week, arrivalMode, departureMode } = body ?? {};
 
   if (typeof studentId !== "string" || !studentId) {
     return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
@@ -87,6 +91,20 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
+    if (months !== undefined) {
+      if (
+        !Array.isArray(months) ||
+        months.length === 0 ||
+        months.some((m) => typeof m !== "string" || !YEAR_MONTH_RE.test(m))
+      ) {
+        return NextResponse.json(
+          { error: "Invalid months (expected a non-empty array of YYYY-MM)" },
+          { status: 400 }
+        );
+      }
+      await setBusPatternForMonths(studentId, months, arrivalMode, departureMode);
+      return NextResponse.json({ ok: true });
+    }
     if (month !== undefined) {
       if (typeof month !== "string" || !YEAR_MONTH_RE.test(month)) {
         return NextResponse.json({ error: "Invalid month (expected YYYY-MM)" }, { status: 400 });
@@ -96,7 +114,10 @@ export async function PATCH(req: NextRequest) {
     }
     if (typeof week !== "string" || !DATE_RE.test(week)) {
       return NextResponse.json(
-        { error: "Missing or invalid 'month' (expected YYYY-MM) or 'week' (expected YYYY-MM-DD)" },
+        {
+          error:
+            "Missing or invalid 'months' (array of YYYY-MM), 'month' (YYYY-MM), or 'week' (YYYY-MM-DD)",
+        },
         { status: 400 }
       );
     }
