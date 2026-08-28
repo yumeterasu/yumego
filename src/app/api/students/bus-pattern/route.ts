@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getBusPatternsForMonth,
+  getBusPatternsForWeek,
   getBusPatternHistory,
   setBusPattern,
   BusLegMode,
 } from "@/lib/sheets";
 
 const VALID_LEG_MODES: BusLegMode[] = ["bus", "self"];
-const YEAR_MONTH_RE = /^\d{4}-\d{2}$/;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// GET /api/students/bus-pattern?month=YYYY-MM -> { patterns } (every
-// recorded exception for that month, across all students -- same
-// all-students-then-filter-by-studentId shape as /api/students/transport)
+// GET /api/students/bus-pattern?week=YYYY-MM-DD -> { patterns } (every
+// recorded exception for that school week (Monday date), across all
+// students -- same all-students-then-filter-by-studentId shape as the old
+// /api/students/transport)
 // GET /api/students/bus-pattern?studentId=... -> { history } (every
-// recorded month for that one student, oldest first)
+// recorded week for that one student, oldest first)
 export async function GET(req: NextRequest) {
-  const month = req.nextUrl.searchParams.get("month");
+  const week = req.nextUrl.searchParams.get("week");
   const studentId = req.nextUrl.searchParams.get("studentId");
 
   try {
@@ -23,13 +24,13 @@ export async function GET(req: NextRequest) {
       const history = await getBusPatternHistory(studentId);
       return NextResponse.json({ history });
     }
-    if (!month || !YEAR_MONTH_RE.test(month)) {
+    if (!week || !DATE_RE.test(week)) {
       return NextResponse.json(
-        { error: "Missing or invalid 'month' (expected YYYY-MM) or 'studentId'" },
+        { error: "Missing or invalid 'week' (expected YYYY-MM-DD, the Monday) or 'studentId'" },
         { status: 400 }
       );
     }
-    const patterns = await getBusPatternsForMonth(month);
+    const patterns = await getBusPatternsForWeek(week);
     return NextResponse.json({ patterns });
   } catch (err) {
     console.error(err);
@@ -37,25 +38,25 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// PATCH /api/students/bus-pattern  { studentId, month: "YYYY-MM", arrivalMode, departureMode }
-// Setting both legs back to "bus"/"bus" (the default) clears the stored
-// exception for that month rather than leaving a redundant row.
+// PATCH /api/students/bus-pattern  { studentId, week: "YYYY-MM-DD", arrivalMode, departureMode }
+// Setting both legs back to "self"/"self" (the default) clears the stored
+// exception for that week rather than leaving a redundant row.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, month, arrivalMode, departureMode } = body ?? {};
+  const { studentId, week, arrivalMode, departureMode } = body ?? {};
 
   if (typeof studentId !== "string" || !studentId) {
     return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
   }
-  if (typeof month !== "string" || !YEAR_MONTH_RE.test(month)) {
-    return NextResponse.json({ error: "Invalid month (expected YYYY-MM)" }, { status: 400 });
+  if (typeof week !== "string" || !DATE_RE.test(week)) {
+    return NextResponse.json({ error: "Invalid week (expected YYYY-MM-DD)" }, { status: 400 });
   }
   if (!VALID_LEG_MODES.includes(arrivalMode) || !VALID_LEG_MODES.includes(departureMode)) {
     return NextResponse.json({ error: "Invalid arrivalMode/departureMode" }, { status: 400 });
   }
 
   try {
-    await setBusPattern(studentId, month, arrivalMode, departureMode);
+    await setBusPattern(studentId, week, arrivalMode, departureMode);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error(err);

@@ -2612,8 +2612,8 @@ export async function setStudentLocation(
 
 // 送迎バス - 通学方法 (LEGACY) — used to be a static per-student flag set
 // once at registration, but real usage turned out to change month to month
-// (sometimes week to week) -- see 月次バスパターン (StudentBusPattern)
-// above, which replaced this as the actual source of truth. The app no
+// (sometimes week to week) -- see 週次バスパターン (StudentBusPattern)
+// below, which replaced this as the actual source of truth. The app no
 // longer writes to this sheet; these functions stay only for reading old
 // data (e.g. a one-off migration) and nothing calls setStudentTransport()
 // anymore.
@@ -2690,21 +2690,25 @@ export async function setStudentTransport(
   });
 }
 
-// 月次バスパターン — the single source of truth for how a student commutes
-// in a given month: 来:バス／帰:バス, 来:バス／帰:自分, 来:自分／帰:バス, or
-// 来:自分／帰:自分 (送迎のみ, no bus at all) -- this changes month to month,
-// sometimes week to week, so it's never treated as a permanent property of
-// the student (StudentTransport, the old static bus/self flag, is no
+// 週次バスパターン — the source of truth for how a student commutes in a
+// given week: 来:バス／帰:バス, 来:バス／帰:自分, 来:自分／帰:バス, or
+// 来:自分／帰:自分 (送迎のみ, no bus at all) -- this changes week to week
+// (sometimes month to month), so it's never treated as a permanent property
+// of the student (StudentTransport, the old static bus/self flag, is no
 // longer written to by the app -- see 生徒管理/送迎管理). One row per
-// (studentId, yearMonth) -- but ONLY for months that deviate from the
-// default 来:自分／帰:自分 (no bus), which is assumed whenever no row
-// exists for that student+month. This keeps the sheet to just the
-// exceptions while still preserving full month-by-month history for every
-// month someone actually set a bus leg.
+// (studentId, weekStart) -- weekStart is the Monday of that school week
+// ("YYYY-MM-DD") -- but ONLY for weeks that deviate from the default
+// 来:自分／帰:自分 (no bus), which is assumed whenever no row exists for
+// that student+week. This keeps the sheet to just the exceptions while
+// still preserving full week-by-week history for every week someone
+// actually set a bus leg. (Used to be keyed by whole month; switched to
+// per-week because in practice even a "bus/bus" week still needs one-off
+// day exceptions -- see StudentBusOverride below, which sits on top of
+// this layer for single-day swaps without disturbing the week's setting.)
 export type BusLegMode = "bus" | "self";
 export type StudentBusPattern = {
   studentId: string;
-  yearMonth: string; // "YYYY-MM"
+  weekStart: string; // "YYYY-MM-DD", the Monday of the school week
   arrivalMode: BusLegMode;
   departureMode: BusLegMode;
 };
@@ -2713,9 +2717,54 @@ function parseBusLegMode(raw: string | undefined): BusLegMode {
   return (raw ?? "").toString() === "self" ? "self" : "bus";
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** The Monday ("YYYY-MM-DD") of the school week containing this date. */
+export function weekStartForDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const dow = d.getDay(); // 0=Sun..6=Sat
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+export type BusWeekBucket = { weekStart: string; days: string[]; label: string };
+
+/** Buckets every weekday of a given month ("YYYY-MM") into its school
+ *  weeks (Mon-Fri), keyed by that week's Monday -- which may itself fall
+ *  in the previous/next month for a week that spans a month boundary (the
+ *  bucket only lists the days actually inside `yearMonth`, so a split
+ *  week shows up as a shorter, partial bucket on each side, but both
+ *  sides share the same weekStart key -- setting the pattern from either
+ *  month's view edits the same underlying week). Used to render the week
+ *  picker on バス・送迎設定. */
+export function getBusWeekBucketsForMonth(yearMonth: string): BusWeekBucket[] {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const numDays = new Date(y, m, 0).getDate();
+  const buckets = new Map<string, string[]>();
+  for (let day = 1; day <= numDays; day++) {
+    const dow = new Date(y, m - 1, day).getDay();
+    if (dow === 0 || dow === 6) continue; // no school on weekends
+    const dateStr = `${y}-${pad2(m)}-${pad2(day)}`;
+    const weekStart = weekStartForDate(dateStr);
+    if (!buckets.has(weekStart)) buckets.set(weekStart, []);
+    buckets.get(weekStart)!.push(dateStr);
+  }
+  return Array.from(buckets.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, days]) => {
+      const first = Number(days[0].slice(-2));
+      const last = Number(days[days.length - 1].slice(-2));
+      const label = first === last ? `${first}` : `${first}-${last}`;
+      return { weekStart, days, label };
+    });
+}
+
 /** Every recorded (non-default, i.e. involves a bus leg) pattern for one
- *  month, across all students. */
-export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
+ *  school week, across all students. */
+export async function getBusPatternsForWeek(weekStart: string): Promise<StudentBusPattern[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
@@ -2725,15 +2774,15 @@ export async function getBusPatternsForMonth(yearMonth: string): Promise<Student
   return rows
     .map((row): StudentBusPattern => ({
       studentId: (row[0] ?? "").toString(),
-      yearMonth: (row[1] ?? "").toString(),
+      weekStart: (row[1] ?? "").toString(),
       arrivalMode: parseBusLegMode(row[2]),
       departureMode: parseBusLegMode(row[3]),
     }))
-    .filter((p) => p.studentId && p.yearMonth === yearMonth);
+    .filter((p) => p.studentId && p.weekStart === weekStart);
 }
 
-/** Every recorded (non-default) month for one student, oldest first --
- *  the month-by-month history view (defaults/unset months aren't included,
+/** Every recorded (non-default) week for one student, oldest first --
+ *  the week-by-week history view (defaults/unset weeks aren't included,
  *  since they're implicitly 来:自分／帰:自分, no bus). */
 export async function getBusPatternHistory(studentId: string): Promise<StudentBusPattern[]> {
   const sheets = getSheetsClient();
@@ -2745,23 +2794,23 @@ export async function getBusPatternHistory(studentId: string): Promise<StudentBu
   return rows
     .map((row): StudentBusPattern => ({
       studentId: (row[0] ?? "").toString(),
-      yearMonth: (row[1] ?? "").toString(),
+      weekStart: (row[1] ?? "").toString(),
       arrivalMode: parseBusLegMode(row[2]),
       departureMode: parseBusLegMode(row[3]),
     }))
     .filter((p) => p.studentId === studentId)
-    .sort((a, b) => a.yearMonth.localeCompare(b.yearMonth));
+    .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 }
 
 /**
- * Sets one student's pattern for one month. Setting it back to the default
- * (self/self, no bus) deletes the row instead of storing it -- functionally
- * identical either way (a missing row already means "default"), and keeps
- * the sheet limited to genuine exceptions.
+ * Sets one student's pattern for one school week. Setting it back to the
+ * default (self/self, no bus) deletes the row instead of storing it --
+ * functionally identical either way (a missing row already means
+ * "default"), and keeps the sheet limited to genuine exceptions.
  */
 export async function setBusPattern(
   studentId: string,
-  yearMonth: string,
+  weekStart: string,
   arrivalMode: BusLegMode,
   departureMode: BusLegMode
 ): Promise<void> {
@@ -2772,7 +2821,7 @@ export async function setBusPattern(
   });
   const rows = existing.data.values ?? [];
   const rowOffset = rows.findIndex(
-    (row) => (row[0] ?? "") === studentId && (row[1] ?? "") === yearMonth
+    (row) => (row[0] ?? "") === studentId && (row[1] ?? "") === weekStart
   );
   const isDefault = arrivalMode === "self" && departureMode === "self";
 
@@ -2800,7 +2849,7 @@ export async function setBusPattern(
       spreadsheetId: SHEET_ID,
       range: "StudentBusPattern!A:D",
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[studentId, yearMonth, arrivalMode, departureMode]] },
+      requestBody: { values: [[studentId, weekStart, arrivalMode, departureMode]] },
     });
     return;
   }
@@ -2810,6 +2859,104 @@ export async function setBusPattern(
     range: `StudentBusPattern!C${rowNum}:D${rowNum}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[arrivalMode, departureMode]] },
+  });
+}
+
+// 単日バス例外 — a one-off override for a single calendar date, layered on
+// top of 週次バスパターン above for the "parent called this morning asking
+// for pickup instead of the bus, just today" case: rather than editing the
+// whole week's setting (and having to remember to change it back), this
+// sheet holds just the specific dates that deviate from whatever that
+// week's pattern says. Always stored explicitly when set (regardless of
+// whether it happens to match the week's own pattern) -- clearing it via
+// clearBusOverride() is the explicit "back to the week's normal pattern"
+// action, kept as its own step rather than inferred.
+export type StudentBusOverride = {
+  studentId: string;
+  date: string; // "YYYY-MM-DD"
+  arrivalMode: BusLegMode;
+  departureMode: BusLegMode;
+};
+
+/** Every override date falling within one month, across all students. */
+export async function getBusOverridesForMonth(yearMonth: string): Promise<StudentBusOverride[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusOverride!A2:D",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row): StudentBusOverride => ({
+      studentId: (row[0] ?? "").toString(),
+      date: (row[1] ?? "").toString(),
+      arrivalMode: parseBusLegMode(row[2]),
+      departureMode: parseBusLegMode(row[3]),
+    }))
+    .filter((o) => o.studentId && o.date.startsWith(yearMonth));
+}
+
+/** Sets (or replaces) one student's override for one specific date. */
+export async function setBusOverride(
+  studentId: string,
+  date: string,
+  arrivalMode: BusLegMode,
+  departureMode: BusLegMode
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusOverride!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === studentId && (row[1] ?? "") === date
+  );
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "StudentBusOverride!A:D",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[studentId, date, arrivalMode, departureMode]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `StudentBusOverride!C${rowNum}:D${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[arrivalMode, departureMode]] },
+  });
+}
+
+/** Removes one student's override for one date -- reverts that day back to
+ *  whatever the week's own pattern says. */
+export async function clearBusOverride(studentId: string, date: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "StudentBusOverride!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex(
+    (row) => (row[0] ?? "") === studentId && (row[1] ?? "") === date
+  );
+  if (rowOffset === -1) return;
+  const sheetId = await getSheetIdByTitle(sheets, "StudentBusOverride");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
   });
 }
 

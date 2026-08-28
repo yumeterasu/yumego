@@ -6,6 +6,50 @@ import { useSearchParams } from "next/navigation";
 import type { Student, PickupRecord, StudentLocation, BusLegMode } from "@/lib/sheets";
 import { branchToEnglish, type Branch } from "@/lib/classes";
 
+type BusWeekBucket = { weekStart: string; days: string[]; label: string };
+type BusOverride = { studentId: string; date: string; arrivalMode: BusLegMode; departureMode: BusLegMode };
+
+/** The Monday ("YYYY-MM-DD") of the school week containing this date --
+ *  mirrors weekStartForDate() in src/lib/sheets.ts. */
+function weekStartForDate(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const dow = d.getDay();
+  const diff = dow === 0 ? -6 : 1 - dow;
+  d.setDate(d.getDate() + diff);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** Buckets every weekday of a month into its school weeks (Mon-Fri) --
+ *  mirrors getBusWeekBucketsForMonth() in src/lib/sheets.ts. */
+function getBusWeekBucketsForMonth(yearMonth: string): BusWeekBucket[] {
+  const [y, m] = yearMonth.split("-").map(Number);
+  const numDays = daysInMonth(y, m);
+  const buckets = new Map<string, string[]>();
+  for (let day = 1; day <= numDays; day++) {
+    const dow = new Date(y, m - 1, day).getDay();
+    if (dow === 0 || dow === 6) continue;
+    const dateStr = `${y}-${pad2(m)}-${pad2(day)}`;
+    const weekStart = weekStartForDate(dateStr);
+    if (!buckets.has(weekStart)) buckets.set(weekStart, []);
+    buckets.get(weekStart)!.push(dateStr);
+  }
+  return Array.from(buckets.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([weekStart, days]) => {
+      const first = Number(days[0].slice(-2));
+      const last = Number(days[days.length - 1].slice(-2));
+      const label = first === last ? `${first}` : `${first}-${last}`;
+      return { weekStart, days, label };
+    });
+}
+
+const BUS_MODE_OPTIONS: { value: string; label: string }[] = [
+  { value: "self_self", label: "🚗↔🚗 送迎のみ" },
+  { value: "bus_bus", label: "🚌↔🚌 往復バス" },
+  { value: "bus_self", label: "🚌→🚗 帰り自分" },
+  { value: "self_bus", label: "🚗→🚌 行き自分" },
+];
+
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 // Display order for grouping the roster — 小学生 last, matching how it
 // was added onto the end of each branch's class list.
@@ -76,19 +120,32 @@ function PickupPageInner() {
   const [clearDayDone, setClearDayDone] = useState<number | null>(null);
 
   // バス・送迎設定 — 通学方法 lives here now, not on 生徒管理, since in
-  // practice it turned out to change month to month (sometimes week to
-  // week) per student rather than being a fixed thing set once at
-  // registration. Scoped to whichever month is currently on screen (the
-  // same year/month state the day-grid already uses).
+  // practice it turned out to change week to week (sometimes month to
+  // month) per student rather than being a fixed thing set once at
+  // registration. The week pattern itself is scoped to whichever school
+  // week is selected (selectedWeekStart, defaulting to the week containing
+  // today when viewing the current month); one-off single-day overrides
+  // (busOverridesByStudent) are scoped to the whole viewed month instead,
+  // so all of a month's exceptions are visible together regardless of
+  // which week is currently selected.
   const [showBusSettings, setShowBusSettings] = useState(false);
   const [busSettingsLoading, setBusSettingsLoading] = useState(false);
+  const [selectedWeekStart, setSelectedWeekStart] = useState("");
   const [busPatternsByStudent, setBusPatternsByStudent] = useState<
     Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }>
+  >({});
+  const [busOverridesByStudent, setBusOverridesByStudent] = useState<
+    Record<string, BusOverride[]>
   >({});
   const [locationsByStudent, setLocationsByStudent] = useState<Record<string, StudentLocation>>(
     {}
   );
   const [busPatternSavingId, setBusPatternSavingId] = useState<string | null>(null);
+  // Inline "特定の日だけ変更" form -- one open at a time, keyed by studentId.
+  const [overrideFormFor, setOverrideFormFor] = useState<string | null>(null);
+  const [overrideDate, setOverrideDate] = useState("");
+  const [overrideMode, setOverrideMode] = useState("self_self");
+  const [overrideSavingKey, setOverrideSavingKey] = useState<string | null>(null);
 
   const yearMonth = `${year}-${pad2(month)}`;
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
@@ -130,18 +187,32 @@ function PickupPageInner() {
     load();
   }, [load]);
 
+  // Which school week is on screen -- defaults to the week containing
+  // today when viewing the current month, otherwise the month's first
+  // week. Recomputed whenever the settings screen opens or the viewed
+  // month changes; a manual pick via the week chips overrides this until
+  // the month changes again.
+  const weekBuckets = getBusWeekBucketsForMonth(yearMonth);
   useEffect(() => {
     if (!showBusSettings) return;
-    loadBusSettings();
+    const defaultWeek = isViewingCurrentMonth ? weekStartForDate(todayStr) : weekBuckets[0]?.weekStart;
+    setSelectedWeekStart(weekBuckets.some((b) => b.weekStart === defaultWeek) ? defaultWeek! : (weekBuckets[0]?.weekStart ?? ""));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showBusSettings, yearMonth]);
+
+  useEffect(() => {
+    if (!showBusSettings || !selectedWeekStart) return;
+    loadBusSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBusSettings, selectedWeekStart, yearMonth]);
 
   async function loadBusSettings() {
     setBusSettingsLoading(true);
     setError(null);
     try {
-      const [patternRes, locationRes] = await Promise.all([
-        fetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
+      const [patternRes, overrideRes, locationRes] = await Promise.all([
+        fetch(`/api/students/bus-pattern?week=${encodeURIComponent(selectedWeekStart)}`),
+        fetch(`/api/students/bus-override?month=${encodeURIComponent(yearMonth)}`),
         fetch("/api/students/location"),
       ]);
       if (patternRes.ok) {
@@ -155,6 +226,16 @@ function PickupPageInner() {
           map[p.studentId] = { arrivalMode: p.arrivalMode, departureMode: p.departureMode };
         }
         setBusPatternsByStudent(map);
+      }
+      if (overrideRes.ok) {
+        const data = await overrideRes.json();
+        const map: Record<string, BusOverride[]> = {};
+        for (const o of (data.overrides ?? []) as BusOverride[]) {
+          if (!map[o.studentId]) map[o.studentId] = [];
+          map[o.studentId].push(o);
+        }
+        for (const list of Object.values(map)) list.sort((a, b) => a.date.localeCompare(b.date));
+        setBusOverridesByStudent(map);
       }
       if (locationRes.ok) {
         const data = await locationRes.json();
@@ -182,7 +263,7 @@ function PickupPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studentId: student.studentId,
-          month: yearMonth,
+          week: selectedWeekStart,
           arrivalMode,
           departureMode,
         }),
@@ -201,6 +282,68 @@ function PickupPageInner() {
       setError("バス・送迎設定の更新に失敗しました / Failed to update bus/pickup setting");
     } finally {
       setBusPatternSavingId(null);
+    }
+  }
+
+  function openOverrideForm(student: Student) {
+    setOverrideFormFor(student.studentId);
+    setOverrideDate(isViewingCurrentMonth ? todayStr : `${yearMonth}-01`);
+    const pattern = busPatternsByStudent[student.studentId];
+    setOverrideMode(`${pattern?.arrivalMode ?? "self"}_${pattern?.departureMode ?? "self"}`);
+  }
+
+  async function saveOverride(student: Student) {
+    const [arrivalMode, departureMode] = overrideMode.split("_") as [BusLegMode, BusLegMode];
+    const key = `${student.studentId}|${overrideDate}`;
+    setOverrideSavingKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/students/bus-override", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: student.studentId,
+          date: overrideDate,
+          arrivalMode,
+          departureMode,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setBusOverridesByStudent((prev) => {
+        const next = { ...prev };
+        const list = (next[student.studentId] ?? []).filter((o) => o.date !== overrideDate);
+        list.push({ studentId: student.studentId, date: overrideDate, arrivalMode, departureMode });
+        list.sort((a, b) => a.date.localeCompare(b.date));
+        next[student.studentId] = list;
+        return next;
+      });
+      setOverrideFormFor(null);
+    } catch {
+      setError("特例の保存に失敗しました / Failed to save the one-day exception");
+    } finally {
+      setOverrideSavingKey(null);
+    }
+  }
+
+  async function removeOverride(studentId: string, date: string) {
+    const key = `${studentId}|${date}`;
+    setOverrideSavingKey(key);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/students/bus-override?studentId=${encodeURIComponent(studentId)}&date=${date}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) throw new Error("failed");
+      setBusOverridesByStudent((prev) => {
+        const next = { ...prev };
+        next[studentId] = (next[studentId] ?? []).filter((o) => o.date !== date);
+        return next;
+      });
+    } catch {
+      setError("特例の削除に失敗しました / Failed to remove the one-day exception");
+    } finally {
+      setOverrideSavingKey(null);
     }
   }
 
@@ -486,9 +629,9 @@ function PickupPageInner() {
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
             <p className="text-sm text-gray-600">
-              {yearMonth} の通学方法（バス・送迎）を設定します
+              選んだ週の通学方法（バス・送迎）を設定します
               <span className="block text-xs text-gray-400">
-                Set each student&apos;s bus/pickup pattern for {yearMonth}
+                Set each student&apos;s bus/pickup pattern for the selected week
               </span>
             </p>
             <button
@@ -497,6 +640,22 @@ function PickupPageInner() {
             >
               閉じる / Close
             </button>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 flex-wrap print:hidden">
+            {weekBuckets.map((b) => (
+              <button
+                key={b.weekStart}
+                onClick={() => setSelectedWeekStart(b.weekStart)}
+                className={`rounded-full px-4 py-1.5 text-sm font-semibold border ${
+                  selectedWeekStart === b.weekStart
+                    ? "bg-purple-600 border-purple-600 text-white"
+                    : "bg-white border-gray-300 text-gray-600"
+                }`}
+              >
+                {month}/{b.label}
+              </button>
+            ))}
           </div>
 
           {busSettingsLoading ? (
@@ -513,6 +672,8 @@ function PickupPageInner() {
                   const departureMode = pattern?.departureMode ?? "self";
                   const usesBus = arrivalMode === "bus" || departureMode === "bus";
                   const hasAddress = !!locationsByStudent[s.studentId];
+                  const overrides = busOverridesByStudent[s.studentId] ?? [];
+                  const formOpen = overrideFormFor === s.studentId;
                   return (
                     <Fragment key={s.studentId}>
                       {showGroupHeader && (
@@ -520,43 +681,137 @@ function PickupPageInner() {
                           {s.className}
                         </li>
                       )}
-                      <li className="px-4 py-2.5 leading-tight flex items-center justify-between gap-3 flex-wrap">
-                        <div className="min-w-0 flex-1 basis-40">
-                          <span className="font-medium block">{s.nameKanji}</span>
-                          {s.nameEnglish && (
-                            <span className="text-xs text-gray-500 block">{s.nameEnglish}</span>
-                          )}
-                          {usesBus && !hasAddress && (
-                            <p className="text-[10px] text-red-600 font-semibold">
-                              ⚠️ 住所が未登録です（生徒管理で登録してください）
-                              <span className="block">
-                                No address on file — register one on 生徒管理
-                              </span>
-                            </p>
-                          )}
-                          {usesBus && hasAddress && (
-                            <p className="text-[10px] text-green-700 truncate max-w-xs">
-                              📍 {locationsByStudent[s.studentId].address}
-                            </p>
-                          )}
+                      <li className="px-4 py-2.5 leading-tight flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div className="min-w-0 flex-1 basis-40">
+                            <span className="font-medium block">{s.nameKanji}</span>
+                            {s.nameEnglish && (
+                              <span className="text-xs text-gray-500 block">{s.nameEnglish}</span>
+                            )}
+                            {usesBus && !hasAddress && (
+                              <p className="text-[10px] text-red-600 font-semibold">
+                                ⚠️ 住所が未登録です（生徒管理で登録してください）
+                                <span className="block">
+                                  No address on file — register one on 生徒管理
+                                </span>
+                              </p>
+                            )}
+                            {usesBus && hasAddress && (
+                              <p className="text-[10px] text-green-700 truncate max-w-xs">
+                                📍 {locationsByStudent[s.studentId].address}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => (formOpen ? setOverrideFormFor(null) : openOverrideForm(s))}
+                              className="rounded-full px-2.5 py-1.5 text-xs font-semibold border border-amber-300 bg-amber-50 text-amber-800"
+                            >
+                              ⚡ 特定の日だけ変更
+                            </button>
+                            <select
+                              value={`${arrivalMode}_${departureMode}`}
+                              disabled={busPatternSavingId === s.studentId}
+                              onChange={(e) => {
+                                const [nextArrival, nextDeparture] = e.target.value.split("_") as [
+                                  BusLegMode,
+                                  BusLegMode,
+                                ];
+                                setBusPatternFor(s, nextArrival, nextDeparture);
+                              }}
+                              className="rounded-full px-2.5 py-1.5 text-xs font-semibold border bg-white text-gray-600 border-gray-300 disabled:opacity-40"
+                            >
+                              {BUS_MODE_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
-                        <select
-                          value={`${arrivalMode}_${departureMode}`}
-                          disabled={busPatternSavingId === s.studentId}
-                          onChange={(e) => {
-                            const [nextArrival, nextDeparture] = e.target.value.split("_") as [
-                              BusLegMode,
-                              BusLegMode,
-                            ];
-                            setBusPatternFor(s, nextArrival, nextDeparture);
-                          }}
-                          className="rounded-full px-2.5 py-1.5 text-xs font-semibold border bg-white text-gray-600 border-gray-300 disabled:opacity-40 shrink-0"
-                        >
-                          <option value="self_self">🚗↔🚗 送迎のみ</option>
-                          <option value="bus_bus">🚌↔🚌 往復バス</option>
-                          <option value="bus_self">🚌→🚗 帰り自分</option>
-                          <option value="self_bus">🚗→🚌 行き自分</option>
-                        </select>
+
+                        {overrides.length > 0 && (
+                          <ul className="flex flex-wrap gap-1.5">
+                            {overrides.map((o) => {
+                              const optKey = `${o.arrivalMode}_${o.departureMode}`;
+                              const optLabel =
+                                BUS_MODE_OPTIONS.find((x) => x.value === optKey)?.label ?? optKey;
+                              const savingThis = overrideSavingKey === `${s.studentId}|${o.date}`;
+                              return (
+                                <li
+                                  key={o.date}
+                                  className="flex items-center gap-1 text-[11px] bg-amber-50 border border-amber-300 text-amber-800 rounded-full pl-2.5 pr-1 py-0.5"
+                                >
+                                  {o.date.slice(5).replace("-", "/")}: {optLabel}
+                                  <button
+                                    onClick={() => removeOverride(s.studentId, o.date)}
+                                    disabled={savingThis}
+                                    aria-label="この特例を削除 / Remove this exception"
+                                    className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-amber-200 disabled:opacity-40"
+                                  >
+                                    ×
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+
+                        {formOpen && (
+                          <div className="flex items-center gap-2 flex-wrap bg-amber-50 border border-amber-200 rounded-xl p-2.5">
+                            <input
+                              type="date"
+                              value={overrideDate}
+                              min={`${yearMonth}-01`}
+                              max={`${yearMonth}-${pad2(daysInMonth(year, month))}`}
+                              onChange={(e) => setOverrideDate(e.target.value)}
+                              className="border border-gray-300 rounded-lg px-2 py-1 text-xs"
+                            />
+                            <select
+                              value={overrideMode}
+                              onChange={(e) => setOverrideMode(e.target.value)}
+                              className="rounded-full px-2.5 py-1 text-xs font-semibold border bg-white text-gray-600 border-gray-300"
+                            >
+                              {BUS_MODE_OPTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                            {(() => {
+                              const dow = overrideDate
+                                ? new Date(overrideDate + "T00:00:00").getDay()
+                                : -1;
+                              const isWeekend = dow === 0 || dow === 6;
+                              return (
+                                <>
+                                  {isWeekend && (
+                                    <span className="text-[11px] text-red-600">
+                                      土日は選べません / Weekends have no school
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => saveOverride(s)}
+                                    disabled={
+                                      !overrideDate ||
+                                      isWeekend ||
+                                      overrideSavingKey === `${s.studentId}|${overrideDate}`
+                                    }
+                                    className="rounded-full bg-amber-600 text-white px-3 py-1 text-xs font-semibold disabled:opacity-40"
+                                  >
+                                    保存 / Save
+                                  </button>
+                                </>
+                              );
+                            })()}
+                            <button
+                              onClick={() => setOverrideFormFor(null)}
+                              className="rounded-full bg-gray-100 text-gray-600 px-3 py-1 text-xs font-semibold"
+                            >
+                              キャンセル / Cancel
+                            </button>
+                          </div>
+                        )}
                       </li>
                     </Fragment>
                   );
