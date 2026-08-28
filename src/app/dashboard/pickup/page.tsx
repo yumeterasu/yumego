@@ -690,20 +690,28 @@ function PickupPageInner() {
                           )}
                           <tr>
                             <td className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap align-top z-10 leading-tight">
-                              {s.nameKanji}
+                              <span className="inline-flex items-center gap-1">
+                                {s.nameKanji}
+                                {usesBusAnyWeek && !hasAddress && (
+                                  <span
+                                    title="住所が未登録です（生徒管理で登録してください） / No address on file"
+                                    className="text-red-600 text-xs"
+                                  >
+                                    ⚠️
+                                  </span>
+                                )}
+                                {usesBusAnyWeek && hasAddress && (
+                                  <span
+                                    title={locationsByStudent[s.studentId].address}
+                                    className="text-green-700 text-xs"
+                                  >
+                                    📍
+                                  </span>
+                                )}
+                              </span>
                               {s.nameEnglish && (
                                 <span className="block text-[10px] text-gray-400">
                                   {s.nameEnglish}
-                                </span>
-                              )}
-                              {usesBusAnyWeek && !hasAddress && (
-                                <span className="block text-[10px] text-red-600 font-semibold">
-                                  ⚠️ 住所未登録
-                                </span>
-                              )}
-                              {usesBusAnyWeek && hasAddress && (
-                                <span className="block text-[10px] text-green-700 truncate max-w-[9rem]">
-                                  📍 {locationsByStudent[s.studentId].address}
                                 </span>
                               )}
                             </td>
