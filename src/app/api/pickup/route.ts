@@ -4,6 +4,7 @@ import {
   getPickupRecordsForMonth,
   upsertPickupRecord,
   bulkSetArrivalForRoster,
+  clearPickupForDate,
 } from "@/lib/sheets";
 
 // GET /api/pickup?branch=プロンポン&month=2026-08
@@ -84,5 +85,29 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Failed to save" }, { status: 500 });
+  }
+}
+
+// DELETE /api/pickup?branch=...&date=2026-08-21
+// Clears EVERY student's 登園/降園 record for that branch+date at once --
+// same "delete a whole day" pattern as the Dashboard's own
+// DELETE /api/attendance.
+export async function DELETE(req: NextRequest) {
+  const branch = req.nextUrl.searchParams.get("branch");
+  const date = req.nextUrl.searchParams.get("date");
+
+  if (!branch || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return NextResponse.json(
+      { error: "Missing or invalid 'branch'/'date' query params" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const count = await clearPickupForDate(branch, date);
+    return NextResponse.json({ ok: true, count });
+  } catch (err) {
+    console.error(err);
+    return NextResponse.json({ error: "Failed to clear pickup for that day" }, { status: 500 });
   }
 }

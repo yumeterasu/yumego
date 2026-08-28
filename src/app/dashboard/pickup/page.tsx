@@ -66,6 +66,15 @@ function PickupPageInner() {
   const [checkinSubmitting, setCheckinSubmitting] = useState(false);
   const [showCheckinConfirm, setShowCheckinConfirm] = useState(false);
 
+  // 特定の日を削除 — same permanent, no-backup "clear a whole day" pattern
+  // as the Dashboard's own DELETE /api/attendance.
+  const [showClearDayModal, setShowClearDayModal] = useState(false);
+  const [clearDayFinalStep, setClearDayFinalStep] = useState(false);
+  const [clearDayDate, setClearDayDate] = useState("");
+  const [clearDayApplying, setClearDayApplying] = useState(false);
+  const [clearDayError, setClearDayError] = useState<string | null>(null);
+  const [clearDayDone, setClearDayDone] = useState<number | null>(null);
+
   const yearMonth = `${year}-${pad2(month)}`;
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const isViewingCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
@@ -223,6 +232,41 @@ function PickupPageInner() {
     }
   }
 
+  function openClearDayModal() {
+    setClearDayDate(isViewingCurrentMonth ? todayStr : `${yearMonth}-01`);
+    setClearDayFinalStep(false);
+    setClearDayError(null);
+    setClearDayDone(null);
+    setShowClearDayModal(true);
+  }
+
+  function pickupCountForDate(date: string) {
+    return students.filter((s) => {
+      const key = cellKey(s.studentId, date);
+      return (drafts[`${key}|arrival`] ?? "") !== "" || (drafts[`${key}|departure`] ?? "") !== "";
+    }).length;
+  }
+
+  async function handleClearDay() {
+    if (!branch) return;
+    setClearDayApplying(true);
+    setClearDayError(null);
+    try {
+      const res = await fetch(
+        `/api/pickup?branch=${encodeURIComponent(branch)}&date=${clearDayDate}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setClearDayDone(data.count ?? 0);
+      await load();
+    } catch {
+      setClearDayError("削除に失敗しました / Failed to delete");
+    } finally {
+      setClearDayApplying(false);
+    }
+  }
+
   if (!branch) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
@@ -316,6 +360,20 @@ function PickupPageInner() {
       <p className="text-lg font-bold text-center hidden print:block">
         {year}年{month}月
       </p>
+
+      {!showCheckin && students.length > 0 && (
+        <div className="flex items-center justify-center print:hidden">
+          <button
+            onClick={openClearDayModal}
+            className="rounded-full border border-red-300 text-red-600 bg-red-50 px-5 py-2 text-sm font-semibold"
+          >
+            🗑 特定の日を削除
+            <span className="block text-[10px] font-normal opacity-70">
+              Delete everyone's record for one day
+            </span>
+          </button>
+        </div>
+      )}
 
       {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
@@ -563,6 +621,147 @@ function PickupPageInner() {
                 {checkinSubmitting ? "送信中... / Sending..." : "送信する / Submit"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showClearDayModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !clearDayApplying && setShowClearDayModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {clearDayDone !== null ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  削除しました
+                  <span className="block text-sm font-normal text-gray-500">Deleted</span>
+                </h2>
+                <p className="text-sm text-center text-gray-600">
+                  {clearDayDate} の記録 {clearDayDone}件を削除しました
+                  <span className="block text-xs">
+                    Removed {clearDayDone} record(s) for {clearDayDate}
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowClearDayModal(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center text-red-600">
+                  特定の日を削除
+                  <span className="block text-sm font-normal text-gray-500">
+                    Delete a specific day
+                  </span>
+                </h2>
+                <label className="flex flex-col gap-1 text-sm">
+                  日付
+                  <span className="text-xs font-normal text-gray-500">Date</span>
+                  <input
+                    type="date"
+                    value={clearDayDate}
+                    min={`${yearMonth}-01`}
+                    max={`${yearMonth}-${pad2(daysInMonth(year, month))}`}
+                    disabled={clearDayFinalStep}
+                    onChange={(e) => {
+                      setClearDayDate(e.target.value);
+                      setClearDayFinalStep(false); // re-confirm against the new date's count
+                    }}
+                    className="border border-gray-300 rounded-lg px-3 py-2 disabled:opacity-60"
+                  />
+                </label>
+                {(() => {
+                  const affected = pickupCountForDate(clearDayDate);
+                  return (
+                    <div
+                      className={`rounded-xl p-4 text-center ${
+                        affected > 0 ? "bg-red-50 border border-red-300" : "bg-gray-50"
+                      }`}
+                    >
+                      <p
+                        className={`text-2xl font-bold ${
+                          affected > 0 ? "text-red-600" : "text-gray-400"
+                        }`}
+                      >
+                        {affected}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {clearDayDate} の記録件数
+                        <span className="block text-[10px] text-gray-400">
+                          Records for {clearDayDate}
+                        </span>
+                      </p>
+                    </div>
+                  );
+                })()}
+
+                {!clearDayFinalStep ? (
+                  <>
+                    <p className="text-xs text-gray-400 text-center">
+                      {branch} の {clearDayDate}
+                      の送迎記録を全員分削除します。空欄（未確認）の状態に戻ります。よろしいですか？
+                      <span className="block">
+                        Deletes every student&apos;s 登園/降園 record for {branch} on{" "}
+                        {clearDayDate}, back to blank (not checked). Continue?
+                      </span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setShowClearDayModal(false)}
+                        className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold"
+                      >
+                        キャンセル / Cancel
+                      </button>
+                      <button
+                        onClick={() => setClearDayFinalStep(true)}
+                        disabled={pickupCountForDate(clearDayDate) === 0}
+                        className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                      >
+                        次へ / Next
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-red-50 border border-red-300 rounded-xl p-4">
+                      <p className="text-sm text-red-800 font-semibold text-center">
+                        ⚠ この削除は完全に永久的です。バックアップはなく、二度と復元できません
+                        <span className="block text-xs font-normal mt-1">
+                          This deletion is permanent — there is no backup and it can never be
+                          recovered.
+                        </span>
+                      </p>
+                    </div>
+                    {clearDayError && (
+                      <p className="text-red-600 text-sm text-center">{clearDayError}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => setClearDayFinalStep(false)}
+                        disabled={clearDayApplying}
+                        className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
+                      >
+                        戻る / Back
+                      </button>
+                      <button
+                        onClick={handleClearDay}
+                        disabled={clearDayApplying}
+                        className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
+                      >
+                        {clearDayApplying ? "削除中... / Deleting..." : "本当に削除する / Really delete"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}

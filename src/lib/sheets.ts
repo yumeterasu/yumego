@@ -1929,6 +1929,52 @@ export async function bulkSetArrivalForRoster(
   }
 }
 
+/**
+ * Clears EVERY student's PickupLog row for one branch+date at once (both
+ * 登園 and 降園) -- for undoing a whole day that was checked in wrong,
+ * instead of clearing cells one by one. Same permanent, no-backup
+ * deleteDimension pattern as clearAttendanceForDate().
+ */
+export async function clearPickupForDate(branch: string, date: string): Promise<number> {
+  const sheets = getSheetsClient();
+  const studentsRes = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Students!A2:D",
+  });
+  const studentIds = new Set(
+    (studentsRes.data.values ?? [])
+      .filter((row) => (row[3] ?? "").toString().startsWith(branch))
+      .map((row) => row[0] ?? "")
+  );
+
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "PickupLog!A2:D",
+  });
+  const rows = existing.data.values ?? [];
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[0] ?? "") === date && studentIds.has(row[1] ?? ""))
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return 0;
+
+  const sheetId = await getSheetIdByTitle(sheets, "PickupLog");
+  rowNums.sort((a, b) => b - a);
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+
+  return rowNums.length;
+}
+
 // カレンダー管理 — school-wide holiday master list (date + optional label,
 // e.g. "Songkran"), viewed all 12 months of a fiscal year at once. Every
 // class's own calendar shows these as its default, but can independently
