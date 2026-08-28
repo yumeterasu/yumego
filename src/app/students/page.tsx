@@ -1606,67 +1606,68 @@ export default function StudentsPage() {
         )}
       </div>
 
-      {hasBranchGrade && (
-        <div className="border border-blue-300 rounded-xl p-4 flex flex-col gap-2 bg-blue-50/40">
-          <h2 className="font-semibold text-blue-700">
-            バックアップのみ
-            <span className="block text-xs font-normal text-blue-500">
-              Back up all (no deletion)
-            </span>
-          </h2>
-          <p className="text-xs text-gray-500">
-            このクラスの生徒名簿・出席記録・専門コーチの記録をExcelファイルとしてダウンロードします。何も削除しません
-            <span className="block">
-              Downloads roster, attendance, and Coach Schedule/Headcount records as an Excel
-              file — nothing is deleted
-            </span>
+      <div className="border border-blue-300 rounded-xl p-4 flex flex-col gap-2 bg-blue-50/40">
+        <h2 className="font-semibold text-blue-700">
+          バックアップのみ
+          <span className="block text-xs font-normal text-blue-500">
+            Back up all (no deletion)
+          </span>
+        </h2>
+        <p className="text-xs text-gray-500">
+          このクラスの生徒名簿・出席記録{hasBranchGrade && "・専門コーチの記録"}
+          をExcelファイルとしてダウンロードします。何も削除しません
+          <span className="block">
+            Downloads roster, attendance{hasBranchGrade && ", and Coach Schedule/Headcount"}{" "}
+            records as an Excel file — nothing is deleted
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={handleBackupAll}
+          disabled={backupAllStage === "downloading"}
+          className="self-start rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+        >
+          {backupAllStage === "downloading"
+            ? "ダウンロード中... / Downloading..."
+            : "📥 バックアップ / Back up all"}
+        </button>
+        {backupAllStage === "done" && (
+          <p className="text-xs text-green-700">
+            ✅ ダウンロードフォルダに保存しました / Saved to your downloads folder
           </p>
-          <button
-            type="button"
-            onClick={handleBackupAll}
-            disabled={backupAllStage === "downloading"}
-            className="self-start rounded-full bg-blue-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
-          >
-            {backupAllStage === "downloading"
-              ? "ダウンロード中... / Downloading..."
-              : "📥 バックアップ / Back up all"}
-          </button>
-          {backupAllStage === "done" && (
-            <p className="text-xs text-green-700">
-              ✅ ダウンロードフォルダに保存しました / Saved to your downloads folder
-            </p>
-          )}
-          {backupAllStage === "error" && backupAllError && (
-            <p className="text-xs text-red-600">{backupAllError}</p>
-          )}
-        </div>
-      )}
+        )}
+        {backupAllStage === "error" && backupAllError && (
+          <p className="text-xs text-red-600">{backupAllError}</p>
+        )}
+      </div>
 
-      {hasBranchGrade && (
-        <div className="border-2 border-red-300 rounded-xl p-4 flex flex-col gap-2 bg-red-50/40">
-          <h2 className="font-semibold text-red-700">
-            学期末リセット
-            <span className="block text-xs font-normal text-red-500">End-of-term reset</span>
-          </h2>
-          <p className="text-xs text-gray-500">
-            バックアップを保存してから、このクラスの生徒と専門コーチの記録をまとめてリセットします
-            <span className="block">
-              Backs up this class, then clears its roster and Coach Schedule/Headcount records
-            </span>
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setResetStage("idle");
-              setResetError(null);
-              setResetResult(null);
-              setShowResetModal1(true);
-            }}
-            className="self-start rounded-full bg-red-600 text-white px-4 py-2 text-sm font-semibold"
-          >
-            🔄 リセット / Reset
-          </button>
+      <div className="border-2 border-red-300 rounded-xl p-4 flex flex-col gap-2 bg-red-50/40">
+        <h2 className="font-semibold text-red-700">
+          学期末リセット
+          <span className="block text-xs font-normal text-red-500">End-of-term reset</span>
+        </h2>
+        <p className="text-xs text-gray-500">
+          バックアップを保存してから、このクラスの生徒{hasBranchGrade && "と専門コーチの記録"}
+          をまとめてリセットします
+          <span className="block">
+            Backs up this class, then clears its roster
+            {hasBranchGrade && " and Coach Schedule/Headcount records"}
+          </span>
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setResetStage("idle");
+            setResetError(null);
+            setResetResult(null);
+            setShowResetModal1(true);
+          }}
+          className="self-start rounded-full bg-red-600 text-white px-4 py-2 text-sm font-semibold"
+        >
+          🔄 リセット / Reset
+        </button>
 
+        {hasBranchGrade && (
           <div className="border-t border-red-200 pt-3 mt-1 flex flex-col gap-2">
             <h3 className="font-semibold text-red-700 text-sm">
               専門コーチ記録のみ削除
@@ -1694,8 +1695,8 @@ export default function StudentsPage() {
               🗑 コーチ記録のみ削除 / Delete coach records only
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Reset step 1/2 — explains exactly what will happen before asking for final confirmation. */}
       {showResetModal1 && (
@@ -1729,9 +1730,11 @@ export default function StudentsPage() {
 
             <ul className="text-xs text-gray-600 list-disc pl-4 flex flex-col gap-2">
               <li>
-                まずこのクラスの記録をバックアップとしてダウンロードします（生徒名簿・出席記録・コーチスケジュール・コーチ人数）
+                まずこのクラスの記録をバックアップとしてダウンロードします（生徒名簿・出席記録
+                {hasBranchGrade && "・コーチスケジュール・コーチ人数"}）
                 <span className="block text-gray-400">
-                  First, downloads a backup (roster, attendance, Coach Schedule, Coach Headcount)
+                  First, downloads a backup (roster, attendance
+                  {hasBranchGrade && ", Coach Schedule, Coach Headcount"})
                 </span>
               </li>
               <li>
@@ -1741,19 +1744,23 @@ export default function StudentsPage() {
                   removed students&quot;)
                 </span>
               </li>
-              <li className="text-red-600 font-semibold">
-                このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、復元できません
-                <span className="block text-red-400 font-normal">
-                  This class&apos;s Coach Schedule/Headcount records are permanently deleted —
-                  cannot be undone
-                </span>
-              </li>
-              <li>
-                専門コーチの種目リスト自体は削除しません（他の学年でも使うため）
-                <span className="block text-gray-400">
-                  The Coach category list itself is kept (other grades still use it)
-                </span>
-              </li>
+              {hasBranchGrade && (
+                <>
+                  <li className="text-red-600 font-semibold">
+                    このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、復元できません
+                    <span className="block text-red-400 font-normal">
+                      This class&apos;s Coach Schedule/Headcount records are permanently deleted —
+                      cannot be undone
+                    </span>
+                  </li>
+                  <li>
+                    専門コーチの種目リスト自体は削除しません（他の学年でも使うため）
+                    <span className="block text-gray-400">
+                      The Coach category list itself is kept (other grades still use it)
+                    </span>
+                  </li>
+                </>
+              )}
             </ul>
 
             <div className="grid grid-cols-2 gap-2">
@@ -1798,18 +1805,22 @@ export default function StudentsPage() {
                     <span className="text-gray-500">削除した生徒 / Students removed</span>
                     <span className="font-semibold">{resetResult?.studentsRemoved}名</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">
-                      削除したスケジュール記録 / Schedule rows deleted
-                    </span>
-                    <span className="font-semibold">{resetResult?.scheduleRowsDeleted}件</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">
-                      削除した人数記録 / Headcount rows deleted
-                    </span>
-                    <span className="font-semibold">{resetResult?.headcountRowsDeleted}件</span>
-                  </div>
+                  {hasBranchGrade && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">
+                          削除したスケジュール記録 / Schedule rows deleted
+                        </span>
+                        <span className="font-semibold">{resetResult?.scheduleRowsDeleted}件</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">
+                          削除した人数記録 / Headcount rows deleted
+                        </span>
+                        <span className="font-semibold">{resetResult?.headcountRowsDeleted}件</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <p className="text-xs text-gray-400 text-center">
                   バックアップファイルはダウンロードフォルダに保存されました
@@ -1835,11 +1846,25 @@ export default function StudentsPage() {
 
                 <div className="bg-red-50 border border-red-300 rounded-xl p-4">
                   <p className="text-sm text-red-800 font-semibold text-center">
-                    ⚠ まずバックアップを保存します。保存が終わり次第、このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、二度と元に戻せません
-                    <span className="block text-xs font-normal mt-1">
-                      We&apos;ll back up the data first. Once that&apos;s done, this class&apos;s
-                      Coach Schedule/Headcount records are permanently deleted — there is no undo.
-                    </span>
+                    {hasBranchGrade ? (
+                      <>
+                        ⚠ まずバックアップを保存します。保存が終わり次第、このクラスのコーチスケジュール・コーチ人数の記録は完全に削除され、二度と元に戻せません
+                        <span className="block text-xs font-normal mt-1">
+                          We&apos;ll back up the data first. Once that&apos;s done, this
+                          class&apos;s Coach Schedule/Headcount records are permanently deleted —
+                          there is no undo.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        まずバックアップを保存してから、生徒{students.length}
+                        名を一覧から削除します（後で復帰できます）
+                        <span className="block text-xs font-normal mt-1">
+                          We&apos;ll back up the data first, then remove all {students.length}{" "}
+                          students from the roster (recoverable later).
+                        </span>
+                      </>
+                    )}
                   </p>
                 </div>
 
