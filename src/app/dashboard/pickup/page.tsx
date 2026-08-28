@@ -327,16 +327,19 @@ function PickupPageInner() {
     return undefined;
   }
 
+  /** manageSavingState=false is for the cascade wrapper below, which owns
+   *  the saving indicator itself across the whole loop instead of letting
+   *  each individual month call flicker it on and off. */
   async function setBusPatternForMonth(
     student: Student,
     year: number,
     month: number,
     arrivalMode: BusLegMode,
-    departureMode: BusLegMode
+    departureMode: BusLegMode,
+    manageSavingState = true
   ) {
     const yearMonth = `${year}-${pad2(month)}`;
-    const savingKey = `${student.studentId}|${yearMonth}`;
-    setBusPatternSavingId(savingKey);
+    if (manageSavingState) setBusPatternSavingId(`${student.studentId}|${yearMonth}`);
     setError(null);
     try {
       const res = await fetch("/api/students/bus-pattern", {
@@ -365,6 +368,32 @@ function PickupPageInner() {
       });
     } catch {
       setError("バス・送迎設定の更新に失敗しました / Failed to update bus/pickup setting");
+    } finally {
+      if (manageSavingState) setBusPatternSavingId(null);
+    }
+  }
+
+  /** Changing the term's first month (4月/9月/1月) is the "set the whole
+   *  term" action -- cascades the same pattern to every other month in
+   *  the term too. Changing any other month only ever touches that one
+   *  month (handled by setBusPatternForMonth directly, called from the
+   *  dropdown below) -- covers the "parent asks for a change just one
+   *  month" case without disturbing the rest of the term. */
+  function busTermCascadeKey(studentId: string) {
+    return `${studentId}|__term_cascade__`;
+  }
+
+  async function setBusPatternForWholeTerm(
+    student: Student,
+    arrivalMode: BusLegMode,
+    departureMode: BusLegMode
+  ) {
+    setBusPatternSavingId(busTermCascadeKey(student.studentId));
+    setError(null);
+    try {
+      for (const my of busTermMonthYears) {
+        await setBusPatternForMonth(student, my.year, my.month, arrivalMode, departureMode, false);
+      }
     } finally {
       setBusPatternSavingId(null);
     }
@@ -753,6 +782,13 @@ function PickupPageInner() {
               閉じる / Close
             </button>
           </div>
+          <p className="text-xs text-gray-400 text-center print:hidden">
+            {busTermMonths[0]}月を変更すると残りの月にも自動反映されます。他の月を変更した場合はその月だけ変わります
+            <span className="block">
+              Changing {busTermMonths[0]}月 also applies to the rest of the term; changing any
+              other month only changes that month
+            </span>
+          </p>
 
           {busSettingsLoading ? (
             <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
@@ -765,12 +801,17 @@ function PickupPageInner() {
                       氏名
                       <span className="block text-[9px] font-normal text-gray-400">Name</span>
                     </th>
-                    {busTermMonthYears.map((my) => (
+                    {busTermMonthYears.map((my, i) => (
                       <th
                         key={`${my.year}-${my.month}`}
                         className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-28"
                       >
                         {my.month}月
+                        {i === 0 && (
+                          <span className="block text-[9px] font-normal text-gray-400">
+                            →他の月に反映
+                          </span>
+                        )}
                       </th>
                     ))}
                     <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-16">
@@ -832,12 +873,14 @@ function PickupPageInner() {
                                 </span>
                               )}
                             </td>
-                            {busTermMonthYears.map((my) => {
+                            {busTermMonthYears.map((my, myIdx) => {
                               const pattern = monthPatternFor(s.studentId, my.year, my.month);
                               const arrivalMode = pattern?.arrivalMode ?? "self";
                               const departureMode = pattern?.departureMode ?? "self";
                               const savingKey = `${s.studentId}|${my.year}-${pad2(my.month)}`;
-                              const saving = busPatternSavingId === savingKey;
+                              const saving =
+                                busPatternSavingId === savingKey ||
+                                busPatternSavingId === busTermCascadeKey(s.studentId);
                               return (
                                 <td
                                   key={`${my.year}-${my.month}`}
@@ -850,13 +893,17 @@ function PickupPageInner() {
                                       const [nextArrival, nextDeparture] = e.target.value.split(
                                         "_"
                                       ) as [BusLegMode, BusLegMode];
-                                      setBusPatternForMonth(
-                                        s,
-                                        my.year,
-                                        my.month,
-                                        nextArrival,
-                                        nextDeparture
-                                      );
+                                      if (myIdx === 0) {
+                                        setBusPatternForWholeTerm(s, nextArrival, nextDeparture);
+                                      } else {
+                                        setBusPatternForMonth(
+                                          s,
+                                          my.year,
+                                          my.month,
+                                          nextArrival,
+                                          nextDeparture
+                                        );
+                                      }
                                     }}
                                     className="w-full rounded px-0.5 py-1 text-xs border-none bg-transparent text-center disabled:opacity-40"
                                   >
