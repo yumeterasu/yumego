@@ -53,6 +53,18 @@ function getBusWeekBucketsForRange(startDate: string, endDate: string): BusWeekB
     });
 }
 
+/** Every weekStart touched by one calendar month -- a week spanning the
+ *  month's boundary is included too (see getBusWeekBucketsForRange), so
+ *  setting a whole month's pattern also reaches into the tail/head of an
+ *  adjacent month's boundary week. */
+function busMonthWeekStarts(year: number, month: number): string[] {
+  const lastDay = daysInMonth(year, month);
+  return getBusWeekBucketsForRange(
+    `${year}-${pad2(month)}-01`,
+    `${year}-${pad2(month)}-${pad2(lastDay)}`
+  ).map((b) => b.weekStart);
+}
+
 const BUS_MODE_OPTIONS: { value: string; label: string }[] = [
   { value: "self_self", label: "🚗↔🚗 送迎のみ" },
   { value: "bus_bus", label: "🚌↔🚌 往復バス" },
@@ -250,10 +262,6 @@ function PickupPageInner() {
     }
   }
 
-  // Every school week overlapping the viewed term, in order -- the
-  // バス・送迎設定 screen renders one column per bucket, all at once.
-  const weekBuckets = getBusWeekBucketsForRange(busTermStartDate, busTermEndDate);
-
   useEffect(() => {
     if (!showBusSettings) return;
     loadBusSettings();
@@ -306,13 +314,28 @@ function PickupPageInner() {
     }
   }
 
-  async function setBusPatternFor(
+  /** The pattern shown for one student in one month -- the first
+   *  non-default value found among that month's weeks (in practice every
+   *  week within a month is uniform, since バス・送迎設定 only ever
+   *  writes a whole month at a time now). undefined means default
+   *  (送迎のみ, self/self). */
+  function monthPatternFor(studentId: string, year: number, month: number) {
+    for (const weekStart of busMonthWeekStarts(year, month)) {
+      const p = busPatternsByWeek[weekStart]?.[studentId];
+      if (p) return p;
+    }
+    return undefined;
+  }
+
+  async function setBusPatternForMonth(
     student: Student,
-    weekStart: string,
+    year: number,
+    month: number,
     arrivalMode: BusLegMode,
     departureMode: BusLegMode
   ) {
-    const savingKey = `${student.studentId}|${weekStart}`;
+    const yearMonth = `${year}-${pad2(month)}`;
+    const savingKey = `${student.studentId}|${yearMonth}`;
     setBusPatternSavingId(savingKey);
     setError(null);
     try {
@@ -321,18 +344,22 @@ function PickupPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studentId: student.studentId,
-          week: weekStart,
+          month: yearMonth,
           arrivalMode,
           departureMode,
         }),
       });
       if (!res.ok) throw new Error("failed");
+      const weekStarts = busMonthWeekStarts(year, month);
       setBusPatternsByWeek((prev) => {
-        const next = { ...prev, [weekStart]: { ...(prev[weekStart] ?? {}) } };
-        if (arrivalMode === "self" && departureMode === "self") {
-          delete next[weekStart][student.studentId]; // back to default, matches server-side delete
-        } else {
-          next[weekStart][student.studentId] = { arrivalMode, departureMode };
+        const next = { ...prev };
+        for (const weekStart of weekStarts) {
+          next[weekStart] = { ...(next[weekStart] ?? {}) };
+          if (arrivalMode === "self" && departureMode === "self") {
+            delete next[weekStart][student.studentId]; // back to default, matches server-side delete
+          } else {
+            next[weekStart][student.studentId] = { arrivalMode, departureMode };
+          }
         }
         return next;
       });
@@ -348,8 +375,8 @@ function PickupPageInner() {
     const defaultDate =
       todayStr >= busTermStartDate && todayStr <= busTermEndDate ? todayStr : busTermStartDate;
     setOverrideDate(defaultDate);
-    const weekStart = weekStartForDate(defaultDate);
-    const pattern = busPatternsByWeek[weekStart]?.[student.studentId];
+    const d = new Date(defaultDate + "T00:00:00");
+    const pattern = monthPatternFor(student.studentId, d.getFullYear(), d.getMonth() + 1);
     setOverrideMode(`${pattern?.arrivalMode ?? "self"}_${pattern?.departureMode ?? "self"}`);
   }
 
@@ -714,9 +741,9 @@ function PickupPageInner() {
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
             <p className="text-sm text-gray-600">
-              {busTermLabel} の通学方法（バス・送迎）を週ごとに設定します
+              {busTermLabel} の通学方法（バス・送迎）を月ごとに設定します
               <span className="block text-xs text-gray-400">
-                Set each student&apos;s bus/pickup pattern, week by week, for {busTermLabel}
+                Set each student&apos;s bus/pickup pattern, month by month, for {busTermLabel}
               </span>
             </p>
             <button
@@ -734,51 +761,22 @@ function PickupPageInner() {
               <table className="text-sm border-collapse min-w-max w-full">
                 <thead>
                   <tr>
-                    <th
-                      rowSpan={2}
-                      className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-40"
-                    >
+                    <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-40">
                       氏名
                       <span className="block text-[9px] font-normal text-gray-400">Name</span>
                     </th>
-                    {(() => {
-                      // Merge consecutive week columns that fall under the
-                      // same month (a boundary week counts under its
-                      // Monday's month) into one spanning header cell.
-                      const groups: { label: string; count: number }[] = [];
-                      for (const b of weekBuckets) {
-                        const groupLabel = `${Number(b.weekStart.slice(5, 7))}月`;
-                        const last = groups[groups.length - 1];
-                        if (last && last.label === groupLabel) last.count++;
-                        else groups.push({ label: groupLabel, count: 1 });
-                      }
-                      return groups.map((g, i) => (
-                        <th
-                          key={i}
-                          colSpan={g.count}
-                          className="border border-gray-300 px-1 py-1 text-center bg-gray-200 text-xs font-semibold"
-                        >
-                          {g.label}
-                        </th>
-                      ));
-                    })()}
-                    <th
-                      rowSpan={2}
-                      className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-16"
-                    >
+                    {busTermMonthYears.map((my) => (
+                      <th
+                        key={`${my.year}-${my.month}`}
+                        className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-28"
+                      >
+                        {my.month}月
+                      </th>
+                    ))}
+                    <th className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-16">
                       特例
                       <span className="block text-[9px] font-normal text-gray-400">Exception</span>
                     </th>
-                  </tr>
-                  <tr>
-                    {weekBuckets.map((b) => (
-                      <th
-                        key={b.weekStart}
-                        className="border border-gray-300 px-1 py-1 text-center bg-gray-100 w-28"
-                      >
-                        {b.label}
-                      </th>
-                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -787,14 +785,14 @@ function PickupPageInner() {
                     return students.map((s) => {
                       const showGroupHeader = s.className !== lastClassName;
                       lastClassName = s.className;
-                      const usesBusAnyWeek = weekBuckets.some((b) => {
-                        const p = busPatternsByWeek[b.weekStart]?.[s.studentId];
+                      const usesBusAnyMonth = busTermMonthYears.some((my) => {
+                        const p = monthPatternFor(s.studentId, my.year, my.month);
                         return p && (p.arrivalMode === "bus" || p.departureMode === "bus");
                       });
                       const hasAddress = !!locationsByStudent[s.studentId];
                       const overrides = busOverridesByStudent[s.studentId] ?? [];
                       const formOpen = overrideFormFor === s.studentId;
-                      const extraColCount = weekBuckets.length + 2;
+                      const extraColCount = busTermMonthYears.length + 2;
                       return (
                         <Fragment key={s.studentId}>
                           {showGroupHeader && (
@@ -811,7 +809,7 @@ function PickupPageInner() {
                             <td className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap align-top z-10 leading-tight">
                               <span className="inline-flex items-center gap-1">
                                 {s.nameKanji}
-                                {usesBusAnyWeek && !hasAddress && (
+                                {usesBusAnyMonth && !hasAddress && (
                                   <span
                                     title="住所が未登録です（生徒管理で登録してください） / No address on file"
                                     className="text-red-600 text-xs"
@@ -819,7 +817,7 @@ function PickupPageInner() {
                                     ⚠️
                                   </span>
                                 )}
-                                {usesBusAnyWeek && hasAddress && (
+                                {usesBusAnyMonth && hasAddress && (
                                   <span
                                     title={locationsByStudent[s.studentId].address}
                                     className="text-green-700 text-xs"
@@ -834,15 +832,15 @@ function PickupPageInner() {
                                 </span>
                               )}
                             </td>
-                            {weekBuckets.map((b) => {
-                              const pattern = busPatternsByWeek[b.weekStart]?.[s.studentId];
+                            {busTermMonthYears.map((my) => {
+                              const pattern = monthPatternFor(s.studentId, my.year, my.month);
                               const arrivalMode = pattern?.arrivalMode ?? "self";
                               const departureMode = pattern?.departureMode ?? "self";
-                              const savingKey = `${s.studentId}|${b.weekStart}`;
+                              const savingKey = `${s.studentId}|${my.year}-${pad2(my.month)}`;
                               const saving = busPatternSavingId === savingKey;
                               return (
                                 <td
-                                  key={b.weekStart}
+                                  key={`${my.year}-${my.month}`}
                                   className="border border-gray-300 px-1 py-0.5 text-center"
                                 >
                                   <select
@@ -852,7 +850,13 @@ function PickupPageInner() {
                                       const [nextArrival, nextDeparture] = e.target.value.split(
                                         "_"
                                       ) as [BusLegMode, BusLegMode];
-                                      setBusPatternFor(s, b.weekStart, nextArrival, nextDeparture);
+                                      setBusPatternForMonth(
+                                        s,
+                                        my.year,
+                                        my.month,
+                                        nextArrival,
+                                        nextDeparture
+                                      );
                                     }}
                                     className="w-full rounded px-0.5 py-1 text-xs border-none bg-transparent text-center disabled:opacity-40"
                                   >

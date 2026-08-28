@@ -2889,6 +2889,30 @@ export async function setBusPattern(
   });
 }
 
+/**
+ * Sets one student's pattern uniformly across every school week in one
+ * month -- the storage itself stays per-week (StudentBusPattern is still
+ * keyed by weekStart, see setBusPattern above), but バス・送迎設定 only
+ * ever writes through this now, one whole month at a time, since per-week
+ * control turned out to be finer than staff actually wanted day to day
+ * (single-day exceptions are still handled separately by
+ * StudentBusOverride). A week that spans this month's boundary into an
+ * adjacent month is included too (same weekStart either side owns it, as
+ * documented on getBusWeekBucketsForRange), so setting August also
+ * touches the tail end of a July/August boundary week.
+ */
+export async function setBusPatternForMonth(
+  studentId: string,
+  yearMonth: string,
+  arrivalMode: BusLegMode,
+  departureMode: BusLegMode
+): Promise<void> {
+  const weekStarts = getBusWeekBucketsForMonth(yearMonth).map((b) => b.weekStart);
+  for (const weekStart of weekStarts) {
+    await setBusPattern(studentId, weekStart, arrivalMode, departureMode);
+  }
+}
+
 // 単日バス例外 — a one-off override for a single calendar date, layered on
 // top of 週次バスパターン above for the "parent called this morning asking
 // for pickup instead of the bus, just today" case: rather than editing the

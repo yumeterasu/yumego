@@ -5,6 +5,7 @@ import {
   getBusPatternsForRange,
   getBusPatternHistory,
   setBusPattern,
+  setBusPatternForMonth,
   BusLegMode,
 } from "@/lib/sheets";
 
@@ -65,24 +66,40 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// PATCH /api/students/bus-pattern  { studentId, month: "YYYY-MM", arrivalMode, departureMode }
+// Sets the pattern uniformly across every school week in that month --
+// バス・送迎設定's normal write path now (per-week control turned out to
+// be finer than staff wanted; see setBusPatternForMonth in sheets.ts).
 // PATCH /api/students/bus-pattern  { studentId, week: "YYYY-MM-DD", arrivalMode, departureMode }
-// Setting both legs back to "self"/"self" (the default) clears the stored
-// exception for that week rather than leaving a redundant row.
+// Sets just one school week (still supported for callers that want
+// finer control). Either way, setting both legs back to "self"/"self"
+// (the default) clears the stored exception rather than leaving a
+// redundant row.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { studentId, week, arrivalMode, departureMode } = body ?? {};
+  const { studentId, month, week, arrivalMode, departureMode } = body ?? {};
 
   if (typeof studentId !== "string" || !studentId) {
     return NextResponse.json({ error: "Missing studentId" }, { status: 400 });
-  }
-  if (typeof week !== "string" || !DATE_RE.test(week)) {
-    return NextResponse.json({ error: "Invalid week (expected YYYY-MM-DD)" }, { status: 400 });
   }
   if (!VALID_LEG_MODES.includes(arrivalMode) || !VALID_LEG_MODES.includes(departureMode)) {
     return NextResponse.json({ error: "Invalid arrivalMode/departureMode" }, { status: 400 });
   }
 
   try {
+    if (month !== undefined) {
+      if (typeof month !== "string" || !YEAR_MONTH_RE.test(month)) {
+        return NextResponse.json({ error: "Invalid month (expected YYYY-MM)" }, { status: 400 });
+      }
+      await setBusPatternForMonth(studentId, month, arrivalMode, departureMode);
+      return NextResponse.json({ ok: true });
+    }
+    if (typeof week !== "string" || !DATE_RE.test(week)) {
+      return NextResponse.json(
+        { error: "Missing or invalid 'month' (expected YYYY-MM) or 'week' (expected YYYY-MM-DD)" },
+        { status: 400 }
+      );
+    }
     await setBusPattern(studentId, week, arrivalMode, departureMode);
     return NextResponse.json({ ok: true });
   } catch (err) {
