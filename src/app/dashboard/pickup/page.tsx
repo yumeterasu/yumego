@@ -262,6 +262,15 @@ function PickupPageInner() {
           >
             🏠
           </Link>
+          {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
+            <button
+              type="button"
+              onClick={openCheckin}
+              className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold shrink-0"
+            >
+              ✅ 登園確認
+            </button>
+          )}
           <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
           <button
             onClick={() => window.print()}
@@ -306,19 +315,6 @@ function PickupPageInner() {
       <p className="text-lg font-bold text-center hidden print:block">
         {year}年{month}月
       </p>
-
-      {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
-        <div className="flex justify-center print:hidden">
-          <button
-            type="button"
-            onClick={openCheckin}
-            className="rounded-full bg-green-600 text-white px-5 py-2.5 text-sm font-semibold"
-          >
-            ✅ 登園確認
-            <span className="block text-[10px] font-normal opacity-80">Arrival check-in</span>
-          </button>
-        </div>
-      )}
 
       {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
