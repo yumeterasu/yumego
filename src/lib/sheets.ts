@@ -2610,12 +2610,13 @@ export async function setStudentLocation(
   });
 }
 
-// 送迎バス - 通学方法 — whether a student rides the bus or is dropped
-// off/picked up by their own parents. Kept separate from StudentLocations
-// (a "self" student has no address at all, and this is a different concern
-// from the address itself) and from Students (same reasoning as
-// StudentLocations — optional, unrelated to attendance, keeps the
-// heavily-used Students sheet/functions untouched).
+// 送迎バス - 通学方法 (LEGACY) — used to be a static per-student flag set
+// once at registration, but real usage turned out to change month to month
+// (sometimes week to week) -- see 月次バスパターン (StudentBusPattern)
+// above, which replaced this as the actual source of truth. The app no
+// longer writes to this sheet; these functions stay only for reading old
+// data (e.g. a one-off migration) and nothing calls setStudentTransport()
+// anymore.
 export type TransportMode = "bus" | "self";
 export type StudentTransport = { studentId: string; mode: TransportMode };
 
@@ -2689,16 +2690,17 @@ export async function setStudentTransport(
   });
 }
 
-// 月次バスパターン — bus students can ride the bus one way and be picked up/
-// dropped off themselves the other way, and which of the 3 combinations
-// applies changes month to month (school activities, parent schedules,
-// etc.). Only meaningful for students whose overall StudentTransport mode
-// is "bus" -- this is layered on top of that, not a replacement for it.
-// One row per (studentId, yearMonth) -- but ONLY for months that deviate
-// from the default 来:バス／帰:バス (full round-trip bus), which is assumed
-// whenever no row exists for that student+month. This keeps the sheet to
-// just the exceptions while still preserving full month-by-month history
-// for every month someone actually changed it.
+// 月次バスパターン — the single source of truth for how a student commutes
+// in a given month: 来:バス／帰:バス, 来:バス／帰:自分, 来:自分／帰:バス, or
+// 来:自分／帰:自分 (送迎のみ, no bus at all) -- this changes month to month,
+// sometimes week to week, so it's never treated as a permanent property of
+// the student (StudentTransport, the old static bus/self flag, is no
+// longer written to by the app -- see 生徒管理/送迎管理). One row per
+// (studentId, yearMonth) -- but ONLY for months that deviate from the
+// default 来:自分／帰:自分 (no bus), which is assumed whenever no row
+// exists for that student+month. This keeps the sheet to just the
+// exceptions while still preserving full month-by-month history for every
+// month someone actually set a bus leg.
 export type BusLegMode = "bus" | "self";
 export type StudentBusPattern = {
   studentId: string;
@@ -2711,7 +2713,8 @@ function parseBusLegMode(raw: string | undefined): BusLegMode {
   return (raw ?? "").toString() === "self" ? "self" : "bus";
 }
 
-/** Every recorded (non-default) pattern for one month, across all students. */
+/** Every recorded (non-default, i.e. involves a bus leg) pattern for one
+ *  month, across all students. */
 export async function getBusPatternsForMonth(yearMonth: string): Promise<StudentBusPattern[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
@@ -2731,7 +2734,7 @@ export async function getBusPatternsForMonth(yearMonth: string): Promise<Student
 
 /** Every recorded (non-default) month for one student, oldest first --
  *  the month-by-month history view (defaults/unset months aren't included,
- *  since they're implicitly 来:バス／帰:バス). */
+ *  since they're implicitly 来:自分／帰:自分, no bus). */
 export async function getBusPatternHistory(studentId: string): Promise<StudentBusPattern[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
@@ -2752,9 +2755,9 @@ export async function getBusPatternHistory(studentId: string): Promise<StudentBu
 
 /**
  * Sets one student's pattern for one month. Setting it back to the default
- * (bus/bus) deletes the row instead of storing it -- functionally identical
- * either way (a missing row already means "default"), and keeps the sheet
- * limited to genuine exceptions.
+ * (self/self, no bus) deletes the row instead of storing it -- functionally
+ * identical either way (a missing row already means "default"), and keeps
+ * the sheet limited to genuine exceptions.
  */
 export async function setBusPattern(
   studentId: string,
@@ -2771,7 +2774,7 @@ export async function setBusPattern(
   const rowOffset = rows.findIndex(
     (row) => (row[0] ?? "") === studentId && (row[1] ?? "") === yearMonth
   );
-  const isDefault = arrivalMode === "bus" && departureMode === "bus";
+  const isDefault = arrivalMode === "self" && departureMode === "self";
 
   if (isDefault) {
     if (rowOffset === -1) return; // already default, nothing stored to remove

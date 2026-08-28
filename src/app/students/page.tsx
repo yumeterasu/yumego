@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { CLASSES, classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
-import type { Student, StudentLocation, TransportMode, BusLegMode } from "@/lib/sheets";
+import type { Student, StudentLocation } from "@/lib/sheets";
 
 type AddMode = "single" | "bulk";
 
@@ -119,10 +119,6 @@ export default function StudentsPage() {
   const [addMode, setAddMode] = useState<AddMode>("single");
   const [nameKanji, setNameKanji] = useState("");
   const [nameEnglish, setNameEnglish] = useState("");
-  // 通学方法 picked before submitting the single-add form -- optional, no
-  // address field shown unless バス is picked (applied right after the
-  // student is created; see handleAddSingle).
-  const [addTransportChoice, setAddTransportChoice] = useState<TransportMode | null>(null);
   const [bulkText, setBulkText] = useState("");
   // For pasting a "名前" column where each cell has kanji+romaji on 2 lines
   // (e.g. the school's own roster spreadsheet) -- see parseBulkNamesTwoLine.
@@ -170,14 +166,14 @@ export default function StudentsPage() {
   const [moveClassError, setMoveClassError] = useState<string | null>(null);
 
   // 送迎バス住所登録 — per-student home address, geocoded server-side.
+  // Permanent/stable info, unlike 通学方法 which now lives entirely on
+  // 送迎管理 (see 月次バスパターン there) since it turned out to change
+  // month to month, sometimes week to week -- not something to gate off
+  // this page anymore.
   const [addressModal, setAddressModal] = useState<{
     studentId: string;
     nameKanji: string;
     input: string;
-    // If opened because バス was picked with no address on file yet, saving
-    // successfully here also sets the transport mode to バス -- see
-    // setTransportMode() and confirmSaveAddress().
-    autoSetBusOnSave?: boolean;
   } | null>(null);
   const [addressLoading, setAddressLoading] = useState(false);
   const [addressLookingUp, setAddressLookingUp] = useState(false);
@@ -197,21 +193,6 @@ export default function StudentsPage() {
   const [locationsByStudent, setLocationsByStudent] = useState<Record<string, StudentLocation>>(
     {}
   );
-  // 通学方法 — バス (fills in an address) vs 自分で送迎 (no address needed,
-  // used elsewhere later per the school's own request).
-  const [transportByStudent, setTransportByStudent] = useState<Record<string, TransportMode>>({});
-  const [transportSavingId, setTransportSavingId] = useState<string | null>(null);
-
-  // 月次バスパターン — バス students only: which of 来:バス／帰:バス,
-  // 来:バス／帰:自分, 来:自分／帰:バス applies for the month currently being
-  // viewed (changes month to month, e.g. after-school activities). Missing
-  // entry for a student = the default, full round-trip bus.
-  const [busMonth, setBusMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [busPatternsByStudent, setBusPatternsByStudent] = useState<
-    Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }>
-  >({});
-  const [busPatternSavingId, setBusPatternSavingId] = useState<string | null>(null);
-
   const [showInactive, setShowInactive] = useState(false);
   const [inactiveStudents, setInactiveStudents] = useState<Student[]>([]);
   const [loadingInactive, setLoadingInactive] = useState(false);
@@ -270,75 +251,8 @@ export default function StudentsPage() {
     }
     loadStudents(selectedClass);
     loadLocations();
-    loadTransports();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, selectedClass]);
-
-  useEffect(() => {
-    if (!loaded || !selectedClass) return;
-    loadBusPatterns(busMonth);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, selectedClass, busMonth]);
-
-  function shiftBusMonth(delta: number) {
-    const [y, m] = busMonth.split("-").map(Number);
-    const d = new Date(y, m - 1 + delta, 1);
-    setBusMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }
-
-  async function loadBusPatterns(month: string) {
-    try {
-      const res = await fetch(`/api/students/bus-pattern?month=${encodeURIComponent(month)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const map: Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }> = {};
-      for (const p of (data.patterns ?? []) as {
-        studentId: string;
-        arrivalMode: BusLegMode;
-        departureMode: BusLegMode;
-      }[]) {
-        map[p.studentId] = { arrivalMode: p.arrivalMode, departureMode: p.departureMode };
-      }
-      setBusPatternsByStudent(map);
-    } catch {
-      // non-critical -- rows just show the default (bus/bus) pattern
-    }
-  }
-
-  async function setBusPatternFor(
-    student: Student,
-    arrivalMode: BusLegMode,
-    departureMode: BusLegMode
-  ) {
-    setBusPatternSavingId(student.studentId);
-    setError(null);
-    try {
-      const res = await fetch("/api/students/bus-pattern", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: student.studentId,
-          month: busMonth,
-          arrivalMode,
-          departureMode,
-        }),
-      });
-      if (!res.ok) throw new Error("failed");
-      setBusPatternsByStudent((prev) => {
-        const next = { ...prev };
-        if (arrivalMode === "bus" && departureMode === "bus") {
-          delete next[student.studentId]; // back to default, matches server-side delete
-        } else {
-          next[student.studentId] = { arrivalMode, departureMode };
-        }
-        return next;
-      });
-    } catch {
-      setError("バスパターンの更新に失敗しました / Failed to update bus pattern");
-    } finally {
-      setBusPatternSavingId(null);
-    }
-  }
 
   async function loadLocations() {
     try {
@@ -350,50 +264,6 @@ export default function StudentsPage() {
       setLocationsByStudent(map);
     } catch {
       // non-critical -- the roster just won't show address previews
-    }
-  }
-
-  async function loadTransports() {
-    try {
-      const res = await fetch("/api/students/transport");
-      if (!res.ok) return;
-      const data = await res.json();
-      const map: Record<string, TransportMode> = {};
-      for (const t of (data.transports ?? []) as { studentId: string; mode: TransportMode }[]) {
-        map[t.studentId] = t.mode;
-      }
-      setTransportByStudent(map);
-    } catch {
-      // non-critical -- the roster just won't show the bus/self toggle state
-    }
-  }
-
-  async function setTransportMode(student: Student, mode: TransportMode) {
-    // バス no longer forces an address to be entered up front -- setting
-    // the mode is immediate, and the 🏠住所 button (shown once mode is
-    // バス) still visually warns (⚠️) when one hasn't been added yet, but
-    // doesn't block anything. Address can be filled in whenever.
-
-    // Toggling the same mode again clears it back to "not yet chosen".
-    const nextMode: TransportMode | null = transportByStudent[student.studentId] === mode ? null : mode;
-    setTransportSavingId(student.studentId);
-    try {
-      const res = await fetch("/api/students/transport", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: student.studentId, mode: nextMode }),
-      });
-      if (!res.ok) throw new Error("failed");
-      setTransportByStudent((prev) => {
-        const next = { ...prev };
-        if (nextMode === null) delete next[student.studentId];
-        else next[student.studentId] = nextMode;
-        return next;
-      });
-    } catch {
-      setError("通学方法の更新に失敗しました / Failed to update transport mode");
-    } finally {
-      setTransportSavingId(null);
     }
   }
 
@@ -454,35 +324,9 @@ export default function StudentsPage() {
         }),
       });
       if (!res.ok) throw new Error("failed");
-      const { studentId } = await res.json();
-
-      // Apply the 通学方法 picked before submitting, if any -- constructed
-      // directly rather than re-reading `students` state, which wouldn't
-      // reflect this brand-new row yet inside this same function run.
-      // setTransportMode() already knows to open the address modal instead
-      // of setting バス directly when there's no address on file yet
-      // (always true here), same as the roster's own バス button.
-      if (addTransportChoice && selectedClass) {
-        const created: Student = {
-          studentId,
-          nameKanji: nameKanji.trim(),
-          nameEnglish: nameEnglish.trim(),
-          className: selectedClass,
-          active: true,
-          remark: "",
-          check1: false,
-          check2: false,
-          check3: false,
-          sortOrder: 0,
-          nameHiragana: "",
-          birthDate: "",
-        };
-        await setTransportMode(created, addTransportChoice);
-      }
 
       setNameKanji("");
       setNameEnglish("");
-      setAddTransportChoice(null);
       await loadStudents(selectedClass);
     } catch {
       setError("生徒の追加に失敗しました / Failed to add student");
@@ -901,15 +745,11 @@ export default function StudentsPage() {
     }
   }
 
-  async function openAddressModal(
-    student: Student,
-    options?: { autoSetBusOnSave?: boolean }
-  ) {
+  async function openAddressModal(student: Student) {
     setAddressModal({
       studentId: student.studentId,
       nameKanji: student.nameKanji,
       input: "",
-      autoSetBusOnSave: options?.autoSetBusOnSave,
     });
     setAddressError(null);
     setPendingResult(null);
@@ -928,7 +768,6 @@ export default function StudentsPage() {
             studentId: student.studentId,
             nameKanji: student.nameKanji,
             input: data.location.address,
-            autoSetBusOnSave: options?.autoSetBusOnSave,
           });
         }
       }
@@ -996,19 +835,6 @@ export default function StudentsPage() {
       setSavedLocation(data.location);
       setLocationsByStudent((prev) => ({ ...prev, [addressModal.studentId]: data.location }));
       setPendingResult(null);
-
-      // バス requires an address -- if this save happened because バス was
-      // picked with no address yet, the mode gets set now that one exists.
-      if (addressModal.autoSetBusOnSave) {
-        const transportRes = await fetch("/api/students/transport", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: addressModal.studentId, mode: "bus" }),
-        });
-        if (transportRes.ok) {
-          setTransportByStudent((prev) => ({ ...prev, [addressModal.studentId]: "bus" }));
-        }
-      }
     } catch {
       setAddressError("保存に失敗しました / Failed to save");
     } finally {
@@ -1036,23 +862,6 @@ export default function StudentsPage() {
         delete next[addressModal.studentId];
         return next;
       });
-
-      // バス requires an address -- removing it clears the mode back to
-      // "not yet chosen" rather than leaving a バス student with no address.
-      if (transportByStudent[addressModal.studentId] === "bus") {
-        const transportRes = await fetch("/api/students/transport", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ studentId: addressModal.studentId, mode: null }),
-        });
-        if (transportRes.ok) {
-          setTransportByStudent((prev) => {
-            const next = { ...prev };
-            delete next[addressModal.studentId];
-            return next;
-          });
-        }
-      }
     } catch {
       setAddressError("削除に失敗しました / Failed to delete");
     } finally {
@@ -1145,48 +954,6 @@ export default function StudentsPage() {
                 placeholder="TARO YAMADA"
               />
             </label>
-            <div className="flex flex-col gap-1.5 text-sm">
-              <span>
-                通学方法（任意）
-                <span className="block text-xs font-normal text-gray-500">
-                  Transport (optional) — add now, or set it later from the roster below
-                </span>
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setAddTransportChoice((prev) => (prev === "bus" ? null : "bus"))
-                  }
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold border ${
-                    addTransportChoice === "bus"
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-gray-500 border-gray-300"
-                  }`}
-                >
-                  🚌 バス
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setAddTransportChoice((prev) => (prev === "self" ? null : "self"))
-                  }
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold border ${
-                    addTransportChoice === "self"
-                      ? "bg-amber-500 text-white border-amber-500"
-                      : "bg-white text-gray-500 border-gray-300"
-                  }`}
-                >
-                  🚗 送迎
-                </button>
-              </div>
-              {addTransportChoice === "bus" && (
-                <p className="text-xs text-amber-600">
-                  🏠 住所は後からでも登録できます
-                  <span className="block">Address can be added later, no rush</span>
-                </p>
-              )}
-            </div>
             <button
               type="submit"
               disabled={saving || !nameKanji.trim()}
@@ -1364,30 +1131,6 @@ export default function StudentsPage() {
             <span className="block">Use ▲▼ to reorder, then press Save</span>
           </p>
         )}
-        {students.some((s) => transportByStudent[s.studentId] === "bus") && (
-          <div className="flex items-center justify-center gap-3 mb-2 text-sm">
-            <span className="text-gray-400 text-xs">
-              🚌バスパターン月 / Bus pattern month
-            </span>
-            <button
-              type="button"
-              onClick={() => shiftBusMonth(-1)}
-              className="rounded-full bg-gray-100 text-gray-600 w-7 h-7 flex items-center justify-center shrink-0"
-              aria-label="前の月 / Previous month"
-            >
-              ◀
-            </button>
-            <span className="font-semibold w-20 text-center">{busMonth}</span>
-            <button
-              type="button"
-              onClick={() => shiftBusMonth(1)}
-              className="rounded-full bg-gray-100 text-gray-600 w-7 h-7 flex items-center justify-center shrink-0"
-              aria-label="次の月 / Next month"
-            >
-              ▶
-            </button>
-          </div>
-        )}
         {loading ? (
           <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
         ) : students.length === 0 ? (
@@ -1434,79 +1177,24 @@ export default function StudentsPage() {
                   {s.birthDate && (
                     <span className="text-[10px] text-gray-400 block">🎂 {s.birthDate}</span>
                   )}
-                  {transportByStudent[s.studentId] === "self" ? (
-                    <p className="text-[10px] text-amber-600">🚗 自分で送迎（住所不要）/ Self drop-off</p>
-                  ) : locationsByStudent[s.studentId] ? (
+                  {locationsByStudent[s.studentId] && (
                     <p className="text-[10px] text-green-700 truncate max-w-xs">
                       📍 {locationsByStudent[s.studentId].address}
                     </p>
-                  ) : (
-                    transportByStudent[s.studentId] === "bus" && (
-                      <p className="text-[10px] text-red-600 font-semibold">
-                        ⚠️ 住所が未登録です / Address missing
-                      </p>
-                    )
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <button
-                    onClick={() => setTransportMode(s, "bus")}
-                    disabled={reorderMode || transportSavingId === s.studentId}
+                    onClick={() => openAddressModal(s)}
+                    disabled={reorderMode}
                     className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
-                      transportByStudent[s.studentId] === "bus"
-                        ? "bg-blue-600 text-white border-blue-600"
+                      locationsByStudent[s.studentId]
+                        ? "bg-green-50 text-green-700 border-green-300"
                         : "bg-white text-gray-500 border-gray-300"
                     }`}
                   >
-                    🚌 バス
+                    {locationsByStudent[s.studentId] ? "🏠 住所 ✓" : "🏠 住所"}
                   </button>
-                  <button
-                    onClick={() => setTransportMode(s, "self")}
-                    disabled={reorderMode || transportSavingId === s.studentId}
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
-                      transportByStudent[s.studentId] === "self"
-                        ? "bg-amber-500 text-white border-amber-500"
-                        : "bg-white text-gray-500 border-gray-300"
-                    }`}
-                  >
-                    🚗 送迎
-                  </button>
-                  {transportByStudent[s.studentId] === "bus" && (
-                    <button
-                      onClick={() => openAddressModal(s)}
-                      disabled={reorderMode}
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold border disabled:opacity-40 ${
-                        locationsByStudent[s.studentId]
-                          ? "bg-green-50 text-green-700 border-green-300"
-                          : "bg-red-50 text-red-600 border-red-300"
-                      }`}
-                    >
-                      {locationsByStudent[s.studentId] ? "🏠 住所 ✓" : "🏠 住所 ⚠️"}
-                    </button>
-                  )}
-                  {transportByStudent[s.studentId] === "bus" && (
-                    <select
-                      value={
-                        busPatternsByStudent[s.studentId]
-                          ? `${busPatternsByStudent[s.studentId].arrivalMode}_${busPatternsByStudent[s.studentId].departureMode}`
-                          : "bus_bus"
-                      }
-                      disabled={reorderMode || busPatternSavingId === s.studentId}
-                      onChange={(e) => {
-                        const [arrivalMode, departureMode] = e.target.value.split("_") as [
-                          BusLegMode,
-                          BusLegMode,
-                        ];
-                        setBusPatternFor(s, arrivalMode, departureMode);
-                      }}
-                      title={`${busMonth} のバスパターン / Bus pattern for ${busMonth}`}
-                      className="rounded-full px-2 py-1 text-[11px] font-semibold border bg-white text-gray-600 border-gray-300 disabled:opacity-40"
-                    >
-                      <option value="bus_bus">🚌↔🚌 往復バス</option>
-                      <option value="bus_self">🚌→🚗 帰り自分</option>
-                      <option value="self_bus">🚗→🚌 行き自分</option>
-                    </select>
-                  )}
                   <button
                     onClick={() => openEditName(s)}
                     disabled={reorderMode}
@@ -2248,14 +1936,6 @@ export default function StudentsPage() {
               <span className="block text-sm font-normal text-gray-500">
                 送迎バス用の住所 / Home address for bus routing
               </span>
-              {addressModal.autoSetBusOnSave && (
-                <span className="block text-xs font-normal text-amber-600 mt-1">
-                  🚌 バスを選ぶには住所が必要です — 保存すると自動でバスに設定されます
-                  <span className="block">
-                    An address is required to select バス — saving one will set it automatically
-                  </span>
-                </span>
-              )}
             </h2>
 
             {addressLoading ? (

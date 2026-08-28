@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, Suspense, Fragment } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import type { Student, PickupRecord } from "@/lib/sheets";
+import type { Student, PickupRecord, StudentLocation, BusLegMode } from "@/lib/sheets";
 import { branchToEnglish, type Branch } from "@/lib/classes";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -75,6 +75,21 @@ function PickupPageInner() {
   const [clearDayError, setClearDayError] = useState<string | null>(null);
   const [clearDayDone, setClearDayDone] = useState<number | null>(null);
 
+  // バス・送迎設定 — 通学方法 lives here now, not on 生徒管理, since in
+  // practice it turned out to change month to month (sometimes week to
+  // week) per student rather than being a fixed thing set once at
+  // registration. Scoped to whichever month is currently on screen (the
+  // same year/month state the day-grid already uses).
+  const [showBusSettings, setShowBusSettings] = useState(false);
+  const [busSettingsLoading, setBusSettingsLoading] = useState(false);
+  const [busPatternsByStudent, setBusPatternsByStudent] = useState<
+    Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }>
+  >({});
+  const [locationsByStudent, setLocationsByStudent] = useState<Record<string, StudentLocation>>(
+    {}
+  );
+  const [busPatternSavingId, setBusPatternSavingId] = useState<string | null>(null);
+
   const yearMonth = `${year}-${pad2(month)}`;
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const isViewingCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
@@ -114,6 +129,80 @@ function PickupPageInner() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!showBusSettings) return;
+    loadBusSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBusSettings, yearMonth]);
+
+  async function loadBusSettings() {
+    setBusSettingsLoading(true);
+    setError(null);
+    try {
+      const [patternRes, locationRes] = await Promise.all([
+        fetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
+        fetch("/api/students/location"),
+      ]);
+      if (patternRes.ok) {
+        const data = await patternRes.json();
+        const map: Record<string, { arrivalMode: BusLegMode; departureMode: BusLegMode }> = {};
+        for (const p of (data.patterns ?? []) as {
+          studentId: string;
+          arrivalMode: BusLegMode;
+          departureMode: BusLegMode;
+        }[]) {
+          map[p.studentId] = { arrivalMode: p.arrivalMode, departureMode: p.departureMode };
+        }
+        setBusPatternsByStudent(map);
+      }
+      if (locationRes.ok) {
+        const data = await locationRes.json();
+        const map: Record<string, StudentLocation> = {};
+        for (const loc of (data.locations ?? []) as StudentLocation[]) map[loc.studentId] = loc;
+        setLocationsByStudent(map);
+      }
+    } catch {
+      setError("バス・送迎設定の取得に失敗しました / Failed to load bus/pickup settings");
+    } finally {
+      setBusSettingsLoading(false);
+    }
+  }
+
+  async function setBusPatternFor(
+    student: Student,
+    arrivalMode: BusLegMode,
+    departureMode: BusLegMode
+  ) {
+    setBusPatternSavingId(student.studentId);
+    setError(null);
+    try {
+      const res = await fetch("/api/students/bus-pattern", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: student.studentId,
+          month: yearMonth,
+          arrivalMode,
+          departureMode,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setBusPatternsByStudent((prev) => {
+        const next = { ...prev };
+        if (arrivalMode === "self" && departureMode === "self") {
+          delete next[student.studentId]; // back to default, matches server-side delete
+        } else {
+          next[student.studentId] = { arrivalMode, departureMode };
+        }
+        return next;
+      });
+    } catch {
+      setError("バス・送迎設定の更新に失敗しました / Failed to update bus/pickup setting");
+    } finally {
+      setBusPatternSavingId(null);
+    }
+  }
 
   function goPrevMonth() {
     if (month === 1) {
@@ -361,8 +450,17 @@ function PickupPageInner() {
         {year}年{month}月
       </p>
 
-      {!showCheckin && students.length > 0 && (
-        <div className="flex items-center justify-center print:hidden">
+      {!showCheckin && !showBusSettings && students.length > 0 && (
+        <div className="flex items-center justify-center gap-3 flex-wrap print:hidden">
+          <button
+            onClick={() => setShowBusSettings(true)}
+            className="rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold"
+          >
+            🚌 バス・送迎設定
+            <span className="block text-[10px] font-normal opacity-70">
+              Bus/pickup settings for {yearMonth}
+            </span>
+          </button>
           <button
             onClick={openClearDayModal}
             className="rounded-full border border-red-300 text-red-600 bg-red-50 px-5 py-2 text-sm font-semibold"
@@ -377,13 +475,96 @@ function PickupPageInner() {
 
       {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
-      {!showCheckin && loading ? (
+      {!showCheckin && !showBusSettings && loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
-      ) : !showCheckin && students.length === 0 ? (
+      ) : !showCheckin && !showBusSettings && students.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">
           このブランチにはまだ生徒が登録されていません
           <span className="block text-xs">No students registered in this branch yet</span>
         </p>
+      ) : showBusSettings ? (
+        <>
+          <div className="flex items-center justify-between gap-3 flex-wrap print:hidden">
+            <p className="text-sm text-gray-600">
+              {yearMonth} の通学方法（バス・送迎）を設定します
+              <span className="block text-xs text-gray-400">
+                Set each student&apos;s bus/pickup pattern for {yearMonth}
+              </span>
+            </p>
+            <button
+              onClick={() => setShowBusSettings(false)}
+              className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold shrink-0"
+            >
+              閉じる / Close
+            </button>
+          </div>
+
+          {busSettingsLoading ? (
+            <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+          ) : (
+            <ul className="flex flex-col divide-y border rounded-xl overflow-hidden">
+              {(() => {
+                let lastClassName: string | null = null;
+                return students.map((s) => {
+                  const showGroupHeader = s.className !== lastClassName;
+                  lastClassName = s.className;
+                  const pattern = busPatternsByStudent[s.studentId];
+                  const arrivalMode = pattern?.arrivalMode ?? "self";
+                  const departureMode = pattern?.departureMode ?? "self";
+                  const usesBus = arrivalMode === "bus" || departureMode === "bus";
+                  const hasAddress = !!locationsByStudent[s.studentId];
+                  return (
+                    <Fragment key={s.studentId}>
+                      {showGroupHeader && (
+                        <li className="bg-blue-50 border-b border-gray-300 px-4 py-1 font-semibold text-blue-800 text-xs">
+                          {s.className}
+                        </li>
+                      )}
+                      <li className="px-4 py-2.5 leading-tight flex items-center justify-between gap-3 flex-wrap">
+                        <div className="min-w-0 flex-1 basis-40">
+                          <span className="font-medium block">{s.nameKanji}</span>
+                          {s.nameEnglish && (
+                            <span className="text-xs text-gray-500 block">{s.nameEnglish}</span>
+                          )}
+                          {usesBus && !hasAddress && (
+                            <p className="text-[10px] text-red-600 font-semibold">
+                              ⚠️ 住所が未登録です（生徒管理で登録してください）
+                              <span className="block">
+                                No address on file — register one on 生徒管理
+                              </span>
+                            </p>
+                          )}
+                          {usesBus && hasAddress && (
+                            <p className="text-[10px] text-green-700 truncate max-w-xs">
+                              📍 {locationsByStudent[s.studentId].address}
+                            </p>
+                          )}
+                        </div>
+                        <select
+                          value={`${arrivalMode}_${departureMode}`}
+                          disabled={busPatternSavingId === s.studentId}
+                          onChange={(e) => {
+                            const [nextArrival, nextDeparture] = e.target.value.split("_") as [
+                              BusLegMode,
+                              BusLegMode,
+                            ];
+                            setBusPatternFor(s, nextArrival, nextDeparture);
+                          }}
+                          className="rounded-full px-2.5 py-1.5 text-xs font-semibold border bg-white text-gray-600 border-gray-300 disabled:opacity-40 shrink-0"
+                        >
+                          <option value="self_self">🚗↔🚗 送迎のみ</option>
+                          <option value="bus_bus">🚌↔🚌 往復バス</option>
+                          <option value="bus_self">🚌→🚗 帰り自分</option>
+                          <option value="self_bus">🚗→🚌 行き自分</option>
+                        </select>
+                      </li>
+                    </Fragment>
+                  );
+                });
+              })()}
+            </ul>
+          )}
+        </>
       ) : showCheckin ? (
         <>
           <p className="text-sm text-gray-600 print:hidden">
