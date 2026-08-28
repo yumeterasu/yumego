@@ -2071,9 +2071,10 @@ export async function clearAllMasterHolidays(): Promise<number> {
 }
 
 // Google publishes a public read-only "Holidays in Thailand" calendar as an
-// ICS feed — no auth needed. Used for a one-time bulk import into
-// MasterHolidays; the admin edits/removes individual days afterward for
-// ones the school doesn't actually close for.
+// ICS feed — no auth needed. Used to power the タイの祝日を表示 checkbox
+// on 祝日カレンダー（マスター）: a pure display overlay (see
+// getThaiHolidaysPreview below), never written into MasterHolidays, so
+// toggling it on/off never touches the school's own saved holidays.
 const THAI_HOLIDAYS_ICS_URL =
   "https://calendar.google.com/calendar/ical/en.th%23holiday%40group.v.calendar.google.com/public/basic.ics";
 
@@ -2107,36 +2108,17 @@ function parseIcsHolidays(icsText: string): { date: string; label: string }[] {
 }
 
 /**
- * One-time bulk import of Thai public holidays into MasterHolidays. Only
- * adds dates not already present — never overwrites an existing (possibly
- * hand-edited) holiday, so it's safe to re-run.
+ * Fetches and parses the Thai public holiday feed for display purposes
+ * only -- never writes to MasterHolidays. One event per date (a feed date
+ * appearing twice keeps whichever the caller's Map construction resolves
+ * to last, same as everywhere else in this app that turns a list into a
+ * by-date Map).
  */
-export async function importThaiHolidays(): Promise<{ added: number; skipped: number }> {
+export async function getThaiHolidaysPreview(): Promise<{ date: string; label: string }[]> {
   const res = await fetch(THAI_HOLIDAYS_ICS_URL);
   if (!res.ok) throw new Error(`Failed to fetch Thai holidays feed: ${res.status}`);
   const icsText = await res.text();
-  const events = parseIcsHolidays(icsText);
-
-  const existingDates = new Set((await getMasterHolidays()).map((h) => h.date));
-  const seen = new Set<string>();
-  const rows: string[][] = [];
-  for (const e of events) {
-    if (existingDates.has(e.date) || seen.has(e.date)) continue;
-    seen.add(e.date);
-    rows.push([e.date, e.label]);
-  }
-
-  if (rows.length > 0) {
-    const sheets = getSheetsClient();
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
-      range: "MasterHolidays!A:B",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: rows },
-    });
-  }
-
-  return { added: rows.length, skipped: events.length - rows.length };
+  return parseIcsHolidays(icsText);
 }
 
 // Per-class open/closed overrides — only a row when a class's calendar

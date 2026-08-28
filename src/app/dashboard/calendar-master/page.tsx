@@ -41,14 +41,20 @@ function MonthGrid({
   year,
   monthNum,
   monthEn,
-  holidayByDate,
+  savedByDate,
+  thaiByDate,
   onDayClick,
 }: {
   year: number;
   monthNum: number;
   monthEn: string;
-  holidayByDate: Map<string, string>;
-  onDayClick: (date: string, currentLabel: string | undefined) => void;
+  savedByDate: Map<string, string>;
+  thaiByDate: Map<string, string> | null;
+  onDayClick: (
+    date: string,
+    savedLabel: string | undefined,
+    thaiSuggestion: string | undefined
+  ) => void;
 }) {
   const numDays = daysInMonth(year, monthNum);
   const firstDow = new Date(year, monthNum - 1, 1).getDay();
@@ -77,22 +83,32 @@ function MonthGrid({
         {cells.map((day, idx) => {
           if (day === null) return <div key={idx} />;
           const date = `${year}-${pad2(monthNum)}-${pad2(day)}`;
-          const label = holidayByDate.get(date);
-          const isHoliday = label !== undefined;
+          const savedLabel = savedByDate.get(date);
+          const thaiLabel = thaiByDate?.get(date);
+          const isSaved = savedLabel !== undefined;
+          const isThaiOnly = !isSaved && thaiLabel !== undefined;
+          // Thai overlay wins the displayed text on a coincident date, but
+          // the saved-holiday (red) style still shows -- proof the saved
+          // data is still there underneath, unaffected by the overlay.
+          const displayLabel = isSaved ? (thaiLabel ?? savedLabel) : thaiLabel;
           return (
             <button
               key={idx}
-              onClick={() => onDayClick(date, label)}
+              onClick={() => onDayClick(date, savedLabel, thaiLabel)}
               className={`aspect-square rounded text-[11px] leading-tight flex flex-col items-center justify-center ${
-                isHoliday
+                isSaved
                   ? "bg-red-100 text-red-800 font-bold"
-                  : "hover:bg-gray-100 text-gray-700"
+                  : isThaiOnly
+                    ? "bg-amber-50 text-amber-700 border border-dashed border-amber-300"
+                    : "hover:bg-gray-100 text-gray-700"
               }`}
-              title={label || undefined}
+              title={displayLabel || undefined}
             >
               <span>{day}</span>
-              {isHoliday && label && (
-                <span className="text-[7px] leading-none truncate w-full px-0.5">{label}</span>
+              {displayLabel && (
+                <span className="text-[7px] leading-none truncate w-full px-0.5">
+                  {displayLabel}
+                </span>
               )}
             </button>
           );
@@ -114,8 +130,13 @@ export default function MasterCalendarPage() {
   const [saving, setSaving] = useState(false);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
 
-  const [importing, setImporting] = useState(false);
-  const [importMsg, setImportMsg] = useState<string | null>(null);
+  // タイの祝日を表示 — a pure display overlay (fetched once, then just
+  // toggled client-side), never written into MasterHolidays. Turning it
+  // off always instantly restores exactly what's saved, since nothing was
+  // ever changed underneath.
+  const [showThaiHolidays, setShowThaiHolidays] = useState(false);
+  const [thaiHolidays, setThaiHolidays] = useState<MasterHoliday[] | null>(null);
+  const [thaiHolidaysLoading, setThaiHolidaysLoading] = useState(false);
 
   const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
   const [deleteAllFinalStep, setDeleteAllFinalStep] = useState(false);
@@ -147,15 +168,24 @@ export default function MasterCalendarPage() {
   }, [load]);
 
   const holidayByDate = new Map(holidays.map((h) => [h.date, h.label]));
+  const thaiByDate = showThaiHolidays && thaiHolidays ? new Map(thaiHolidays.map((h) => [h.date, h.label])) : null;
 
-  function handleDayClick(date: string, currentLabel: string | undefined) {
-    if (currentLabel === undefined) {
-      // not yet a holiday — open the popup to add one (label optional, OK with blank is fine)
-      setEditing({ date, label: "", isNew: true });
+  function handleDayClick(
+    date: string,
+    savedLabel: string | undefined,
+    thaiSuggestion: string | undefined
+  ) {
+    if (savedLabel === undefined) {
+      // not yet a holiday — open the popup to add one, pre-filled with the
+      // Thai holiday's name if this date is only showing as a suggestion
+      // (label still optional either way, OK with blank is fine)
+      setEditing({ date, label: thaiSuggestion ?? "", isNew: true });
       return;
     }
-    // already a holiday — open the manage popup (rename or remove)
-    setEditing({ date, label: currentLabel, isNew: false });
+    // already a holiday — open the manage popup (rename or remove), always
+    // showing what's actually saved, even if the grid is currently
+    // displaying a different Thai label overlaid on top of it
+    setEditing({ date, label: savedLabel, isNew: false });
   }
 
   async function saveLabel() {
@@ -202,22 +232,21 @@ export default function MasterCalendarPage() {
     }
   }
 
-  async function handleImportThai() {
-    setImporting(true);
-    setImportMsg(null);
+  async function handleToggleThai(checked: boolean) {
+    setShowThaiHolidays(checked);
+    if (!checked || thaiHolidays !== null) return; // already cached, or just turning it off
+    setThaiHolidaysLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/calendar/master/import-thai", { method: "POST" });
+      const res = await fetch("/api/calendar/master/thai-holidays");
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
-      setImportMsg(
-        `追加：${data.added}件　スキップ（既存）：${data.skipped}件 / Added ${data.added}, skipped ${data.skipped} (already set)`
-      );
-      await load();
+      setThaiHolidays(data.holidays ?? []);
     } catch {
-      setError("インポートに失敗しました / Import failed");
+      setError("タイの祝日の取得に失敗しました / Failed to load Thai holidays");
+      setShowThaiHolidays(false);
     } finally {
-      setImporting(false);
+      setThaiHolidaysLoading(false);
     }
   }
 
@@ -258,16 +287,19 @@ export default function MasterCalendarPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <button
-            onClick={handleImportThai}
-            disabled={importing}
-            className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold disabled:opacity-40"
-          >
-            {importing ? "読み込み中... / Importing..." : "🇹🇭 タイの祝日を読み込む"}
-            <span className="block text-[9px] font-normal opacity-70">
-              Import Thai Holidays (once)
+          <label className="flex items-center gap-2 rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={showThaiHolidays}
+              disabled={thaiHolidaysLoading}
+              onChange={(e) => handleToggleThai(e.target.checked)}
+              className="w-4 h-4 accent-blue-600 disabled:opacity-40"
+            />
+            <span>
+              {thaiHolidaysLoading ? "読み込み中... / Loading..." : "🇹🇭 タイの祝日を表示"}
+              <span className="block text-[9px] font-normal opacity-70">Show Thai holidays</span>
             </span>
-          </button>
+          </label>
           <button
             onClick={openDeleteAllModal}
             className="rounded-full bg-red-50 border border-red-300 text-red-700 px-4 py-2 text-sm font-semibold"
@@ -309,8 +341,16 @@ export default function MasterCalendarPage() {
           Tap a date to mark it as a holiday. Tap an already-marked date to rename or remove it
         </span>
       </p>
+      {showThaiHolidays && (
+        <p className="text-xs text-amber-600 text-center">
+          点線の黄色い日はタイの祝日（未登録）の候補です。保存済みの祝日（赤色）はそのまま残っています
+          <span className="block">
+            Dashed amber days are Thai holiday suggestions (not saved). Saved holidays (red) are
+            unaffected
+          </span>
+        </p>
+      )}
 
-      {importMsg && <p className="text-green-700 text-sm text-center">{importMsg}</p>}
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
 
       {loading ? (
@@ -323,7 +363,8 @@ export default function MasterCalendarPage() {
               year={fiscalYearStart + fm.yearOffset}
               monthNum={fm.monthNum}
               monthEn={MONTH_EN[idx]}
-              holidayByDate={holidayByDate}
+              savedByDate={holidayByDate}
+              thaiByDate={thaiByDate}
               onDayClick={handleDayClick}
             />
           ))}
