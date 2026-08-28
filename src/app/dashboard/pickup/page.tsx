@@ -56,7 +56,15 @@ function PickupPageInner() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [checkinAllSaving, setCheckinAllSaving] = useState(false);
+
+  // 登園確認 — mirrors /attendance's own card-grid check-in screen (see
+  // handleCardTap/submitCheckin below), just 2 states instead of 4. Only
+  // ever targets today; opening it always starts everyone present,
+  // independent of whatever's already on the grid for today.
+  const [showCheckin, setShowCheckin] = useState(false);
+  const [checkinAbsent, setCheckinAbsent] = useState<Set<string>>(new Set());
+  const [checkinSubmitting, setCheckinSubmitting] = useState(false);
+  const [showCheckinConfirm, setShowCheckinConfirm] = useState(false);
 
   const yearMonth = `${year}-${pad2(month)}`;
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
@@ -161,44 +169,57 @@ function PickupPageInner() {
   // absentees off afterward via the normal per-cell toggle above, same as
   // any other day. One batched write for the whole branch roster instead
   // of tapping in each present student one at a time.
-  async function handleCheckInAllToday() {
-    if (
-      !window.confirm(
-        "本日、全員を登園済みにします。すでに外したチェックがあれば上書きされます。よろしいですか？\n\nMark everyone as arrived today. Any already-unchecked students will be overwritten back to present. Continue?"
-      )
-    ) {
-      return;
-    }
-    setCheckinAllSaving(true);
+  function openCheckin() {
+    setCheckinAbsent(new Set()); // always starts everyone present
+    setShowCheckin(true);
+  }
+
+  function toggleCheckinCard(studentId: string) {
+    setCheckinAbsent((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }
+
+  async function submitCheckin() {
+    setCheckinSubmitting(true);
     setError(null);
     try {
+      const entries = students.map((s) => ({
+        studentId: s.studentId,
+        present: !checkinAbsent.has(s.studentId),
+      }));
       const res = await fetch("/api/pickup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: todayStr, studentIds: students.map((s) => s.studentId) }),
+        body: JSON.stringify({ date: todayStr, entries }),
       });
       if (!res.ok) throw new Error("failed");
       setDrafts((prev) => {
         const next = { ...prev };
-        for (const s of students) {
-          next[`${cellKey(s.studentId, todayStr)}|arrival`] = "TRUE";
+        for (const { studentId, present } of entries) {
+          next[`${cellKey(studentId, todayStr)}|arrival`] = present ? "TRUE" : "";
         }
         return next;
       });
-      for (const s of students) {
-        const key = cellKey(s.studentId, todayStr);
+      for (const { studentId, present } of entries) {
+        const key = cellKey(studentId, todayStr);
         const saved = savedRef.current.get(key);
         savedRef.current.set(key, {
           date: todayStr,
-          studentId: s.studentId,
-          arrivalTime: "TRUE",
+          studentId,
+          arrivalTime: present ? "TRUE" : "",
           departureTime: saved?.departureTime ?? "",
         });
       }
+      setShowCheckinConfirm(false);
+      setShowCheckin(false);
     } catch {
-      setError("一括登園の保存に失敗しました / Failed to check everyone in");
+      setError("登園確認の保存に失敗しました / Failed to save arrival check-in");
     } finally {
-      setCheckinAllSaving(false);
+      setCheckinSubmitting(false);
     }
   }
 
@@ -286,30 +307,92 @@ function PickupPageInner() {
         {year}年{month}月
       </p>
 
-      {isViewingCurrentMonth && students.length > 0 && (
+      {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
         <div className="flex justify-center print:hidden">
           <button
             type="button"
-            onClick={handleCheckInAllToday}
-            disabled={checkinAllSaving}
-            className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+            onClick={openCheckin}
+            className="rounded-full bg-green-600 text-white px-5 py-2.5 text-sm font-semibold"
           >
-            {checkinAllSaving
-              ? "保存中... / Saving..."
-              : "✅ 本日は全員登園にする / Mark everyone as arrived today"}
+            ✅ 登園確認
+            <span className="block text-[10px] font-normal opacity-80">Arrival check-in</span>
           </button>
         </div>
       )}
 
       {error && <p className="text-red-600 text-sm text-center print:hidden">{error}</p>}
 
-      {loading ? (
+      {!showCheckin && loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
-      ) : students.length === 0 ? (
+      ) : !showCheckin && students.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">
           このブランチにはまだ生徒が登録されていません
           <span className="block text-xs">No students registered in this branch yet</span>
         </p>
+      ) : showCheckin ? (
+        <>
+          <p className="text-sm text-gray-600 print:hidden">
+            全員デフォルトで登園済みです。お休みの生徒だけタップしてください
+            <span className="block text-xs text-gray-400">
+              Everyone starts marked arrived — tap only the students who are absent today
+            </span>
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 print:hidden">
+            {students.map((s, i) => {
+              const isAbsent = checkinAbsent.has(s.studentId);
+              return (
+                <button
+                  key={s.studentId}
+                  onClick={() => toggleCheckinCard(s.studentId)}
+                  className={`relative rounded-xl border-2 px-3 py-6 text-center font-medium transition ${
+                    isAbsent
+                      ? "bg-red-50 border-red-500 text-red-800"
+                      : "bg-green-50 border-green-400 text-green-800"
+                  }`}
+                >
+                  <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
+                    {i + 1}
+                  </span>
+                  <span className="block">{s.nameKanji}</span>
+                  {s.nameEnglish && (
+                    <span className="block text-[10px] font-normal opacity-70">
+                      {s.nameEnglish}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between border-t pt-4 print:hidden">
+            <p className="text-sm">
+              登園: <span className="font-bold">{students.length - checkinAbsent.size}</span> /
+              お休み: <span className="font-bold">{checkinAbsent.size}</span>
+              <span className="block text-xs text-gray-400">
+                Arrived: {students.length - checkinAbsent.size} / Absent: {checkinAbsent.size}
+              </span>
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowCheckin(false)}
+                disabled={checkinSubmitting}
+                className="rounded-full bg-gray-100 text-gray-600 px-6 py-3 font-semibold disabled:opacity-40"
+              >
+                キャンセル
+                <span className="block text-[10px] font-normal opacity-70">Cancel</span>
+              </button>
+              <button
+                onClick={() => setShowCheckinConfirm(true)}
+                disabled={checkinSubmitting}
+                className="rounded-full bg-green-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
+              >
+                確定する
+                <span className="block text-[10px] font-normal opacity-70">Confirm</span>
+              </button>
+            </div>
+          </div>
+        </>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
           <table className="text-sm border-collapse min-w-max">
@@ -416,6 +499,74 @@ function PickupPageInner() {
               })()}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {showCheckinConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+            <h2 className="text-lg font-bold text-center">
+              本日の登園確認
+              <span className="block text-sm font-normal text-gray-500">
+                Today&apos;s arrival check-in
+              </span>
+            </h2>
+            <div className="flex justify-around text-center">
+              <div>
+                <p className="text-3xl font-bold text-green-700">
+                  {students.length - checkinAbsent.size}
+                </p>
+                <p className="text-sm text-gray-500">
+                  登園
+                  <span className="block text-xs">Arrived</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-3xl font-bold text-red-600">{checkinAbsent.size}</p>
+                <p className="text-sm text-gray-500">
+                  お休み
+                  <span className="block text-xs">Absent</span>
+                </p>
+              </div>
+            </div>
+            {checkinAbsent.size > 0 && (
+              <div>
+                <p className="text-xs text-gray-500 mb-1">お休みの生徒: / Absent students:</p>
+                <ul className="flex flex-wrap gap-2">
+                  {students
+                    .filter((s) => checkinAbsent.has(s.studentId))
+                    .map((s) => (
+                      <li
+                        key={s.studentId}
+                        className="text-xs bg-red-50 text-red-700 rounded-full px-3 py-1"
+                      >
+                        {s.nameEnglish || s.nameKanji}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+            <p className="text-xs text-gray-400 text-center">
+              この内容で記録します。よろしいですか？
+              <span className="block">Record with this content — is that OK?</span>
+            </p>
+            <div className="flex gap-3 mt-2">
+              <button
+                onClick={() => setShowCheckinConfirm(false)}
+                disabled={checkinSubmitting}
+                className="flex-1 rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
+              >
+                キャンセル / Cancel
+              </button>
+              <button
+                onClick={submitCheckin}
+                disabled={checkinSubmitting}
+                className="flex-1 rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
+              >
+                {checkinSubmitting ? "送信中... / Sending..." : "送信する / Submit"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>

@@ -1875,19 +1875,20 @@ export async function upsertPickupRecord(
 }
 
 /**
- * Marks the SAME field "TRUE" for many students on one date in one batched
- * write -- backs 送迎管理's "本日は全員登園" bulk button (default everyone
- * present for today, tap individual absentees off afterward via the
- * regular per-cell toggle, same as any other day). Existing rows are
- * updated in place; a student with no PickupLog row yet for this date
- * gets one appended (their other field starts blank).
+ * Sets 登園 (arrival) for a whole roster on one date at once, in one
+ * batched write -- backs 送迎管理's 登園確認 screen (mirrors /attendance's
+ * own card-grid check-in flow, just 2 states instead of 4: no reason
+ * codes). Each present student gets "TRUE"; each absent student gets ""
+ * (the same value the regular per-cell toggle leaves an unchecked day),
+ * written explicitly if they already have a row so a re-run of this
+ * screen can flip someone back to unchecked, not just add checks. An
+ * absent student with no existing row is left alone -- nothing to record.
  */
-export async function bulkSetPickupField(
+export async function bulkSetArrivalForRoster(
   date: string,
-  studentIds: string[],
-  field: "arrival" | "departure"
+  entries: { studentId: string; present: boolean }[]
 ): Promise<void> {
-  if (studentIds.length === 0) return;
+  if (entries.length === 0) return;
   const sheets = getSheetsClient();
   const existing = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
@@ -1899,18 +1900,16 @@ export async function bulkSetPickupField(
     rowNumByKey.set(`${row[0] ?? ""}|${row[1] ?? ""}`, i + 2);
   });
 
-  const colLetter = field === "arrival" ? "C" : "D";
   const updates: { range: string; values: string[][] }[] = [];
   const appends: string[][] = [];
 
-  for (const studentId of studentIds) {
+  for (const { studentId, present } of entries) {
+    const value = present ? "TRUE" : "";
     const rowNum = rowNumByKey.get(`${date}|${studentId}`);
     if (rowNum !== undefined) {
-      updates.push({ range: `PickupLog!${colLetter}${rowNum}`, values: [["TRUE"]] });
-    } else {
-      appends.push(
-        field === "arrival" ? [date, studentId, "TRUE", ""] : [date, studentId, "", "TRUE"]
-      );
+      updates.push({ range: `PickupLog!C${rowNum}`, values: [[value]] });
+    } else if (value) {
+      appends.push([date, studentId, value, ""]);
     }
   }
 
