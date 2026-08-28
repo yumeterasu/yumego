@@ -53,16 +53,43 @@ function getBusWeekBucketsForRange(startDate: string, endDate: string): BusWeekB
     });
 }
 
-/** Every weekStart touched by one calendar month -- a week spanning the
- *  month's boundary is included too (see getBusWeekBucketsForRange), so
- *  setting a whole month's pattern also reaches into the tail/head of an
- *  adjacent month's boundary week. */
+/** Which month ("YYYY-MM") owns this school week -- whichever month has
+ *  the majority of its 5 weekdays (5 is odd, so a majority always
+ *  exists, never a tie) -- mirrors ownerMonthOfWeek() in
+ *  src/lib/sheets.ts. A week can only ever belong to exactly one month
+ *  this way, even when its Mon-Fri span crosses a month boundary -- this
+ *  is what keeps editing one month's pattern from also touching an
+ *  adjacent month's shared boundary week. */
+function ownerMonthOfWeek(weekStart: string): string {
+  const counts = new Map<string, number>();
+  const d = new Date(weekStart + "T00:00:00");
+  for (let i = 0; i < 5; i++) {
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    d.setDate(d.getDate() + 1);
+  }
+  let bestKey = weekStart.slice(0, 7);
+  let bestCount = -1;
+  for (const [key, count] of counts) {
+    if (count > bestCount) {
+      bestCount = count;
+      bestKey = key;
+    }
+  }
+  return bestKey;
+}
+
+/** Every weekStart this calendar month actually owns -- unlike
+ *  getBusWeekBucketsForRange (correct for a continuous multi-month read),
+ *  this excludes a boundary week whose majority belongs to the adjacent
+ *  month, so setting one month's pattern never reaches into another
+ *  month's data. */
 function busMonthWeekStarts(year: number, month: number): string[] {
+  const yearMonth = `${year}-${pad2(month)}`;
   const lastDay = daysInMonth(year, month);
-  return getBusWeekBucketsForRange(
-    `${year}-${pad2(month)}-01`,
-    `${year}-${pad2(month)}-${pad2(lastDay)}`
-  ).map((b) => b.weekStart);
+  return getBusWeekBucketsForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`)
+    .filter((b) => ownerMonthOfWeek(b.weekStart) === yearMonth)
+    .map((b) => b.weekStart);
 }
 
 const BUS_MODE_OPTIONS: { value: string; label: string }[] = [

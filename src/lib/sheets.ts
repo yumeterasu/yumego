@@ -2757,11 +2757,42 @@ export function getBusWeekBucketsForRange(startDate: string, endDate: string): B
     });
 }
 
-/** Convenience wrapper for a single month ("YYYY-MM"). */
+/** Which month ("YYYY-MM") owns this school week -- whichever month has
+ *  the majority of its 5 weekdays (5 is odd, so a majority always exists,
+ *  never a tie). A week can only ever belong to exactly one month this
+ *  way, even when its Mon-Fri span crosses a month boundary -- this is
+ *  what keeps editing one month's バス・送迎設定 pattern from also
+ *  touching an adjacent month's data for their shared boundary week. */
+function ownerMonthOfWeek(weekStart: string): string {
+  const counts = new Map<string, number>();
+  const d = new Date(weekStart + "T00:00:00");
+  for (let i = 0; i < 5; i++) {
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    d.setDate(d.getDate() + 1);
+  }
+  let bestKey = weekStart.slice(0, 7);
+  let bestCount = -1;
+  for (const [key, count] of counts) {
+    if (count > bestCount) {
+      bestCount = count;
+      bestKey = key;
+    }
+  }
+  return bestKey;
+}
+
+/** Convenience wrapper for a single month ("YYYY-MM") -- unlike
+ *  getBusWeekBucketsForRange (which includes a boundary week on both
+ *  sides it touches, correct for a continuous multi-month read), this
+ *  filters down to only the weeks this month actually owns, so a month's
+ *  read/write never reaches into an adjacent month's data. */
 export function getBusWeekBucketsForMonth(yearMonth: string): BusWeekBucket[] {
   const [y, m] = yearMonth.split("-").map(Number);
   const lastDay = new Date(y, m, 0).getDate();
-  return getBusWeekBucketsForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`);
+  return getBusWeekBucketsForRange(`${yearMonth}-01`, `${yearMonth}-${pad2(lastDay)}`).filter(
+    (b) => ownerMonthOfWeek(b.weekStart) === yearMonth
+  );
 }
 
 /** Every recorded (non-default, i.e. involves a bus leg) pattern for one
