@@ -2599,92 +2599,15 @@ export async function setStudentLocation(
   });
 }
 
-// 送迎バス - 通学方法 (LEGACY) — used to be a static per-student flag set
-// once at registration, but real usage turned out to change month to month
-// (sometimes week to week) -- see 週次バスパターン (StudentBusPattern)
-// below, which replaced this as the actual source of truth. The app no
-// longer writes to this sheet; these functions stay only for reading old
-// data (e.g. a one-off migration) and nothing calls setStudentTransport()
-// anymore.
-export type TransportMode = "bus" | "self";
-export type StudentTransport = { studentId: string; mode: TransportMode };
-
-export async function getStudentTransports(): Promise<StudentTransport[]> {
-  const sheets = getSheetsClient();
-  const res = await safeValuesGet(sheets,{
-    spreadsheetId: SHEET_ID,
-    range: "StudentTransport!A2:B",
-  });
-  const rows = res.data.values ?? [];
-  return rows
-    .map((row) => ({
-      studentId: (row[0] ?? "").toString(),
-      mode: ((row[1] ?? "").toString() === "self" ? "self" : "bus") as TransportMode,
-    }))
-    .filter((t) => t.studentId);
-}
-
-export async function getStudentTransport(studentId: string): Promise<StudentTransport | null> {
-  const all = await getStudentTransports();
-  return all.find((t) => t.studentId === studentId) ?? null;
-}
-
-/** mode === null clears the setting (back to "not yet chosen"). */
-export async function setStudentTransport(
-  studentId: string,
-  mode: TransportMode | null
-): Promise<void> {
-  const sheets = getSheetsClient();
-  const existing = await safeValuesGet(sheets,{
-    spreadsheetId: SHEET_ID,
-    range: "StudentTransport!A2:A",
-  });
-  const rows = existing.data.values ?? [];
-  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === studentId);
-
-  if (mode === null) {
-    if (rowOffset === -1) return;
-    const sheetId = await getSheetIdByTitle(sheets, "StudentTransport");
-    const rowNum = rowOffset + 2;
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId: SHEET_ID,
-      requestBody: {
-        requests: [
-          {
-            deleteDimension: {
-              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
-            },
-          },
-        ],
-      },
-    });
-    return;
-  }
-
-  if (rowOffset === -1) {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: SHEET_ID,
-      range: "StudentTransport!A:B",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[studentId, mode]] },
-    });
-    return;
-  }
-  const rowNum = rowOffset + 2;
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SHEET_ID,
-    range: `StudentTransport!B${rowNum}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[mode]] },
-  });
-}
-
 // 週次バスパターン — the source of truth for how a student commutes in a
 // given week: 来:バス／帰:バス, 来:バス／帰:自分, 来:自分／帰:バス, or
 // 来:自分／帰:自分 (送迎のみ, no bus at all) -- this changes week to week
 // (sometimes month to month), so it's never treated as a permanent property
-// of the student (StudentTransport, the old static bus/self flag, is no
-// longer written to by the app -- see 生徒管理/送迎管理). One row per
+// of the student. (There used to be a StudentTransport sheet holding a
+// static per-student bus/self flag set once at registration -- removed
+// from the app entirely since real usage changed too often for a
+// permanent flag to make sense. The sheet tab itself is left alone, just
+// unused, in case its old data is ever wanted for reference.) One row per
 // (studentId, weekStart) -- weekStart is the Monday of that school week
 // ("YYYY-MM-DD") -- but ONLY for weeks that deviate from the default
 // 来:自分／帰:自分 (no bus), which is assumed whenever no row exists for
