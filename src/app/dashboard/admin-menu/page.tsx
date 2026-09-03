@@ -34,13 +34,13 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
 export default function AdminMenuPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-3 p-4">
-      <div className="w-full max-w-md flex items-center justify-between">
+      <div className="w-full max-w-md flex items-center justify-end">
         <Link
           href="/select-class"
-          className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+          className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+          aria-label="トップページ / Home"
         >
-          ← 戻る
-          <span className="block text-[10px] font-normal opacity-70">Back</span>
+          🏠
         </Link>
       </div>
 

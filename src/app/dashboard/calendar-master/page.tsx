@@ -287,7 +287,7 @@ export default function MasterCalendarPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <label className="flex items-center gap-2 rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold cursor-pointer select-none">
+          <label className="flex items-center gap-2 rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-5 py-2 text-sm font-semibold cursor-pointer select-none">
             <input
               type="checkbox"
               checked={showThaiHolidays}
@@ -302,7 +302,7 @@ export default function MasterCalendarPage() {
           </label>
           <button
             onClick={openDeleteAllModal}
-            className="rounded-full bg-red-50 border border-red-300 text-red-700 px-4 py-2 text-sm font-semibold"
+            className="rounded-full bg-red-50 border border-red-300 text-red-700 px-5 py-2 text-sm font-semibold"
           >
             🗑 全て削除
             <span className="block text-[9px] font-normal opacity-70">Delete All</span>
