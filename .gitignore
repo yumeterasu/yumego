@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# disposable one-off scripts (created/deleted per-session, never meant to be committed)
+/scripts-tmp/
