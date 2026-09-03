@@ -98,7 +98,14 @@ function convertWord(word: string): string {
   return result;
 }
 
-/** Converts a Romaji name (spaces preserved between words) to Hiragana. */
+/**
+ * Converts a Romaji name to Hiragana. Input is assumed to be in Western
+ * given-name-first order (e.g. "YUI KODAMA"), the order names get typed
+ * in at registration -- but the output is reordered to Japanese surname-
+ * first order ("こだま ゆい"), since that's how the Hiragana reading is
+ * actually meant to be read/displayed. Each word's own conversion is
+ * unaffected; only the word order is reversed.
+ */
 export function romajiToHiragana(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return "";
@@ -115,5 +122,6 @@ export function romajiToHiragana(input: string): string {
     .replace(/oh(?=[^aeiou\s]|$)/g, "oo")
     .split(/\s+/)
     .map(convertWord)
+    .reverse()
     .join(" ");
 }
