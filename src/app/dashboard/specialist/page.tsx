@@ -706,7 +706,7 @@ export default function SpecialistCoachPage() {
                                       className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
                                     />
                                     {isChecked && (
-                                      <div className="flex items-center gap-0.5 whitespace-nowrap">
+                                      <div className="flex flex-col items-center leading-none">
                                         <input
                                           type="number"
                                           min={0}
@@ -726,7 +726,7 @@ export default function SpecialistCoachPage() {
                                           onBlur={(e) =>
                                             commitCount(c.categoryId, date, e.target.value, total)
                                           }
-                                          className="w-7 bg-transparent text-center text-sm font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300"
+                                          className="w-9 bg-transparent text-center text-sm font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         />
                                         {total > 0 && (
                                           <span className="text-gray-400 text-[10px]">
