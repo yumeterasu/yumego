@@ -529,7 +529,7 @@ export default function SpecialistCoachPage() {
                   return (
                     <th
                       key={day}
-                      className={`border border-gray-300 px-1 py-1 text-center w-12 ${
+                      className={`border border-gray-300 px-1 py-1 text-center w-14 ${
                         isWeekend ? "bg-orange-50 text-orange-700" : "bg-gray-50"
                       }`}
                     >
@@ -706,7 +706,7 @@ export default function SpecialistCoachPage() {
                                       className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
                                     />
                                     {isChecked && (
-                                      <div className="flex flex-col items-center leading-none">
+                                      <div className="flex items-center justify-center gap-px whitespace-nowrap">
                                         <input
                                           type="number"
                                           min={0}
@@ -726,12 +726,10 @@ export default function SpecialistCoachPage() {
                                           onBlur={(e) =>
                                             commitCount(c.categoryId, date, e.target.value, total)
                                           }
-                                          className="w-9 bg-transparent text-center text-sm font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                          className="w-6 bg-transparent text-right text-xs font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         />
                                         {total > 0 && (
-                                          <span className="text-gray-400 text-[10px]">
-                                            /{total}
-                                          </span>
+                                          <span className="text-gray-400 text-xs">/{total}</span>
                                         )}
                                       </div>
                                     )}
