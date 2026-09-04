@@ -95,10 +95,12 @@ export default function SelectClassPage() {
         onClick={() => handleSelect(name)}
         className={`relative rounded-xl border px-6 py-4 text-lg font-semibold active:scale-95 transition ${colorStyle}`}
       >
-        {planetKey && isClassPlanetKey(planetKey) && (
-          <PlanetDot planet={planetKey} size={22} className="absolute top-1.5 left-3" title />
-        )}
-        <span className="block">{name}</span>
+        <span className="flex items-center gap-1.5">
+          {planetKey && isClassPlanetKey(planetKey) && (
+            <PlanetDot planet={planetKey} size={20} title />
+          )}
+          {name}
+        </span>
         <span className="block text-xs font-normal opacity-70">
           {classNameToEnglish(name, extraClassEnNames)}
         </span>
