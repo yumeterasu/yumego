@@ -93,9 +93,9 @@ export default function SelectClassPage() {
     return (
       <button
         onClick={() => handleSelect(name)}
-        className={`relative rounded-xl border px-6 py-4 text-lg font-semibold active:scale-95 transition ${colorStyle}`}
+        className={`relative rounded-xl border px-6 py-4 text-lg font-semibold text-center active:scale-95 transition ${colorStyle}`}
       >
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center justify-center gap-1.5">
           {planetKey && isClassPlanetKey(planetKey) && (
             <PlanetDot planet={planetKey} size={20} title />
           )}
