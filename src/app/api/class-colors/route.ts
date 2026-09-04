@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClassColors, setClassColor } from "@/lib/sheets";
+import { getClassColors, setClassColor, setClassPlanet } from "@/lib/sheets";
 
 const VALID_COLORS = [
   "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
   "cyan", "sky", "blue", "indigo", "violet", "purple", "pink", "rose",
 ];
 
-// GET /api/class-colors -> { colors: [...] }
+const VALID_PLANETS = [
+  "sun", "mercury", "venus", "earth", "mars",
+  "jupiter", "saturn", "uranus", "neptune", "pluto",
+];
+
+// GET /api/class-colors -> { colors: [{ className, color, planet }] }
 export async function GET() {
   try {
     const colors = await getClassColors();
@@ -17,24 +22,34 @@ export async function GET() {
   }
 }
 
-// PATCH /api/class-colors  { className, color: string | null }
-// color: null resets to the default (no color chosen).
+// PATCH /api/class-colors  { className, color?: string | null, planet?: string | null }
+// color and planet are independent -- pass whichever one you're changing
+// (null resets just that one back to default); the other, if present in
+// the same call, is applied too, but neither is required to touch the
+// other's existing value if omitted entirely.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
-  const { className, color } = body ?? {};
+  const { className, color, planet } = body ?? {};
 
   if (typeof className !== "string" || !className) {
     return NextResponse.json({ error: "Missing className" }, { status: 400 });
   }
-  if (color !== null && !VALID_COLORS.includes(color)) {
+  if (color === undefined && planet === undefined) {
+    return NextResponse.json({ error: "Provide 'color' and/or 'planet'" }, { status: 400 });
+  }
+  if (color !== undefined && color !== null && !VALID_COLORS.includes(color)) {
     return NextResponse.json({ error: "Invalid color" }, { status: 400 });
+  }
+  if (planet !== undefined && planet !== null && !VALID_PLANETS.includes(planet)) {
+    return NextResponse.json({ error: "Invalid planet" }, { status: 400 });
   }
 
   try {
-    await setClassColor(className, color);
-    return NextResponse.json({ ok: true, color });
+    if (color !== undefined) await setClassColor(className, color);
+    if (planet !== undefined) await setClassPlanet(className, planet);
+    return NextResponse.json({ ok: true, color, planet });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: "Failed to update class color" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to update class color/planet" }, { status: 500 });
   }
 }
