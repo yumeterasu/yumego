@@ -453,7 +453,21 @@ function PickupPageInner() {
     const defaultDate =
       todayStr >= busTermStartDate && todayStr <= busTermEndDate ? todayStr : busTermStartDate;
     setOverrideDate(defaultDate);
-    const d = new Date(defaultDate + "T00:00:00");
+    setOverrideModeForDate(student, defaultDate);
+  }
+
+  /** Pre-fills the ⚡ form's mode dropdown for whichever date is currently
+   *  selected -- from that date's own override if one already exists
+   *  (so re-opening a day that already has an exception doesn't silently
+   *  show/save the week's default instead), falling back to the month's
+   *  pattern otherwise. */
+  function setOverrideModeForDate(student: Student, date: string) {
+    const existing = (busOverridesByStudent[student.studentId] ?? []).find((o) => o.date === date);
+    if (existing) {
+      setOverrideMode(`${existing.arrivalMode}_${existing.departureMode}`);
+      return;
+    }
+    const d = new Date(date + "T00:00:00");
     const pattern = monthPatternFor(student.studentId, d.getFullYear(), d.getMonth() + 1);
     setOverrideMode(`${pattern?.arrivalMode ?? "self"}_${pattern?.departureMode ?? "self"}`);
   }
@@ -680,6 +694,16 @@ function PickupPageInner() {
 
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
+
+  // Whether today already has at least one arrival recorded -- 登園確認
+  // always starts everyone marked present (the right default the first
+  // time it's opened each day), but re-opening it later after some
+  // arrivals/absences are already saved would otherwise silently reset
+  // the whole day back to "everyone present" if submitted without
+  // noticing -- surfaced as a warning rather than changing that default.
+  const checkinHasExistingData = students.some(
+    (s) => (drafts[`${cellKey(s.studentId, todayStr)}|arrival`] ?? "") !== ""
+  );
 
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
@@ -1023,7 +1047,10 @@ function PickupPageInner() {
                                         value={overrideDate}
                                         min={busTermStartDate}
                                         max={busTermEndDate}
-                                        onChange={(e) => setOverrideDate(e.target.value)}
+                                        onChange={(e) => {
+                                          setOverrideDate(e.target.value);
+                                          setOverrideModeForDate(s, e.target.value);
+                                        }}
                                         className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
                                       />
                                       <select
@@ -1093,15 +1120,49 @@ function PickupPageInner() {
             </span>
           </p>
 
+          {checkinHasExistingData && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-4 py-2 print:hidden">
+              ⚠️ 本日はすでに登園記録があります。このまま送信すると、記録済みのお休みも「登園」で上書きされます
+              <span className="block text-xs opacity-80">
+                Today already has arrival data saved — submitting now will overwrite any recorded
+                absences back to &quot;arrived&quot; too
+              </span>
+            </p>
+          )}
+
           {(() => {
             // Grouped 年少/年中/年長, left-to-right in that order (any
             // other class, e.g. 小学生, is grouped separately and appended
             // after) -- so which class a student is in is clear from
             // which section their card sits in, not just a flat list.
-            const GRADE_GROUPS: { suffix: string; ja: string; en: string }[] = [
-              { suffix: "年少", ja: "年少", en: "Younger Class" },
-              { suffix: "年中", ja: "年中", en: "Middle Class" },
-              { suffix: "年長", ja: "年長", en: "Older Class" },
+            const GRADE_GROUPS: {
+              suffix: string;
+              ja: string;
+              en: string;
+              box: string;
+              header: string;
+            }[] = [
+              {
+                suffix: "年少",
+                ja: "年少",
+                en: "Younger Class",
+                box: "border-amber-300 bg-amber-50/40",
+                header: "text-amber-800 border-amber-300",
+              },
+              {
+                suffix: "年中",
+                ja: "年中",
+                en: "Middle Class",
+                box: "border-sky-300 bg-sky-50/40",
+                header: "text-sky-800 border-sky-300",
+              },
+              {
+                suffix: "年長",
+                ja: "年長",
+                en: "Older Class",
+                box: "border-emerald-300 bg-emerald-50/40",
+                header: "text-emerald-800 border-emerald-300",
+              },
             ];
             const groups = GRADE_GROUPS.map((g) => ({
               ...g,
@@ -1110,17 +1171,27 @@ function PickupPageInner() {
             const grouped = new Set(groups.flatMap((g) => g.list.map((s) => s.studentId)));
             const others = students.filter((s) => !grouped.has(s.studentId));
             if (others.length > 0) {
-              groups.push({ suffix: "", ja: "その他", en: "Other", list: others });
+              groups.push({
+                suffix: "",
+                ja: "その他",
+                en: "Other",
+                box: "border-gray-300 bg-gray-50/40",
+                header: "text-gray-700 border-gray-300",
+                list: others,
+              });
             }
 
             let runningIndex = 0;
             return (
               <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-5 print:hidden">
                 {groups.map((group) => (
-                  <div key={group.ja} className="flex flex-col gap-3">
-                    <h3 className="text-sm font-bold text-blue-800 border-b border-blue-200 pb-1">
+                  <div
+                    key={group.ja}
+                    className={`flex flex-col gap-3 rounded-2xl border-2 p-4 ${group.box}`}
+                  >
+                    <h3 className={`text-sm font-bold border-b pb-1 ${group.header}`}>
                       {group.ja}
-                      <span className="ml-2 text-xs font-normal text-gray-400">{group.en}</span>
+                      <span className="ml-2 text-xs font-normal opacity-60">{group.en}</span>
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {group.list.map((s) => {
@@ -1336,6 +1407,15 @@ function PickupPageInner() {
                     ))}
                 </ul>
               </div>
+            )}
+            {checkinHasExistingData && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-center">
+                ⚠️ 本日の記録を全て上書きします。お休みのはずの生徒が漏れていないか確認してください
+                <span className="block opacity-80">
+                  This overwrites today&apos;s existing record entirely — double-check no one
+                  who&apos;s actually absent is missing above
+                </span>
+              </p>
             )}
             <p className="text-xs text-gray-400 text-center">
               この内容で記録します。よろしいですか？
