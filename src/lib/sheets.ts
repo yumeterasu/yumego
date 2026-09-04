@@ -3084,57 +3084,42 @@ export async function clearBusOverride(studentId: string, date: string): Promise
   });
 }
 
-// クラスカラー／惑星 — two independent, optional identifiers per class
-// (both the fixed continuum and Master-managed extra classes), purely
-// cosmetic: which button color/badge shows on the top page. Both are keys
-// into small curated sets (see CLASS_COLOR_* / CLASS_PLANET_* in
-// classColors.ts) rather than free values, since Tailwind's build-time
-// scanner needs literal class name strings in the source for color, and
-// the planet gradients aren't expressible as Tailwind classes at all --
-// either way a value straight from the sheet couldn't just work at
-// runtime. One row per class in ClassColors, but only for classes that
-// have at least one of the two set -- a class with neither is simply
-// absent (not a row with two blank cells).
-export type ClassColor = { className: string; color: string; planet: string };
+// クラスカラー — an optional color per class (both the fixed continuum and
+// Master-managed extra classes), purely cosmetic: which button color shows
+// on the top page. `color` is a key into a small curated palette (see
+// CLASS_COLOR_STYLES in select-class/page.tsx) rather than a free hex
+// value, since Tailwind's build-time scanner needs literal class name
+// strings in the source to generate their CSS -- a value straight from the
+// sheet couldn't be turned into working Tailwind classes at runtime.
+export type ClassColor = { className: string; color: string };
 
 export async function getClassColors(): Promise<ClassColor[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
-    range: "ClassColors!A2:C",
+    range: "ClassColors!A2:B",
   });
   const rows = res.data.values ?? [];
   return rows
     .map((row) => ({
       className: (row[0] ?? "").toString(),
       color: (row[1] ?? "").toString(),
-      planet: (row[2] ?? "").toString(),
     }))
-    .filter((c) => c.className && (c.color || c.planet));
+    .filter((c) => c.className && c.color);
 }
 
-/** Shared by setClassColor/setClassPlanet below -- updates just the one
- *  field named by `field`, leaving the other field (if any) untouched.
- *  Removes the row entirely only once BOTH color and planet end up empty. */
-async function setClassColorOrPlanet(
-  className: string,
-  field: "color" | "planet",
-  value: string | null
-): Promise<void> {
+/** color === null resets the class back to the default (no color chosen). */
+export async function setClassColor(className: string, color: string | null): Promise<void> {
   const sheets = getSheetsClient();
   const existing = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
-    range: "ClassColors!A2:C",
+    range: "ClassColors!A2:A",
   });
   const rows = existing.data.values ?? [];
   const rowOffset = rows.findIndex((row) => (row[0] ?? "") === className);
-  const existingRow = rowOffset === -1 ? null : rows[rowOffset];
 
-  const nextColor = field === "color" ? (value ?? "") : ((existingRow?.[1] ?? "").toString());
-  const nextPlanet = field === "planet" ? (value ?? "") : ((existingRow?.[2] ?? "").toString());
-
-  if (!nextColor && !nextPlanet) {
-    if (rowOffset === -1) return; // already had neither set, nothing to remove
+  if (color === null) {
+    if (rowOffset === -1) return;
     const sheetId = await getSheetIdByTitle(sheets, "ClassColors");
     const rowNum = rowOffset + 2;
     await sheets.spreadsheets.batchUpdate({
@@ -3155,29 +3140,17 @@ async function setClassColorOrPlanet(
   if (rowOffset === -1) {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SHEET_ID,
-      range: "ClassColors!A:C",
+      range: "ClassColors!A:B",
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [[className, nextColor, nextPlanet]] },
+      requestBody: { values: [[className, color]] },
     });
     return;
   }
   const rowNum = rowOffset + 2;
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `ClassColors!B${rowNum}:C${rowNum}`,
+    range: `ClassColors!B${rowNum}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[nextColor, nextPlanet]] },
+    requestBody: { values: [[color]] },
   });
-}
-
-/** color === null resets the class's color back to the default (no color
- *  chosen) -- its planet, if any, is untouched. */
-export async function setClassColor(className: string, color: string | null): Promise<void> {
-  return setClassColorOrPlanet(className, "color", color);
-}
-
-/** planet === null resets the class's planet back to the default (no
- *  planet badge shown) -- its color, if any, is untouched. */
-export async function setClassPlanet(className: string, planet: string | null): Promise<void> {
-  return setClassColorOrPlanet(className, "planet", planet);
 }

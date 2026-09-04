@@ -8,11 +8,7 @@ import type { ExtraClass } from "@/lib/sheets";
 import {
   CLASS_COLOR_OPTIONS,
   CLASS_COLOR_SWATCH_STYLES,
-  CLASS_PLANET_OPTIONS,
-  CLASS_PLANET_LABELS,
-  type ClassPlanetKey,
 } from "@/lib/classColors";
-import { PlanetDot } from "@/components/PlanetDot";
 
 type Branch = "プロンポン" | "トンロー";
 type Editing = { id: string | null; branch: Branch; suffix: string; nameEn: string };
@@ -22,11 +18,9 @@ export default function ClassManagementPage() {
 
   const [classes, setClasses] = useState<ExtraClass[]>([]);
   const [colors, setColors] = useState<Record<string, string>>({});
-  const [planets, setPlanets] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingColorFor, setSavingColorFor] = useState<string | null>(null);
-  const [savingPlanetFor, setSavingPlanetFor] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
@@ -52,16 +46,11 @@ export default function ClassManagementPage() {
       setClasses(classesData.classes ?? []);
 
       const colorMap: Record<string, string> = {};
-      const planetMap: Record<string, string> = {};
       if (colorsRes.ok) {
         const colorsData = await colorsRes.json();
-        for (const c of colorsData.colors ?? []) {
-          if (c.color) colorMap[c.className] = c.color;
-          if (c.planet) planetMap[c.className] = c.planet;
-        }
+        for (const c of colorsData.colors ?? []) colorMap[c.className] = c.color;
       }
       setColors(colorMap);
-      setPlanets(planetMap);
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -98,31 +87,6 @@ export default function ClassManagementPage() {
     }
   }
 
-  async function pickPlanet(className: string, planet: ClassPlanetKey | null) {
-    // Picking the already-set planet again resets it to default.
-    const nextPlanet = planets[className] === planet ? null : planet;
-    setSavingPlanetFor(className);
-    setError(null);
-    try {
-      const res = await fetch("/api/class-colors", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ className, planet: nextPlanet }),
-      });
-      if (!res.ok) throw new Error("failed");
-      setPlanets((prev) => {
-        const next = { ...prev };
-        if (nextPlanet === null) delete next[className];
-        else next[className] = nextPlanet;
-        return next;
-      });
-    } catch {
-      setError("保存に失敗しました / Failed to save");
-    } finally {
-      setSavingPlanetFor(null);
-    }
-  }
-
   function ColorSwatches({ className }: { className: string }) {
     const colorKey = colors[className];
     return (
@@ -142,38 +106,6 @@ export default function ClassManagementPage() {
           onClick={() => pickColor(className, null)}
           disabled={savingColorFor === className || !colorKey}
           className="px-2.5 h-6 rounded-full border border-gray-300 text-[10px] text-gray-500 disabled:opacity-30"
-        >
-          リセット / None
-        </button>
-      </div>
-    );
-  }
-
-  function PlanetSwatches({ className }: { className: string }) {
-    const planetKey = planets[className];
-    return (
-      <div className="flex gap-2.5 flex-wrap items-end">
-        {CLASS_PLANET_OPTIONS.map((p) => (
-          <button
-            key={p}
-            onClick={() => pickPlanet(className, p)}
-            disabled={savingPlanetFor === className}
-            className="flex flex-col items-center gap-0.5 disabled:opacity-40"
-          >
-            <PlanetDot
-              planet={p}
-              size={24}
-              className={planetKey === p ? "ring-2 ring-offset-2 ring-gray-700" : ""}
-            />
-            <span className="text-[9px] text-gray-500 leading-none">
-              {CLASS_PLANET_LABELS[p]}
-            </span>
-          </button>
-        ))}
-        <button
-          onClick={() => pickPlanet(className, null)}
-          disabled={savingPlanetFor === className || !planetKey}
-          className="px-2.5 h-6 rounded-full border border-gray-300 text-[10px] text-gray-500 disabled:opacity-30 mb-3.5"
         >
           リセット / None
         </button>
@@ -341,14 +273,7 @@ export default function ClassManagementPage() {
                       {classNameToEnglish(name, extraClassEnNames)}
                     </span>
                   </p>
-                  <div>
-                    <p className="text-[10px] text-gray-400 mb-1">Color</p>
-                    <ColorSwatches className={name} />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-400 mb-1">Planet</p>
-                    <PlanetSwatches className={name} />
-                  </div>
+                  <ColorSwatches className={name} />
                 </div>
               ))}
             </div>
@@ -446,14 +371,7 @@ export default function ClassManagementPage() {
                         </div>
                       )}
                     </div>
-                    <div>
-                      <p className="text-[10px] text-gray-400 mb-1">Color</p>
-                      <ColorSwatches className={fullName} />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-gray-400 mb-1">Planet</p>
-                      <PlanetSwatches className={fullName} />
-                    </div>
+                    <ColorSwatches className={fullName} />
                   </div>
                 );
               })}

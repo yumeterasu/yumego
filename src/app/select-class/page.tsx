@@ -11,10 +11,8 @@ import {
   CLASS_COLOR_CARD_STYLES,
   CLASS_COLOR_DEFAULT_CARD_STYLE,
   isClassColorKey,
-  isClassPlanetKey,
 } from "@/lib/classColors";
 import { Bi } from "@/components/Bilingual";
-import { PlanetDot } from "@/components/PlanetDot";
 
 // The fixed 3-grade continuum, split by branch. "Extra" classes (like
 // トンロー　小学生) are Master-managed now — see useExtraClasses() below,
@@ -44,7 +42,7 @@ export default function SelectClassPage() {
   const router = useRouter();
   const { setSelectedClass } = useSelectedClass();
   const { activeClasses, enNames: extraClassEnNames } = useExtraClasses();
-  const { colors: classColors, planets: classPlanets } = useClassColors();
+  const { colors: classColors } = useClassColors();
 
   const promponExtra = activeClasses
     .filter((c) => c.branch === "プロンポン")
@@ -89,18 +87,12 @@ export default function SelectClassPage() {
       colorKey && isClassColorKey(colorKey)
         ? CLASS_COLOR_CARD_STYLES[colorKey]
         : CLASS_COLOR_DEFAULT_CARD_STYLE;
-    const planetKey = classPlanets[name];
     return (
       <button
         onClick={() => handleSelect(name)}
-        className={`relative rounded-xl border px-6 py-4 text-lg font-semibold text-center active:scale-95 transition ${colorStyle}`}
+        className={`relative rounded-xl border px-6 py-4 text-lg font-semibold active:scale-95 transition ${colorStyle}`}
       >
-        <span className="flex items-center justify-center gap-1.5">
-          {planetKey && isClassPlanetKey(planetKey) && (
-            <PlanetDot planet={planetKey} size={20} title />
-          )}
-          {name}
-        </span>
+        <span className="block">{name}</span>
         <span className="block text-xs font-normal opacity-70">
           {classNameToEnglish(name, extraClassEnNames)}
         </span>
