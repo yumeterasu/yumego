@@ -1093,32 +1093,68 @@ function PickupPageInner() {
             </span>
           </p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 print:hidden">
-            {students.map((s, i) => {
-              const isAbsent = checkinAbsent.has(s.studentId);
-              return (
-                <button
-                  key={s.studentId}
-                  onClick={() => toggleCheckinCard(s.studentId)}
-                  className={`relative rounded-xl border-2 px-3 py-6 text-center font-medium transition ${
-                    isAbsent
-                      ? "bg-red-50 border-red-500 text-red-800"
-                      : "bg-green-50 border-green-400 text-green-800"
-                  }`}
-                >
-                  <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
-                    {i + 1}
-                  </span>
-                  <span className="block">{s.nameKanji}</span>
-                  {s.nameEnglish && (
-                    <span className="block text-[10px] font-normal opacity-70">
-                      {s.nameEnglish}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          {(() => {
+            // Grouped 年少/年中/年長, left-to-right in that order (any
+            // other class, e.g. 小学生, is grouped separately and appended
+            // after) -- so which class a student is in is clear from
+            // which section their card sits in, not just a flat list.
+            const GRADE_GROUPS: { suffix: string; ja: string; en: string }[] = [
+              { suffix: "年少", ja: "年少", en: "Younger Class" },
+              { suffix: "年中", ja: "年中", en: "Middle Class" },
+              { suffix: "年長", ja: "年長", en: "Older Class" },
+            ];
+            const groups = GRADE_GROUPS.map((g) => ({
+              ...g,
+              list: students.filter((s) => s.className.endsWith(g.suffix)),
+            }));
+            const grouped = new Set(groups.flatMap((g) => g.list.map((s) => s.studentId)));
+            const others = students.filter((s) => !grouped.has(s.studentId));
+            if (others.length > 0) {
+              groups.push({ suffix: "", ja: "その他", en: "Other", list: others });
+            }
+
+            let runningIndex = 0;
+            return (
+              <div className="flex flex-col gap-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-5 print:hidden">
+                {groups.map((group) => (
+                  <div key={group.ja} className="flex flex-col gap-3">
+                    <h3 className="text-sm font-bold text-blue-800 border-b border-blue-200 pb-1">
+                      {group.ja}
+                      <span className="ml-2 text-xs font-normal text-gray-400">{group.en}</span>
+                    </h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {group.list.map((s) => {
+                        const isAbsent = checkinAbsent.has(s.studentId);
+                        runningIndex += 1;
+                        const num = runningIndex;
+                        return (
+                          <button
+                            key={s.studentId}
+                            onClick={() => toggleCheckinCard(s.studentId)}
+                            className={`relative rounded-xl border-2 px-3 py-6 text-center font-medium transition ${
+                              isAbsent
+                                ? "bg-red-50 border-red-500 text-red-800"
+                                : "bg-green-50 border-green-400 text-green-800"
+                            }`}
+                          >
+                            <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
+                              {num}
+                            </span>
+                            <span className="block">{s.nameKanji}</span>
+                            {s.nameEnglish && (
+                              <span className="block text-[10px] font-normal opacity-70">
+                                {s.nameEnglish}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           <div className="flex items-center justify-between border-t pt-4 print:hidden">
             <p className="text-sm">
