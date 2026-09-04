@@ -9,6 +9,7 @@ import {
   CLASS_COLOR_OPTIONS,
   CLASS_COLOR_SWATCH_STYLES,
   CLASS_PLANET_OPTIONS,
+  CLASS_PLANET_LABELS,
   type ClassPlanetKey,
 } from "@/lib/classColors";
 import { PlanetDot } from "@/components/PlanetDot";
@@ -151,26 +152,28 @@ export default function ClassManagementPage() {
   function PlanetSwatches({ className }: { className: string }) {
     const planetKey = planets[className];
     return (
-      <div className="flex gap-1.5 flex-wrap items-center">
+      <div className="flex gap-2.5 flex-wrap items-end">
         {CLASS_PLANET_OPTIONS.map((p) => (
           <button
             key={p}
             onClick={() => pickPlanet(className, p)}
             disabled={savingPlanetFor === className}
-            className="disabled:opacity-40"
+            className="flex flex-col items-center gap-0.5 disabled:opacity-40"
           >
             <PlanetDot
               planet={p}
               size={24}
-              title
               className={planetKey === p ? "ring-2 ring-offset-2 ring-gray-700" : ""}
             />
+            <span className="text-[9px] text-gray-500 leading-none">
+              {CLASS_PLANET_LABELS[p]}
+            </span>
           </button>
         ))}
         <button
           onClick={() => pickPlanet(className, null)}
           disabled={savingPlanetFor === className || !planetKey}
-          className="px-2.5 h-6 rounded-full border border-gray-300 text-[10px] text-gray-500 disabled:opacity-30"
+          className="px-2.5 h-6 rounded-full border border-gray-300 text-[10px] text-gray-500 disabled:opacity-30 mb-3.5"
         >
           リセット / None
         </button>
