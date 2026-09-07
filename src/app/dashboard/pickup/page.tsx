@@ -214,6 +214,11 @@ function PickupPageInner() {
     {}
   );
   const [busPatternSavingId, setBusPatternSavingId] = useState<string | null>(null);
+  // Tapping the ⚠️/📍 icon next to a name reveals this -- a plain hover
+  // title isn't discoverable (nothing to hover on a touchscreen, and even
+  // with a mouse it's easy to miss), so tapping shows the same text
+  // inline instead. One open at a time, keyed by studentId.
+  const [addressInfoFor, setAddressInfoFor] = useState<string | null>(null);
   // Inline "特定の日だけ変更" form -- one open at a time, keyed by studentId.
   const [overrideFormFor, setOverrideFormFor] = useState<string | null>(null);
   const [overrideDate, setOverrideDate] = useState("");
@@ -924,20 +929,32 @@ function PickupPageInner() {
                               <span className="inline-flex items-center gap-1">
                                 {s.nameKanji}
                                 {usesBusAnyMonth && !hasAddress && (
-                                  <span
-                                    title="住所が未登録です（生徒管理で登録してください） / No address on file"
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAddressInfoFor(
+                                        addressInfoFor === s.studentId ? null : s.studentId
+                                      )
+                                    }
+                                    aria-label="住所未登録の詳細 / Address warning details"
                                     className="text-red-600 text-xs"
                                   >
                                     ⚠️
-                                  </span>
+                                  </button>
                                 )}
                                 {usesBusAnyMonth && hasAddress && (
-                                  <span
-                                    title={locationsByStudent[s.studentId].address}
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAddressInfoFor(
+                                        addressInfoFor === s.studentId ? null : s.studentId
+                                      )
+                                    }
+                                    aria-label="住所の詳細 / Address details"
                                     className="text-green-700 text-xs"
                                   >
                                     📍
-                                  </span>
+                                  </button>
                                 )}
                               </span>
                               {s.nameEnglish && (
@@ -1005,6 +1022,35 @@ function PickupPageInner() {
                               </button>
                             </td>
                           </tr>
+                          {addressInfoFor === s.studentId && (
+                            <tr>
+                              <td
+                                colSpan={extraColCount}
+                                className={`border border-gray-300 px-3 py-2 text-xs ${
+                                  hasAddress
+                                    ? "bg-green-50 text-green-800"
+                                    : "bg-red-50 text-red-800"
+                                }`}
+                              >
+                                {hasAddress ? (
+                                  <>
+                                    📍 {locationsByStudent[s.studentId].address}
+                                  </>
+                                ) : (
+                                  <>
+                                    ⚠️ 住所が未登録です。バスを利用する場合は
+                                    <Link href="/students" className="underline font-semibold">
+                                      生徒管理
+                                    </Link>
+                                    で住所を登録してください
+                                    <span className="block opacity-80">
+                                      No address on file — register one on 生徒管理 to use the bus
+                                    </span>
+                                  </>
+                                )}
+                              </td>
+                            </tr>
+                          )}
                           {(overrides.length > 0 || formOpen) && (
                             <tr>
                               <td
