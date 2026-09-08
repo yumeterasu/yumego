@@ -2521,6 +2521,84 @@ export async function deleteBus(id: string): Promise<void> {
   });
 }
 
+// 先生管理 — a plain named list (school-wide), for staff/teacher names.
+// Registered once here so they can be picked from a dropdown elsewhere
+// (e.g. お出かけ記録's 退室確認サイン/入室確認サイン) instead of being
+// typed by hand every time. Deliberately just id+name, no emoji (unlike
+// バス管理) -- a person's name doesn't need a visual icon the way a bus
+// does. Mirrors OutingDestination's shape, but with edit support (a
+// teacher's name is more likely to need a typo fix in place than a
+// destination is).
+export type Teacher = {
+  id: string;
+  name: string;
+};
+
+export async function getTeachers(): Promise<Teacher[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Teachers!A2:B",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({ id: (row[0] ?? "").toString(), name: (row[1] ?? "").toString() }))
+    .filter((t) => t.id && t.name);
+}
+
+export async function addTeacher(id: string, name: string): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "Teachers!A:B",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[id, name]] },
+  });
+}
+
+export async function updateTeacher(id: string, name: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Teachers!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `Teachers!B${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[name]] },
+  });
+}
+
+export async function deleteTeacher(id: string): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Teachers!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
+  if (rowOffset === -1) return;
+  const sheetId = await getSheetIdByTitle(sheets, "Teachers");
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        },
+      ],
+    },
+  });
+}
+
 // 送迎バスルート計算 — each student's geocoded home address, feeding the
 // per-bus route optimizer. Deliberately its own sheet (not extra columns
 // on Students) since it's optional per-student data unrelated to

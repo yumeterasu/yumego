@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
-import type { OutingDestination, OutingLog } from "@/lib/sheets";
+import type { OutingDestination, OutingLog, Teacher } from "@/lib/sheets";
 
 const OTHER_VALUE = "__other__";
 
@@ -22,6 +22,60 @@ function todayDateString() {
 function nowTimeString() {
   const d = new Date();
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+// 退室確認サイン/入室確認サイン用 -- 先生登録（管理メニュー）のリストから選ぶ、
+// 行き先と同じ select + その他(自由入力) パターン。登録がまだ0件でも
+// 自由入力の欄が常に出るので入力自体は止まらない。
+function TeacherSignField({
+  ja,
+  en,
+  value,
+  onChange,
+  teachers,
+}: {
+  ja: string;
+  en: string;
+  value: string;
+  onChange: (value: string) => void;
+  teachers: Teacher[];
+}) {
+  const isFromList = teachers.some((t) => t.name === value);
+  return (
+    <label className="flex flex-col gap-1 text-sm flex-1">
+      {ja}
+      <span className="text-xs font-normal text-gray-500">{en}</span>
+      <select
+        value={value === "" ? "" : isFromList ? value : OTHER_VALUE}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === OTHER_VALUE) {
+            onChange(isFromList ? "" : value);
+          } else {
+            onChange(next);
+          }
+        }}
+        className="border border-gray-300 rounded-lg px-3 py-2 bg-white"
+      >
+        <option value="">選択なし / None</option>
+        {teachers.map((t) => (
+          <option key={t.id} value={t.name}>
+            {t.name}
+          </option>
+        ))}
+        <option value={OTHER_VALUE}>その他（自由入力） / Other (type your own)</option>
+      </select>
+      {(value === "" || !isFromList) && (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="名前 / Name"
+          className="border border-gray-300 rounded-lg px-3 py-2 mt-1"
+        />
+      )}
+    </label>
+  );
 }
 
 type FormMode = "add" | "return" | "edit";
@@ -89,6 +143,11 @@ export default function OutingsPage() {
   const [addingDestination, setAddingDestination] = useState(false);
   const [destinationError, setDestinationError] = useState<string | null>(null);
 
+  // 先生登録 (管理メニュー) で登録した名前 -- 退室確認サイン/入室確認サイン
+  // をリストから選べるようにする（手入力の代わり）。行き先と同じ
+  // select + その他(自由入力) のパターン。
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+
   const yearMonth = `${year}-${pad2(month)}`;
 
   const load = useCallback(async () => {
@@ -120,6 +179,17 @@ export default function OutingsPage() {
     }
   }, []);
 
+  const loadTeachers = useCallback(async () => {
+    try {
+      const res = await fetch("/api/teachers");
+      if (!res.ok) throw new Error("failed");
+      const data = await res.json();
+      setTeachers(data.teachers ?? []);
+    } catch {
+      // non-fatal — free-text entry still works either way
+    }
+  }, []);
+
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
@@ -128,7 +198,8 @@ export default function OutingsPage() {
     }
     load();
     loadDestinations();
-  }, [loaded, selectedClass, router, load, loadDestinations]);
+    loadTeachers();
+  }, [loaded, selectedClass, router, load, loadDestinations, loadTeachers]);
 
   async function addDestination() {
     const name = newDestinationName.trim();
@@ -544,19 +615,15 @@ export default function OutingsPage() {
                       className="border border-gray-300 rounded-lg px-3 py-2"
                     />
                   </label>
-                  <label className="flex flex-col gap-1 text-sm flex-1">
-                    退室確認サイン
-                    <span className="text-xs font-normal text-gray-500">Departure sign</span>
-                    <input
-                      type="text"
-                      value={form.departureSign}
-                      onChange={(e) =>
-                        setForm((f) => (f ? { ...f, departureSign: e.target.value } : f))
-                      }
-                      placeholder="名前 / Name"
-                      className="border border-gray-300 rounded-lg px-3 py-2"
-                    />
-                  </label>
+                  <TeacherSignField
+                    ja="退室確認サイン"
+                    en="Departure sign"
+                    value={form.departureSign}
+                    onChange={(value) =>
+                      setForm((f) => (f ? { ...f, departureSign: value } : f))
+                    }
+                    teachers={teachers}
+                  />
                 </div>
 
                 <label className="flex flex-col gap-1 text-sm">
@@ -631,19 +698,13 @@ export default function OutingsPage() {
                     className="border border-gray-300 rounded-lg px-3 py-2"
                   />
                 </label>
-                <label className="flex flex-col gap-1 text-sm flex-1">
-                  入室確認サイン
-                  <span className="text-xs font-normal text-gray-500">Return sign</span>
-                  <input
-                    type="text"
-                    value={form.returnSign}
-                    onChange={(e) =>
-                      setForm((f) => (f ? { ...f, returnSign: e.target.value } : f))
-                    }
-                    placeholder="名前 / Name"
-                    className="border border-gray-300 rounded-lg px-3 py-2"
-                  />
-                </label>
+                <TeacherSignField
+                  ja="入室確認サイン"
+                  en="Return sign"
+                  value={form.returnSign}
+                  onChange={(value) => setForm((f) => (f ? { ...f, returnSign: value } : f))}
+                  teachers={teachers}
+                />
               </div>
             )}
 
