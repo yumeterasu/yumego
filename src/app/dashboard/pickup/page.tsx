@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { Student, PickupRecord, StudentLocation, BusLegMode } from "@/lib/sheets";
 import { branchToEnglish, type Branch } from "@/lib/classes";
+import Select from "@/components/Select";
 
 type BusWeekBucket = { weekStart: string; days: string[]; label: string };
 type BusOverride = { studentId: string; date: string; arrivalMode: BusLegMode; departureMode: BusLegMode };
@@ -1079,13 +1080,14 @@ function PickupPageInner() {
                                   key={`${my.year}-${my.month}`}
                                   className="border border-gray-300 px-1 py-0.5 text-center"
                                 >
-                                  <select
+                                  <Select
                                     value={`${arrivalMode}_${departureMode}`}
                                     disabled={saving}
-                                    onChange={(e) => {
-                                      const [nextArrival, nextDeparture] = e.target.value.split(
-                                        "_"
-                                      ) as [BusLegMode, BusLegMode];
+                                    onChange={(v) => {
+                                      const [nextArrival, nextDeparture] = v.split("_") as [
+                                        BusLegMode,
+                                        BusLegMode,
+                                      ];
                                       if (myIdx === 0) {
                                         setBusPatternForWholeTerm(s, nextArrival, nextDeparture);
                                       } else {
@@ -1098,14 +1100,13 @@ function PickupPageInner() {
                                         );
                                       }
                                     }}
+                                    options={BUS_MODE_OPTIONS.map((o) => ({
+                                      value: o.value,
+                                      label: o.label,
+                                    }))}
+                                    showCaret={false}
                                     className="w-full rounded px-0.5 py-1 text-xs border-none bg-transparent text-center disabled:opacity-40"
-                                  >
-                                    {BUS_MODE_OPTIONS.map((o) => (
-                                      <option key={o.value} value={o.value}>
-                                        {o.label}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  />
                                 </td>
                               );
                             })}
@@ -1202,17 +1203,15 @@ function PickupPageInner() {
                                         }}
                                         className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white"
                                       />
-                                      <select
+                                      <Select
                                         value={overrideMode}
-                                        onChange={(e) => setOverrideMode(e.target.value)}
-                                        className="rounded-full px-2.5 py-1 text-xs font-semibold border bg-white text-gray-600 border-gray-300"
-                                      >
-                                        {BUS_MODE_OPTIONS.map((o) => (
-                                          <option key={o.value} value={o.value}>
-                                            {o.label}
-                                          </option>
-                                        ))}
-                                      </select>
+                                        onChange={setOverrideMode}
+                                        options={BUS_MODE_OPTIONS.map((o) => ({
+                                          value: o.value,
+                                          label: o.label,
+                                        }))}
+                                        className="rounded-full px-2.5 py-1 text-xs font-semibold border bg-white text-gray-600 border-gray-300 flex items-center justify-between gap-1"
+                                      />
                                       {(() => {
                                         const dow = overrideDate
                                           ? new Date(overrideDate + "T00:00:00").getDay()

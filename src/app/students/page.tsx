@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { CLASSES, classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student, StudentLocation } from "@/lib/sheets";
+import Select from "@/components/Select";
 
 type AddMode = "single" | "bulk";
 
@@ -2187,21 +2188,14 @@ export default function StudentsPage() {
             <label className="flex flex-col gap-1 text-sm">
               移動先クラス
               <span className="text-xs font-normal text-gray-500">Destination class</span>
-              <select
+              <Select
                 value={moveClassModal.targetClass}
-                onChange={(e) =>
-                  setMoveClassModal({ ...moveClassModal, targetClass: e.target.value })
-                }
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              >
-                {allClassNames
+                onChange={(v) => setMoveClassModal({ ...moveClassModal, targetClass: v })}
+                options={allClassNames
                   .filter((c) => c !== selectedClass)
-                  .map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-              </select>
+                  .map((c) => ({ value: c, label: c }))}
+                className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+              />
             </label>
             <p className="text-[10px] text-gray-400 text-center">
               過去の出席記録はそのまま{selectedClass}に残ります。移動後の記録から新しいクラスになります

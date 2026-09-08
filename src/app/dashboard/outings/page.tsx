@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import type { OutingDestination, OutingLog, Teacher } from "@/lib/sheets";
+import Select from "@/components/Select";
 
 const OTHER_VALUE = "__other__";
 
@@ -45,26 +46,22 @@ function TeacherSignField({
     <label className="flex flex-col gap-1 text-sm flex-1">
       {ja}
       <span className="text-xs font-normal text-gray-500">{en}</span>
-      <select
+      <Select
         value={value === "" ? "" : isFromList ? value : OTHER_VALUE}
-        onChange={(e) => {
-          const next = e.target.value;
+        onChange={(next) => {
           if (next === OTHER_VALUE) {
             onChange(isFromList ? "" : value);
           } else {
             onChange(next);
           }
         }}
-        className="border border-gray-300 rounded-lg px-3 py-2 bg-white"
-      >
-        <option value="">選択なし / None</option>
-        {teachers.map((t) => (
-          <option key={t.id} value={t.name}>
-            {t.name}
-          </option>
-        ))}
-        <option value={OTHER_VALUE}>その他（自由入力） / Other (type your own)</option>
-      </select>
+        options={[
+          { value: "", label: "選択なし / None" },
+          ...teachers.map((t) => ({ value: t.name, label: t.name })),
+          { value: OTHER_VALUE, label: "その他（自由入力） / Other (type your own)" },
+        ]}
+        className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+      />
       {(value === "" || !isFromList) && (
         <input
           type="text"
@@ -631,7 +628,7 @@ export default function OutingsPage() {
                   <span className="text-xs font-normal text-gray-500">
                     Destination/notes (optional)
                   </span>
-                  <select
+                  <Select
                     value={
                       form.description === ""
                         ? ""
@@ -639,8 +636,7 @@ export default function OutingsPage() {
                           ? form.description
                           : OTHER_VALUE
                     }
-                    onChange={(e) => {
-                      const value = e.target.value;
+                    onChange={(value) => {
                       if (value === OTHER_VALUE) {
                         // switching to free-input — clear only if the current
                         // description was itself a picked-from-list value
@@ -658,16 +654,13 @@ export default function OutingsPage() {
                         setForm((f) => (f ? { ...f, description: value } : f));
                       }
                     }}
-                    className="border border-gray-300 rounded-lg px-3 py-2 bg-white"
-                  >
-                    <option value="">選択なし / None</option>
-                    {destinations.map((d) => (
-                      <option key={d.id} value={d.name}>
-                        {d.name}
-                      </option>
-                    ))}
-                    <option value={OTHER_VALUE}>その他（自由入力） / Other (type your own)</option>
-                  </select>
+                    options={[
+                      { value: "", label: "選択なし / None" },
+                      ...destinations.map((d) => ({ value: d.name, label: d.name })),
+                      { value: OTHER_VALUE, label: "その他（自由入力） / Other (type your own)" },
+                    ]}
+                    className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+                  />
                   {(form.description === "" ||
                     !destinations.some((d) => d.name === form.description)) && (
                     <input

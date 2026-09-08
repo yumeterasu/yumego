@@ -8,6 +8,7 @@ import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
+import Select from "@/components/Select";
 
 // English names for the 5 attendance statuses, used only in the edit
 // popup's buttons — NOT in the compact day-by-day grid cells (出/欠/遅/
@@ -1404,17 +1405,15 @@ export default function DashboardPage() {
                 <label className="flex flex-col gap-1 text-sm">
                   生徒
                   <span className="text-xs font-normal text-gray-500">Student</span>
-                  <select
+                  <Select
                     value={bulkStudentId}
-                    onChange={(e) => setBulkStudentId(e.target.value)}
-                    className="border rounded-lg px-3 py-2"
-                  >
-                    {students.map((s) => (
-                      <option key={s.studentId} value={s.studentId}>
-                        {s.nameEnglish || s.nameKanji}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setBulkStudentId}
+                    options={students.map((s) => ({
+                      value: s.studentId,
+                      label: s.nameEnglish || s.nameKanji,
+                    }))}
+                    className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+                  />
                 </label>
 
                 <div className="flex gap-2">
