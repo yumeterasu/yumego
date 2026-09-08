@@ -2085,6 +2085,79 @@ export async function clearAllMasterHolidays(): Promise<number> {
   return rows.length;
 }
 
+/**
+ * Applies a タイの祝日をインポート batch: `toSet` upserts each date with the
+ * given label (new dates get appended, existing ones are left alone --
+ * the caller only includes a date here when it's not already saved, since
+ * import is only meant to add/remove dates, not rewrite a label someone
+ * already customized), `toRemove` deletes those dates outright. One read
+ * + up to 3 batched writes total, same upsert-in-place +
+ * deleteDimension-sorted-descending shape as every other bulk write in
+ * this file -- regardless of how many holidays are being reconciled.
+ */
+export async function applyMasterHolidayChanges(
+  toSet: { date: string; label: string }[],
+  toRemove: string[]
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "MasterHolidays!A2:B",
+  });
+  const rows = existing.data.values ?? [];
+  const rowNumByDate = new Map<string, number>();
+  rows.forEach((row, i) => rowNumByDate.set((row[0] ?? "").toString(), i + 2));
+
+  const updates: { range: string; values: string[][] }[] = [];
+  const appends: string[][] = [];
+  for (const { date, label } of toSet) {
+    const rowNum = rowNumByDate.get(date);
+    if (rowNum !== undefined) {
+      updates.push({ range: `MasterHolidays!B${rowNum}`, values: [[label]] });
+    } else {
+      appends.push([date, label]);
+    }
+  }
+
+  if (updates.length > 0) {
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: { valueInputOption: "USER_ENTERED", data: updates },
+    });
+  }
+  if (appends.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "MasterHolidays!A:B",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: appends },
+    });
+  }
+
+  // Deletions use the row numbers from the initial read directly -- the
+  // updates/appends above never move an existing row (append only adds at
+  // the end, update only rewrites a cell in place), so those numbers are
+  // still valid here. Sorted descending so each deleteDimension doesn't
+  // shift the index of a row still waiting to be deleted.
+  const rowNumsToDelete = toRemove
+    .map((date) => rowNumByDate.get(date))
+    .filter((n): n is number => n !== undefined)
+    .sort((a, b) => b - a);
+  if (rowNumsToDelete.length > 0) {
+    const sheetId = await getSheetIdByTitle(sheets, "MasterHolidays");
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: rowNumsToDelete.map((rowNum) => ({
+          deleteDimension: {
+            range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+          },
+        })),
+      },
+    });
+  }
+}
+
 // Google publishes a public read-only "Holidays in Thailand" calendar as an
 // ICS feed — no auth needed. Used to power the タイの祝日を表示 checkbox
 // on 祝日カレンダー（マスター）: a pure display overlay (see

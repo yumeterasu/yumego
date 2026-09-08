@@ -144,6 +144,23 @@ export default function MasterCalendarPage() {
   const [deletingAll, setDeletingAll] = useState(false);
   const [deleteAllDone, setDeleteAllDone] = useState<number | null>(null);
 
+  // タイの祝日をインポート — unlike the display-only checkbox above, this
+  // one actually writes into MasterHolidays: adds whichever Thai holidays
+  // (within the fiscal year currently on screen) aren't saved yet, and
+  // removes whichever saved holidays in that same range aren't on the
+  // Thai list. A date present on both sides is left completely alone
+  // (label included) -- import only reconciles which DATES are holidays,
+  // never overwrites a label someone already customized.
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importDiff, setImportDiff] = useState<{
+    toAdd: MasterHoliday[];
+    toRemove: MasterHoliday[];
+  } | null>(null);
+  const [importApplying, setImportApplying] = useState(false);
+  const [importDone, setImportDone] = useState<{ added: number; removed: number } | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
   function closeModal() {
     setEditing(null);
     setConfirmingRemove(false);
@@ -233,21 +250,91 @@ export default function MasterCalendarPage() {
     }
   }
 
+  // Shared by the タイの祝日を表示 checkbox and the インポート button --
+  // fetches the feed once and caches it in `thaiHolidays`; either caller
+  // just awaits this and reads that state afterward instead of fetching
+  // it separately.
+  async function ensureThaiHolidaysLoaded(): Promise<MasterHoliday[]> {
+    if (thaiHolidays !== null) return thaiHolidays;
+    const res = await fetch("/api/calendar/master/thai-holidays");
+    if (!res.ok) throw new Error("failed");
+    const data = await res.json();
+    const loaded: MasterHoliday[] = data.holidays ?? [];
+    setThaiHolidays(loaded);
+    return loaded;
+  }
+
   async function handleToggleThai(checked: boolean) {
     setShowThaiHolidays(checked);
     if (!checked || thaiHolidays !== null) return; // already cached, or just turning it off
     setThaiHolidaysLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/calendar/master/thai-holidays");
-      if (!res.ok) throw new Error("failed");
-      const data = await res.json();
-      setThaiHolidays(data.holidays ?? []);
+      await ensureThaiHolidaysLoaded();
     } catch {
       setError("タイの祝日の取得に失敗しました / Failed to load Thai holidays");
       setShowThaiHolidays(false);
     } finally {
       setThaiHolidaysLoading(false);
+    }
+  }
+
+  // 現在表示中の年度（4月1日〜翌年3月31日）の範囲だけをインポート対象にする
+  // -- 他の年度は一切触らない。
+  function currentFiscalYearRange(): { start: string; end: string } {
+    return {
+      start: `${fiscalYearStart}-04-01`,
+      end: `${fiscalYearStart + 1}-03-31`,
+    };
+  }
+
+  async function openImportModal() {
+    setShowImportModal(true);
+    setImportDiff(null);
+    setImportDone(null);
+    setImportError(null);
+    setImportLoading(true);
+    try {
+      const thai = await ensureThaiHolidaysLoaded();
+      const { start, end } = currentFiscalYearRange();
+      const inRange = (date: string) => date >= start && date <= end;
+
+      const thaiInRange = thai.filter((h) => inRange(h.date));
+      const masterInRange = holidays.filter((h) => inRange(h.date));
+      const masterDates = new Set(masterInRange.map((h) => h.date));
+      const thaiDates = new Set(thaiInRange.map((h) => h.date));
+
+      const toAdd = thaiInRange.filter((h) => !masterDates.has(h.date));
+      const toRemove = masterInRange.filter((h) => !thaiDates.has(h.date));
+      setImportDiff({ toAdd, toRemove });
+    } catch {
+      setImportError("タイの祝日の取得に失敗しました / Failed to load Thai holidays");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function confirmImport() {
+    if (!importDiff) return;
+    setImportApplying(true);
+    setImportError(null);
+    try {
+      const res = await fetch("/api/calendar/master/import-thai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toSet: importDiff.toAdd,
+          toRemove: importDiff.toRemove.map((h) => h.date),
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setImportDone({ added: importDiff.toAdd.length, removed: importDiff.toRemove.length });
+      setImportDiff(null);
+      await load();
+    } catch {
+      setImportError("インポートに失敗しました / Failed to import");
+    } finally {
+      setImportApplying(false);
     }
   }
 
@@ -308,6 +395,16 @@ export default function MasterCalendarPage() {
               <span className="block text-[9px] font-normal opacity-70">Show Thai holidays</span>
             </span>
           </label>
+          <button
+            onClick={openImportModal}
+            className="rounded-full bg-green-50 border border-green-300 text-green-700 px-5 py-2 text-sm font-semibold"
+          >
+            <ThaiFlagIcon className="mr-1" />
+            📥 インポート（この年度）
+            <span className="block text-[9px] font-normal opacity-70">
+              Import Thai holidays (this fiscal year)
+            </span>
+          </button>
           <button
             onClick={openDeleteAllModal}
             className="rounded-full bg-red-50 border border-red-300 text-red-700 px-5 py-2 text-sm font-semibold"
@@ -572,6 +669,134 @@ export default function MasterCalendarPage() {
                     className="rounded-full bg-red-600 text-white py-3 font-semibold disabled:opacity-40"
                   >
                     {deletingAll ? "削除中... / Deleting..." : "本当に削除する / Really delete"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showImportModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+          onClick={() => !importApplying && setShowImportModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {importDone !== null ? (
+              <>
+                <h2 className="text-lg font-bold text-center text-green-700">
+                  インポートしました
+                  <span className="block text-sm font-normal text-gray-500">Imported</span>
+                </h2>
+                <p className="text-sm text-center text-gray-600">
+                  追加 {importDone.added}件 / 削除 {importDone.removed}件
+                  <span className="block text-xs">
+                    Added {importDone.added} / Removed {importDone.removed}
+                  </span>
+                </p>
+                <button
+                  onClick={() => setShowImportModal(false)}
+                  className="rounded-full bg-green-600 text-white py-3 font-semibold"
+                >
+                  閉じる / Close
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-center">
+                  <ThaiFlagIcon className="mr-1" />
+                  タイの祝日をインポート
+                  <span className="block text-sm font-normal text-gray-500">
+                    Import Thai holidays
+                  </span>
+                </h2>
+                <p className="text-xs text-gray-400 text-center -mt-2">
+                  {fiscalYearStart}年度（{fiscalYearStart}年4月〜{fiscalYearStart + 1}年3月）の範囲だけが対象です
+                  <span className="block">
+                    Only the {fiscalYearStart} fiscal year (currently shown) is affected
+                  </span>
+                </p>
+
+                {importLoading ? (
+                  <p className="text-gray-500 text-sm text-center">
+                    読み込み中... / Loading...
+                  </p>
+                ) : importError ? (
+                  <p className="text-red-600 text-sm text-center">{importError}</p>
+                ) : importDiff && importDiff.toAdd.length === 0 && importDiff.toRemove.length === 0 ? (
+                  <p className="text-sm text-center text-gray-600">
+                    すでにタイの祝日と一致しています。変更はありません
+                    <span className="block text-xs">
+                      Already matches the Thai holiday list — nothing to change
+                    </span>
+                  </p>
+                ) : (
+                  importDiff && (
+                    <div className="flex flex-col gap-3 text-sm">
+                      {importDiff.toAdd.length > 0 && (
+                        <div>
+                          <p className="text-green-700 font-semibold text-xs mb-1">
+                            ＋ 追加 {importDiff.toAdd.length}件 / Add {importDiff.toAdd.length}
+                          </p>
+                          <ul className="flex flex-col gap-0.5">
+                            {importDiff.toAdd.map((h) => (
+                              <li
+                                key={h.date}
+                                className="text-xs bg-green-50 text-green-800 rounded-lg px-2 py-1 flex justify-between gap-2"
+                              >
+                                <span>{h.date}</span>
+                                <span className="truncate">{h.label}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {importDiff.toRemove.length > 0 && (
+                        <div>
+                          <p className="text-red-600 font-semibold text-xs mb-1">
+                            − 削除 {importDiff.toRemove.length}件 / Remove{" "}
+                            {importDiff.toRemove.length}
+                          </p>
+                          <ul className="flex flex-col gap-0.5">
+                            {importDiff.toRemove.map((h) => (
+                              <li
+                                key={h.date}
+                                className="text-xs bg-red-50 text-red-700 rounded-lg px-2 py-1 flex justify-between gap-2"
+                              >
+                                <span>{h.date}</span>
+                                <span className="truncate">{h.label}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowImportModal(false)}
+                    disabled={importApplying}
+                    className="rounded-full bg-gray-100 text-gray-600 py-3 font-semibold disabled:opacity-40"
+                  >
+                    キャンセル / Cancel
+                  </button>
+                  <button
+                    onClick={confirmImport}
+                    disabled={
+                      importApplying ||
+                      importLoading ||
+                      !importDiff ||
+                      (importDiff.toAdd.length === 0 && importDiff.toRemove.length === 0)
+                    }
+                    className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
+                  >
+                    {importApplying ? "インポート中... / Importing..." : "インポートする / Import"}
                   </button>
                 </div>
               </>
