@@ -3,7 +3,7 @@ import {
   getStudentsByBranch,
   getPickupRecordsForMonth,
   upsertPickupRecord,
-  bulkSetArrivalForRoster,
+  bulkSetFieldForRoster,
   clearPickupForDate,
 } from "@/lib/sheets";
 
@@ -60,27 +60,31 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// POST /api/pickup  { date, entries: { studentId, present }[] }
-// Sets 登園 for a whole roster on one date at once, in one batched write --
-// 送迎管理's 登園確認 screen (mirrors /attendance's own card-grid check-in,
-// just present/absent, no reason codes).
+// POST /api/pickup  { date, field: "arrival" | "departure", entries: { studentId, present }[] }
+// Sets 登園 or 降園 for a whole roster on one date at once, in one batched
+// write -- 送迎管理's 登園確認/降園確認 screens (mirror /attendance's own
+// card-grid check-in, just present/absent, no reason codes).
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { date, entries } = body ?? {};
+  const { date, field, entries } = body ?? {};
 
   if (
     typeof date !== "string" ||
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    (field !== "arrival" && field !== "departure") ||
     !Array.isArray(entries) ||
     entries.some(
       (e) => typeof e?.studentId !== "string" || typeof e?.present !== "boolean"
     )
   ) {
-    return NextResponse.json({ error: "Missing or invalid date/entries" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing or invalid date/field ('arrival' or 'departure')/entries" },
+      { status: 400 }
+    );
   }
 
   try {
-    await bulkSetArrivalForRoster(date, entries);
+    await bulkSetFieldForRoster(date, field, entries);
     return NextResponse.json({ ok: true, count: entries.length });
   } catch (err) {
     console.error(err);

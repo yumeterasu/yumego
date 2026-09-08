@@ -174,11 +174,19 @@ function PickupPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
 
-  // 登園確認 — mirrors /attendance's own card-grid check-in screen (see
-  // handleCardTap/submitCheckin below), just 2 states instead of 4. Only
-  // ever targets today; opening it always starts everyone present,
-  // independent of whatever's already on the grid for today.
+  // 登園確認／降園確認 — mirrors /attendance's own card-grid check-in
+  // screen (see toggleCheckinCard/submitCheckin below), just 2 states
+  // instead of 4. Only ever targets today; opening it always starts
+  // everyone present, independent of whatever's already on the grid for
+  // today. checkinField picks which one is open -- the roster shown is
+  // filtered to only students whose EFFECTIVE mode for that leg today is
+  // "self" (a 往復バス student never needs checking in either screen; a
+  // 帰り自分/行き自分 student only shows up in the one screen that
+  // applies to them), resolved from today's ⚡ override if one exists,
+  // else that month's バス・送迎設定 pattern -- see effectiveModeForToday.
   const [showCheckin, setShowCheckin] = useState(false);
+  const [checkinField, setCheckinField] = useState<"arrival" | "departure">("arrival");
+  const [checkinDataLoading, setCheckinDataLoading] = useState(false);
   const [checkinAbsent, setCheckinAbsent] = useState<Set<string>>(new Set());
   const [checkinSubmitting, setCheckinSubmitting] = useState(false);
   const [showCheckinConfirm, setShowCheckinConfirm] = useState(false);
@@ -591,13 +599,90 @@ function PickupPageInner() {
     }
   }
 
-  // 本日は全員登園 — default everyone present for today; tap individual
-  // absentees off afterward via the normal per-cell toggle above, same as
-  // any other day. One batched write for the whole branch roster instead
-  // of tapping in each present student one at a time.
-  function openCheckin() {
+  /** Today's effective bus/pickup mode for one student -- today's ⚡
+   *  override if one is set, else this month's パターン, else the
+   *  self/self default. Drives which of 登園確認/降園確認 a student
+   *  shows up in (see openCheckin below). */
+  function effectiveModeForToday(studentId: string): {
+    arrivalMode: BusLegMode;
+    departureMode: BusLegMode;
+  } {
+    const todayOverride = (busOverridesByStudent[studentId] ?? []).find(
+      (o) => o.date === todayStr
+    );
+    if (todayOverride) {
+      return { arrivalMode: todayOverride.arrivalMode, departureMode: todayOverride.departureMode };
+    }
+    const pattern = monthPatternFor(studentId, year, month);
+    return { arrivalMode: pattern?.arrivalMode ?? "self", departureMode: pattern?.departureMode ?? "self" };
+  }
+
+  /** Students who actually need checking for this leg today -- anyone
+   *  whose effective mode has the bus on this leg is skipped entirely
+   *  (往復バス never appears in either screen; 帰り自分/行き自分 only
+   *  appear in the one screen that applies to them). */
+  function checkinRosterFor(field: "arrival" | "departure") {
+    return students.filter((s) => {
+      const mode = effectiveModeForToday(s.studentId);
+      return (field === "arrival" ? mode.arrivalMode : mode.departureMode) === "self";
+    });
+  }
+
+  // 本日は全員登園／全員降園 — default everyone present for today; tap
+  // individual absentees off afterward via the normal per-cell toggle
+  // above, same as any other day. One batched write for the filtered
+  // roster instead of tapping in each present student one at a time.
+  // Loads this month's バス・送迎設定 pattern + overrides fresh every
+  // time (merged additively into the same state バス・送迎設定 itself
+  // uses), since this screen can be opened without ever having visited
+  // that one first.
+  async function openCheckin(field: "arrival" | "departure") {
+    setCheckinField(field);
     setCheckinAbsent(new Set()); // always starts everyone present
     setShowCheckin(true);
+    setCheckinDataLoading(true);
+    setError(null);
+    try {
+      const [patternRes, overrideRes] = await Promise.all([
+        fetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
+        fetch(`/api/students/bus-override?month=${encodeURIComponent(yearMonth)}`),
+      ]);
+      if (patternRes.ok) {
+        const data = await patternRes.json();
+        setBusPatternsByWeek((prev) => {
+          const next = { ...prev };
+          for (const p of (data.patterns ?? []) as {
+            studentId: string;
+            weekStart: string;
+            arrivalMode: BusLegMode;
+            departureMode: BusLegMode;
+          }[]) {
+            next[p.weekStart] = {
+              ...(next[p.weekStart] ?? {}),
+              [p.studentId]: { arrivalMode: p.arrivalMode, departureMode: p.departureMode },
+            };
+          }
+          return next;
+        });
+      }
+      if (overrideRes.ok) {
+        const data = await overrideRes.json();
+        setBusOverridesByStudent((prev) => {
+          const next = { ...prev };
+          for (const o of (data.overrides ?? []) as BusOverride[]) {
+            const list = (next[o.studentId] ?? []).filter((x) => x.date !== o.date);
+            list.push(o);
+            list.sort((a, b) => a.date.localeCompare(b.date));
+            next[o.studentId] = list;
+          }
+          return next;
+        });
+      }
+    } catch {
+      setError("通学方法の取得に失敗しました / Failed to load bus/pickup patterns");
+    } finally {
+      setCheckinDataLoading(false);
+    }
   }
 
   function toggleCheckinCard(studentId: string) {
@@ -610,23 +695,24 @@ function PickupPageInner() {
   }
 
   async function submitCheckin() {
+    const roster = checkinRosterFor(checkinField);
     setCheckinSubmitting(true);
     setError(null);
     try {
-      const entries = students.map((s) => ({
+      const entries = roster.map((s) => ({
         studentId: s.studentId,
         present: !checkinAbsent.has(s.studentId),
       }));
       const res = await fetch("/api/pickup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: todayStr, entries }),
+        body: JSON.stringify({ date: todayStr, field: checkinField, entries }),
       });
       if (!res.ok) throw new Error("failed");
       setDrafts((prev) => {
         const next = { ...prev };
         for (const { studentId, present } of entries) {
-          next[`${cellKey(studentId, todayStr)}|arrival`] = present ? "TRUE" : "";
+          next[`${cellKey(studentId, todayStr)}|${checkinField}`] = present ? "TRUE" : "";
         }
         return next;
       });
@@ -636,14 +722,19 @@ function PickupPageInner() {
         savedRef.current.set(key, {
           date: todayStr,
           studentId,
-          arrivalTime: present ? "TRUE" : "",
-          departureTime: saved?.departureTime ?? "",
+          arrivalTime: checkinField === "arrival" ? (present ? "TRUE" : "") : (saved?.arrivalTime ?? ""),
+          departureTime:
+            checkinField === "departure" ? (present ? "TRUE" : "") : (saved?.departureTime ?? ""),
         });
       }
       setShowCheckinConfirm(false);
       setShowCheckin(false);
     } catch {
-      setError("登園確認の保存に失敗しました / Failed to save arrival check-in");
+      setError(
+        checkinField === "arrival"
+          ? "登園確認の保存に失敗しました / Failed to save arrival check-in"
+          : "降園確認の保存に失敗しました / Failed to save departure check-out"
+      );
     } finally {
       setCheckinSubmitting(false);
     }
@@ -700,14 +791,16 @@ function PickupPageInner() {
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  // Whether today already has at least one arrival recorded -- 登園確認
-  // always starts everyone marked present (the right default the first
-  // time it's opened each day), but re-opening it later after some
-  // arrivals/absences are already saved would otherwise silently reset
-  // the whole day back to "everyone present" if submitted without
+  // Whether today already has at least one arrival/departure recorded for
+  // whichever leg is currently open -- 登園確認/降園確認 always start
+  // everyone marked present (the right default the first time either is
+  // opened each day), but re-opening one later after some
+  // present/absent marks are already saved would otherwise silently
+  // reset the whole day back to "everyone present" if submitted without
   // noticing -- surfaced as a warning rather than changing that default.
-  const checkinHasExistingData = students.some(
-    (s) => (drafts[`${cellKey(s.studentId, todayStr)}|arrival`] ?? "") !== ""
+  const checkinRoster = checkinRosterFor(checkinField);
+  const checkinHasExistingData = checkinRoster.some(
+    (s) => (drafts[`${cellKey(s.studentId, todayStr)}|${checkinField}`] ?? "") !== ""
   );
 
   return (
@@ -727,14 +820,24 @@ function PickupPageInner() {
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden">
           {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
-            <button
-              type="button"
-              onClick={openCheckin}
-              className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
-            >
-              ✅ 登園確認
-              <span className="block text-[10px] font-normal opacity-70">Arrival check-in</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => openCheckin("arrival")}
+                className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
+              >
+                ✅ 登園確認
+                <span className="block text-[10px] font-normal opacity-70">Arrival check-in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openCheckin("departure")}
+                className="rounded-full bg-blue-600 text-white px-5 py-2.5 font-semibold text-sm"
+              >
+                ✅ 降園確認
+                <span className="block text-[10px] font-normal opacity-70">Departure check-out</span>
+              </button>
+            </>
           )}
           <Link
             href="/select-class"
@@ -1160,23 +1263,53 @@ function PickupPageInner() {
       ) : showCheckin ? (
         <>
           <p className="text-sm text-gray-600 print:hidden">
-            全員デフォルトで登園済みです。お休みの生徒だけタップしてください
-            <span className="block text-xs text-gray-400">
-              Everyone starts marked arrived — tap only the students who are absent today
-            </span>
+            {checkinField === "arrival" ? (
+              <>
+                全員デフォルトで登園済みです。お休みの生徒だけタップしてください（送迎のみ・行き自分の生徒のみ表示）
+                <span className="block text-xs text-gray-400">
+                  Everyone starts marked arrived — tap only the students who are absent today
+                  (showing only students dropped off by a parent today)
+                </span>
+              </>
+            ) : (
+              <>
+                全員デフォルトで降園済みです。お迎えがまだの生徒だけタップしてください（送迎のみ・帰り自分の生徒のみ表示）
+                <span className="block text-xs text-gray-400">
+                  Everyone starts marked picked up — tap only the students not yet picked up
+                  (showing only students picked up by a parent today)
+                </span>
+              </>
+            )}
           </p>
 
-          {checkinHasExistingData && (
-            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-4 py-2 print:hidden">
-              ⚠️ 本日はすでに登園記録があります。このまま送信すると、記録済みのお休みも「登園」で上書きされます
-              <span className="block text-xs opacity-80">
-                Today already has arrival data saved — submitting now will overwrite any recorded
-                absences back to &quot;arrived&quot; too
+          {checkinDataLoading ? (
+            <p className="text-gray-500 text-sm text-center print:hidden">
+              読み込み中... / Loading...
+            </p>
+          ) : checkinRoster.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-8 print:hidden">
+              本日、この確認が必要な生徒はいません（全員バス利用のため）
+              <span className="block text-xs">
+                No students need this check today — everyone uses the bus for this leg
               </span>
             </p>
-          )}
+          ) : (
+            <>
+              {checkinHasExistingData && (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-4 py-2 print:hidden">
+                  ⚠️{" "}
+                  {checkinField === "arrival"
+                    ? "本日はすでに登園記録があります。このまま送信すると、記録済みのお休みも「登園」で上書きされます"
+                    : "本日はすでに降園記録があります。このまま送信すると、記録済みのお迎え待ちも「降園」で上書きされます"}
+                  <span className="block text-xs opacity-80">
+                    Today already has {checkinField === "arrival" ? "arrival" : "departure"} data
+                    saved — submitting now will overwrite any recorded absences back to{" "}
+                    {checkinField === "arrival" ? '"arrived"' : '"picked up"'} too
+                  </span>
+                </p>
+              )}
 
-          {(() => {
+              {(() => {
             // Grouped 年少/年中/年長, left-to-right in that order (any
             // other class, e.g. 小学生, is grouped separately and appended
             // after) -- so which class a student is in is clear from
@@ -1212,10 +1345,10 @@ function PickupPageInner() {
             ];
             const groups = GRADE_GROUPS.map((g) => ({
               ...g,
-              list: students.filter((s) => s.className.endsWith(g.suffix)),
+              list: checkinRoster.filter((s) => s.className.endsWith(g.suffix)),
             }));
             const grouped = new Set(groups.flatMap((g) => g.list.map((s) => s.studentId)));
-            const others = students.filter((s) => !grouped.has(s.studentId));
+            const others = checkinRoster.filter((s) => !grouped.has(s.studentId));
             if (others.length > 0) {
               groups.push({
                 suffix: "",
@@ -1275,10 +1408,12 @@ function PickupPageInner() {
 
           <div className="flex items-center justify-between border-t pt-4 print:hidden">
             <p className="text-sm">
-              登園: <span className="font-bold">{students.length - checkinAbsent.size}</span> /
+              {checkinField === "arrival" ? "登園" : "降園"}:{" "}
+              <span className="font-bold">{checkinRoster.length - checkinAbsent.size}</span> /
               お休み: <span className="font-bold">{checkinAbsent.size}</span>
               <span className="block text-xs text-gray-400">
-                Arrived: {students.length - checkinAbsent.size} / Absent: {checkinAbsent.size}
+                {checkinField === "arrival" ? "Arrived" : "Picked up"}:{" "}
+                {checkinRoster.length - checkinAbsent.size} / Absent: {checkinAbsent.size}
               </span>
             </p>
             <div className="flex items-center gap-2">
@@ -1293,13 +1428,17 @@ function PickupPageInner() {
               <button
                 onClick={() => setShowCheckinConfirm(true)}
                 disabled={checkinSubmitting}
-                className="rounded-full bg-green-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
+                className={`rounded-full text-white px-6 py-3 font-semibold disabled:opacity-40 ${
+                  checkinField === "arrival" ? "bg-green-600" : "bg-blue-600"
+                }`}
               >
                 確定する
                 <span className="block text-[10px] font-normal opacity-70">Confirm</span>
               </button>
             </div>
           </div>
+            </>
+          )}
         </>
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
@@ -1414,19 +1553,21 @@ function PickupPageInner() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
             <h2 className="text-lg font-bold text-center">
-              本日の登園確認
+              {checkinField === "arrival" ? "本日の登園確認" : "本日の降園確認"}
               <span className="block text-sm font-normal text-gray-500">
-                Today&apos;s arrival check-in
+                {checkinField === "arrival" ? "Today's arrival check-in" : "Today's departure check-out"}
               </span>
             </h2>
             <div className="flex justify-around text-center">
               <div>
                 <p className="text-3xl font-bold text-green-700">
-                  {students.length - checkinAbsent.size}
+                  {checkinRoster.length - checkinAbsent.size}
                 </p>
                 <p className="text-sm text-gray-500">
-                  登園
-                  <span className="block text-xs">Arrived</span>
+                  {checkinField === "arrival" ? "登園" : "降園"}
+                  <span className="block text-xs">
+                    {checkinField === "arrival" ? "Arrived" : "Picked up"}
+                  </span>
                 </p>
               </div>
               <div>
@@ -1441,7 +1582,7 @@ function PickupPageInner() {
               <div>
                 <p className="text-xs text-gray-500 mb-1">お休みの生徒: / Absent students:</p>
                 <ul className="flex flex-wrap gap-2">
-                  {students
+                  {checkinRoster
                     .filter((s) => checkinAbsent.has(s.studentId))
                     .map((s) => (
                       <li
@@ -1478,7 +1619,9 @@ function PickupPageInner() {
               <button
                 onClick={submitCheckin}
                 disabled={checkinSubmitting}
-                className="flex-1 rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
+                className={`flex-1 rounded-full text-white py-3 font-semibold disabled:opacity-40 ${
+                  checkinField === "arrival" ? "bg-green-600" : "bg-blue-600"
+                }`}
               >
                 {checkinSubmitting ? "送信中... / Sending..." : "送信する / Submit"}
               </button>
