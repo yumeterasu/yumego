@@ -39,8 +39,11 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
 
 export default function AdminMenuPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-3 p-4">
-      <div className="w-full max-w-md flex items-center justify-end">
+    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4 max-w-md mx-auto w-full">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-xl font-bold">
+          <Bi ja="管理メニュー" en="Management Menu" enClassName="block text-sm font-normal text-gray-400" />
+        </h1>
         <Link
           href="/select-class"
           className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
@@ -50,15 +53,7 @@ export default function AdminMenuPage() {
         </Link>
       </div>
 
-      <h1 className="text-xl font-bold text-center">
-        <Bi
-          ja="管理メニュー"
-          en="Management Menu"
-          enClassName="block text-sm font-normal text-gray-500 mt-1"
-        />
-      </h1>
-
-      <div className="flex flex-col gap-3 w-full max-w-md">
+      <div className="flex flex-col gap-3 w-full">
         {ADMIN_LINKS.map((item) => (
           <Link
             key={item.href}
