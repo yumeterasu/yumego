@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { MasterHoliday } from "@/lib/sheets";
+import ThaiFlagIcon from "@/components/ThaiFlagIcon";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const MONTH_EN = [
@@ -296,7 +297,14 @@ export default function MasterCalendarPage() {
               className="w-4 h-4 accent-blue-600 disabled:opacity-40"
             />
             <span>
-              {thaiHolidaysLoading ? "読み込み中... / Loading..." : "🇹🇭 タイの祝日を表示"}
+              {thaiHolidaysLoading ? (
+                "読み込み中... / Loading..."
+              ) : (
+                <>
+                  <ThaiFlagIcon className="mr-1" />
+                  タイの祝日を表示
+                </>
+              )}
               <span className="block text-[9px] font-normal opacity-70">Show Thai holidays</span>
             </span>
           </label>
