@@ -89,20 +89,24 @@ type FormState = {
   description: string;
 };
 
-function blankAddForm(): FormState {
+// defaultSign: the current class's own teacher (if one is set on クラス管理)
+// -- pre-filled so the common case (a class's own teacher takes them out
+// and brings them back) needs no picking at all, while the dropdown below
+// still allows choosing a different teacher from the same branch instead.
+function blankAddForm(defaultSign: string): FormState {
   return {
     mode: "add",
     date: todayDateString(),
     headcount: "",
     departureTime: nowTimeString(),
-    departureSign: "",
+    departureSign: defaultSign,
     returnTime: "",
     returnSign: "",
     description: "",
   };
 }
 
-function toEditForm(entry: OutingLog, mode: FormMode): FormState {
+function toEditForm(entry: OutingLog, mode: FormMode, defaultSign: string): FormState {
   return {
     mode,
     id: entry.id,
@@ -111,7 +115,10 @@ function toEditForm(entry: OutingLog, mode: FormMode): FormState {
     departureTime: entry.departureTime,
     departureSign: entry.departureSign,
     returnTime: mode === "return" ? nowTimeString() : entry.returnTime,
-    returnSign: entry.returnSign,
+    // Only default an EMPTY returnSign -- an "edit" of an already-recorded
+    // entry keeps whatever was actually saved, even if that happens to be
+    // blank on purpose.
+    returnSign: mode === "return" && !entry.returnSign ? defaultSign : entry.returnSign,
     description: entry.description,
   };
 }
@@ -140,10 +147,15 @@ export default function OutingsPage() {
   const [addingDestination, setAddingDestination] = useState(false);
   const [destinationError, setDestinationError] = useState<string | null>(null);
 
-  // 先生登録 (管理メニュー) で登録した名前 -- 退室確認サイン/入室確認サイン
-  // をリストから選べるようにする（手入力の代わり）。行き先と同じ
-  // select + その他(自由入力) のパターン。
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  // 退室確認サイン/入室確認サインをリストから選べるようにする（手入力の
+  // 代わり）-- 行き先と同じ select + その他(自由入力) のパターン。全ての
+  // 先生ではなく、クラス管理でこの支店（プロンポン/トンロー）のどこかの
+  // クラスに割り当てられている先生だけに絞る（例：プロンポンなら年長/
+  // 年中/年少の担当3人だけ、トンローの先生は出さない）。デフォルト値は
+  // 今開いているクラス自身の担当（設定されていれば）。
+  const [classTeacherAssignments, setClassTeacherAssignments] = useState<
+    { className: string; teacherId: string; teacherName: string }[]
+  >([]);
 
   const yearMonth = `${year}-${pad2(month)}`;
 
@@ -178,14 +190,28 @@ export default function OutingsPage() {
 
   const loadTeachers = useCallback(async () => {
     try {
-      const res = await fetch("/api/teachers");
+      const res = await fetch("/api/class-teacher");
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
-      setTeachers(data.teachers ?? []);
+      setClassTeacherAssignments(data.assignments ?? []);
     } catch {
       // non-fatal — free-text entry still works either way
     }
   }, []);
+
+  // "プロンポン　年長" -> "プロンポン". Extra classes (e.g. トンロー　小学生)
+  // split the same way, so this doesn't need the fixed-continuum check
+  // classNameToBranchGrade() does.
+  const currentBranch = selectedClass?.split("　")[0] ?? "";
+  const branchTeachers: Teacher[] = Array.from(
+    new Map(
+      classTeacherAssignments
+        .filter((a) => a.className.startsWith(currentBranch))
+        .map((a) => [a.teacherId, { id: a.teacherId, name: a.teacherName }])
+    ).values()
+  );
+  const defaultTeacherName =
+    classTeacherAssignments.find((a) => a.className === selectedClass)?.teacherName ?? "";
 
   useEffect(() => {
     if (!loaded) return;
@@ -261,17 +287,17 @@ export default function OutingsPage() {
 
   function openAddForm() {
     setFormError(null);
-    setForm(blankAddForm());
+    setForm(blankAddForm(defaultTeacherName));
   }
 
   function openReturnForm(entry: OutingLog) {
     setFormError(null);
-    setForm(toEditForm(entry, "return"));
+    setForm(toEditForm(entry, "return", defaultTeacherName));
   }
 
   function openEditForm(entry: OutingLog) {
     setFormError(null);
-    setForm(toEditForm(entry, "edit"));
+    setForm(toEditForm(entry, "edit", defaultTeacherName));
   }
 
   async function submitForm() {
@@ -619,7 +645,7 @@ export default function OutingsPage() {
                     onChange={(value) =>
                       setForm((f) => (f ? { ...f, departureSign: value } : f))
                     }
-                    teachers={teachers}
+                    teachers={branchTeachers}
                   />
                 </div>
 
@@ -696,7 +722,7 @@ export default function OutingsPage() {
                   en="Return sign"
                   value={form.returnSign}
                   onChange={(value) => setForm((f) => (f ? { ...f, returnSign: value } : f))}
-                  teachers={teachers}
+                  teachers={branchTeachers}
                 />
               </div>
             )}
