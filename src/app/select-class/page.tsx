@@ -7,6 +7,7 @@ import { CLASSES, classNameToEnglish } from "@/lib/classes";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { useClassColors } from "@/hooks/useClassColors";
+import { useClassTeachers } from "@/hooks/useClassTeachers";
 import {
   CLASS_COLOR_CARD_STYLES,
   CLASS_COLOR_DEFAULT_CARD_STYLE,
@@ -43,6 +44,7 @@ export default function SelectClassPage() {
   const { setSelectedClass } = useSelectedClass();
   const { activeClasses, enNames: extraClassEnNames } = useExtraClasses();
   const { colors: classColors } = useClassColors();
+  const { teacherNames: classTeachers } = useClassTeachers();
 
   const promponExtra = activeClasses
     .filter((c) => c.branch === "プロンポン")
@@ -87,6 +89,7 @@ export default function SelectClassPage() {
       colorKey && isClassColorKey(colorKey)
         ? CLASS_COLOR_CARD_STYLES[colorKey]
         : CLASS_COLOR_DEFAULT_CARD_STYLE;
+    const teacherName = classTeachers[name];
     return (
       <button
         onClick={() => handleSelect(name)}
@@ -96,6 +99,9 @@ export default function SelectClassPage() {
         <span className="block text-xs font-normal opacity-70">
           {classNameToEnglish(name, extraClassEnNames)}
         </span>
+        {teacherName && (
+          <span className="block text-xs font-normal opacity-70 mt-0.5">👩‍🏫 {teacherName}</span>
+        )}
         {checked && (
           <span className="absolute top-1.5 right-3 text-sm font-bold text-green-700 bg-green-50 border border-green-300 rounded-full px-2 py-0.5">
             出席 {count}

@@ -3313,3 +3313,75 @@ export async function setClassColor(className: string, color: string | null): Pr
     requestBody: { values: [[color]] },
   });
 }
+
+// クラス担当の先生 — an optional single teacher per class (both the fixed
+// continuum and Master-managed extra classes), chosen from 先生登録's list.
+// Stored by teacherId (not the name directly) so a later name correction
+// on 先生登録 is reflected everywhere automatically, same reasoning as
+// storing a bus/studentId reference elsewhere in this file rather than a
+// copy of the display text. Same upsert-by-className shape as ClassColors
+// right above -- one row per class that HAS a teacher set, no row means
+// "unset."
+export type ClassTeacherAssignment = { className: string; teacherId: string };
+
+export async function getClassTeachers(): Promise<ClassTeacherAssignment[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "ClassTeachers!A2:B",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      className: (row[0] ?? "").toString(),
+      teacherId: (row[1] ?? "").toString(),
+    }))
+    .filter((c) => c.className && c.teacherId);
+}
+
+/** teacherId === null unassigns the class (back to "no teacher set"). */
+export async function setClassTeacher(className: string, teacherId: string | null): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "ClassTeachers!A2:A",
+  });
+  const rows = existing.data.values ?? [];
+  const rowOffset = rows.findIndex((row) => (row[0] ?? "") === className);
+
+  if (teacherId === null) {
+    if (rowOffset === -1) return;
+    const sheetId = await getSheetIdByTitle(sheets, "ClassTeachers");
+    const rowNum = rowOffset + 2;
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+            },
+          },
+        ],
+      },
+    });
+    return;
+  }
+
+  if (rowOffset === -1) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "ClassTeachers!A:B",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[className, teacherId]] },
+    });
+    return;
+  }
+  const rowNum = rowOffset + 2;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `ClassTeachers!B${rowNum}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[teacherId]] },
+  });
+}

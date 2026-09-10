@@ -4,11 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CLASSES, classNameToEnglish } from "@/lib/classes";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
-import type { ExtraClass } from "@/lib/sheets";
+import type { ExtraClass, Teacher } from "@/lib/sheets";
 import {
   CLASS_COLOR_OPTIONS,
   CLASS_COLOR_SWATCH_STYLES,
 } from "@/lib/classColors";
+import Select from "@/components/Select";
+
+const UNSET_TEACHER = "__unset__";
 
 type Branch = "プロンポン" | "トンロー";
 type Editing = { id: string | null; branch: Branch; suffix: string; nameEn: string };
@@ -18,9 +21,12 @@ export default function ClassManagementPage() {
 
   const [classes, setClasses] = useState<ExtraClass[]>([]);
   const [colors, setColors] = useState<Record<string, string>>({});
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [classTeacherIds, setClassTeacherIds] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingColorFor, setSavingColorFor] = useState<string | null>(null);
+  const [savingTeacherFor, setSavingTeacherFor] = useState<string | null>(null);
 
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
@@ -37,9 +43,11 @@ export default function ClassManagementPage() {
     setLoading(true);
     setError(null);
     try {
-      const [classesRes, colorsRes] = await Promise.all([
+      const [classesRes, colorsRes, teachersRes, classTeachersRes] = await Promise.all([
         fetch("/api/extra-classes"),
         fetch("/api/class-colors"),
+        fetch("/api/teachers"),
+        fetch("/api/class-teacher"),
       ]);
       if (!classesRes.ok) throw new Error("failed");
       const classesData = await classesRes.json();
@@ -51,6 +59,17 @@ export default function ClassManagementPage() {
         for (const c of colorsData.colors ?? []) colorMap[c.className] = c.color;
       }
       setColors(colorMap);
+
+      if (teachersRes.ok) {
+        const teachersData = await teachersRes.json();
+        setTeachers(teachersData.teachers ?? []);
+      }
+      const teacherIdMap: Record<string, string> = {};
+      if (classTeachersRes.ok) {
+        const classTeachersData = await classTeachersRes.json();
+        for (const a of classTeachersData.assignments ?? []) teacherIdMap[a.className] = a.teacherId;
+      }
+      setClassTeacherIds(teacherIdMap);
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -85,6 +104,48 @@ export default function ClassManagementPage() {
     } finally {
       setSavingColorFor(null);
     }
+  }
+
+  async function pickTeacher(className: string, teacherId: string | null) {
+    setSavingTeacherFor(className);
+    setError(null);
+    try {
+      const res = await fetch("/api/class-teacher", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ className, teacherId }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setClassTeacherIds((prev) => {
+        const next = { ...prev };
+        if (teacherId === null) delete next[className];
+        else next[className] = teacherId;
+        return next;
+      });
+    } catch {
+      setError("保存に失敗しました / Failed to save");
+    } finally {
+      setSavingTeacherFor(null);
+    }
+  }
+
+  // 担当の先生 -- 先生登録（管理メニュー）のリストから選ぶ。選んだ名前は
+  // トップページの各クラスボタンにそのまま表示される（select-class/
+  // page.tsx の useClassTeachers 参照）。
+  function TeacherPicker({ className }: { className: string }) {
+    const currentId = classTeacherIds[className] ?? "";
+    return (
+      <Select
+        value={currentId || UNSET_TEACHER}
+        onChange={(v) => pickTeacher(className, v === UNSET_TEACHER ? null : v)}
+        disabled={savingTeacherFor === className}
+        options={[
+          { value: UNSET_TEACHER, label: "未設定 / Unset" },
+          ...teachers.map((t) => ({ value: t.id, label: t.name })),
+        ]}
+        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white flex items-center justify-between gap-2 disabled:opacity-40 max-w-[220px]"
+      />
+    );
   }
 
   function ColorSwatches({ className }: { className: string }) {
@@ -227,9 +288,9 @@ export default function ClassManagementPage() {
           <h1 className="text-xl font-bold">クラス管理</h1>
           <p className="text-xs text-gray-400">Class Management</p>
           <p className="text-sm text-gray-500">
-            追加クラスの管理と、トップページの各クラスボタンの色を設定します
+            追加クラスの管理と、トップページの各クラスボタンの色・担当の先生を設定します
             <span className="block text-xs">
-              Manage extra classes, and set each class button's color on the top page
+              Manage extra classes, and set each class button's color and teacher on the top page
             </span>
           </p>
         </div>
@@ -259,9 +320,9 @@ export default function ClassManagementPage() {
         <>
           <div className="flex flex-col gap-2">
             <h2 className="text-sm font-semibold text-gray-500">
-              固定クラス（名前変更不可、色のみ設定可）
+              固定クラス（名前変更不可、色・先生は設定可）
               <span className="block text-xs font-normal text-gray-400">
-                Fixed classes — name can't change, color only
+                Fixed classes — name can't change, color/teacher can
               </span>
             </h2>
             <div className="flex flex-col gap-2">
@@ -274,6 +335,7 @@ export default function ClassManagementPage() {
                     </span>
                   </p>
                   <ColorSwatches className={name} />
+                  <TeacherPicker className={name} />
                 </div>
               ))}
             </div>
@@ -372,6 +434,7 @@ export default function ClassManagementPage() {
                       )}
                     </div>
                     <ColorSwatches className={fullName} />
+                    <TeacherPicker className={fullName} />
                   </div>
                 );
               })}
