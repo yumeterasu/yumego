@@ -142,6 +142,7 @@ export default function Select({
         ref={triggerRef}
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
+        title={selected?.label}
         className={
           className ??
           "border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2 disabled:opacity-40"

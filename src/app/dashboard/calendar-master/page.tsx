@@ -753,10 +753,10 @@ export default function MasterCalendarPage() {
                             {importDiff.toAdd.map((h) => (
                               <li
                                 key={h.date}
-                                className="text-xs bg-green-50 text-green-800 rounded-lg px-2 py-1 flex justify-between gap-2"
+                                className="text-xs bg-green-50 text-green-800 rounded-lg px-2 py-1 flex items-start justify-between gap-2"
                               >
-                                <span>{h.date}</span>
-                                <span className="truncate">{h.label}</span>
+                                <span className="shrink-0">{h.date}</span>
+                                <span className="min-w-0 text-right">{h.label}</span>
                               </li>
                             ))}
                           </ul>
@@ -772,10 +772,10 @@ export default function MasterCalendarPage() {
                             {importDiff.toRemove.map((h) => (
                               <li
                                 key={h.date}
-                                className="text-xs bg-red-50 text-red-700 rounded-lg px-2 py-1 flex justify-between gap-2"
+                                className="text-xs bg-red-50 text-red-700 rounded-lg px-2 py-1 flex items-start justify-between gap-2"
                               >
-                                <span>{h.date}</span>
-                                <span className="truncate">{h.label}</span>
+                                <span className="shrink-0">{h.date}</span>
+                                <span className="min-w-0 text-right">{h.label}</span>
                               </li>
                             ))}
                           </ul>
