@@ -143,7 +143,7 @@ export default function ClassManagementPage() {
           { value: UNSET_TEACHER, label: "未設定 / Unset" },
           ...teachers.map((t) => ({ value: t.id, label: t.name })),
         ]}
-        className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white flex items-center justify-between gap-2 disabled:opacity-40 max-w-[220px]"
+        className="w-full max-w-[220px] border border-gray-300 rounded-lg px-3 py-1.5 text-sm bg-white flex items-center justify-between gap-2 disabled:opacity-40"
       />
     );
   }

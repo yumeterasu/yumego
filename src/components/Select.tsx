@@ -17,7 +17,16 @@ type Props = {
   disabled?: boolean;
   /** Trigger button classes -- fully replaces the default, same as a plain
    *  <select>'s className always did. Add "flex items-center justify-between
-   *  gap-1" yourself if you want the caret to sit at the far edge. */
+   *  gap-1" yourself if you want the caret to sit at the far edge. Include
+   *  "w-full" unless you deliberately want the trigger to size to its
+   *  selected option's own text -- otherwise a long option can make the
+   *  trigger (and everything around it, e.g. a modal) overflow sideways,
+   *  since the label is a truncate span that needs a bounded width from
+   *  somewhere to actually take effect. If this sits inside a flex row
+   *  alongside another field (e.g. a time input next to it), give that
+   *  row's own flex item "min-w-0" too -- a flex item's default min-width
+   *  is its content's own intrinsic width, which defeats both w-full and
+   *  truncate together. */
   className?: string;
   /** Dropdown panel classes -- rarely needed, sensible default provided. */
   panelClassName?: string;
@@ -145,7 +154,7 @@ export default function Select({
         title={selected?.label}
         className={
           className ??
-          "border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2 disabled:opacity-40"
+          "w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2 disabled:opacity-40"
         }
         {...aria}
       >

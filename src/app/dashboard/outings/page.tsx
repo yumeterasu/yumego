@@ -43,7 +43,7 @@ function TeacherSignField({
 }) {
   const isFromList = teachers.some((t) => t.name === value);
   return (
-    <label className="flex flex-col gap-1 text-sm flex-1">
+    <label className="flex flex-col gap-1 text-sm flex-1 min-w-0">
       {ja}
       <span className="text-xs font-normal text-gray-500">{en}</span>
       <Select
@@ -60,7 +60,7 @@ function TeacherSignField({
           ...teachers.map((t) => ({ value: t.name, label: t.name })),
           { value: OTHER_VALUE, label: "その他（自由入力） / Other (type your own)" },
         ]}
-        className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
       />
       {(value === "" || !isFromList) && (
         <input
@@ -685,7 +685,7 @@ export default function OutingsPage() {
                       ...destinations.map((d) => ({ value: d.name, label: d.name })),
                       { value: OTHER_VALUE, label: "その他（自由入力） / Other (type your own)" },
                     ]}
-                    className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
                   />
                   {(form.description === "" ||
                     !destinations.some((d) => d.name === form.description)) && (

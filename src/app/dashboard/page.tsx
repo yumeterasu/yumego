@@ -1423,7 +1423,7 @@ export default function DashboardPage() {
                       value: s.studentId,
                       label: s.nameEnglish || s.nameKanji,
                     }))}
-                    className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
                   />
                 </label>
 

@@ -2194,7 +2194,7 @@ export default function StudentsPage() {
                 options={allClassNames
                   .filter((c) => c !== selectedClass)
                   .map((c) => ({ value: c, label: c }))}
-                className="border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
               />
             </label>
             <p className="text-[10px] text-gray-400 text-center">
