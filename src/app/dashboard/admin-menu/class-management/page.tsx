@@ -312,7 +312,18 @@ export default function ClassManagementPage() {
         </div>
       </div>
 
-      {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+      {error && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-red-600 text-sm text-center">{error}</p>
+          <button
+            onClick={() => load()}
+            className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
+          >
+            🔄 再読み込み
+            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
