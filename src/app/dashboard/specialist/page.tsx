@@ -30,6 +30,10 @@ function cellKey(categoryId: string, grade: string, date?: string) {
   return date ? `${categoryId}|${grade}|${date}` : `${categoryId}|${grade}`;
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // Combines what used to be two separate pages (専門コーチ予定 / 専門コーチ人数)
 // into one table: each day cell has a checkbox, plus — only once checked —
 // an optional participant-count input right under it. Unchecking always
@@ -156,6 +160,34 @@ export default function SpecialistCoachPage() {
       }
       savedCountsRef.current = saved;
       setDraftCounts(Object.fromEntries(Object.entries(saved).map(([k, v]) => [k, String(v)])));
+
+      // Fire-and-forget: every kid present normally joins 専門コーチ too, so
+      // a checked day that has no count yet -- either just checked before
+      // today's attendance existed, or attendance only just got taken --
+      // defaults to "everyone" (今日の出席人数) the moment both are true,
+      // without the teacher having to open this page and type it in. Not
+      // awaited so it never delays the loading spinner; paced (not all at
+      // once) to stay under quota, same as 期間で登録's bulk writes
+      // elsewhere; each cell updates in place as its own request resolves.
+      const myGradeTotals = totals[myGrade] ?? {};
+      const toFill: { categoryId: string; date: string; total: number }[] = [];
+      for (const c of loadedCategories) {
+        const dates = next[cellKey(c.categoryId, myGrade)];
+        if (!dates) continue;
+        for (const date of dates) {
+          const total = myGradeTotals[date] ?? 0;
+          if (total <= 0) continue;
+          const key = cellKey(c.categoryId, myGrade, date);
+          if (saved[key] !== undefined) continue;
+          toFill.push({ categoryId: c.categoryId, date, total });
+        }
+      }
+      (async () => {
+        for (const { categoryId, date, total } of toFill) {
+          await autoFillDefaultCount(categoryId, date, total);
+          await sleep(250); // pace requests to stay under quota
+        }
+      })();
     } catch {
       setError("データの取得に失敗しました / Failed to load data");
     } finally {
@@ -188,6 +220,27 @@ export default function SpecialistCoachPage() {
       setMonth(1);
     } else {
       setMonth((m) => m + 1);
+    }
+  }
+
+  // Silently defaults a checked-but-uncounted day to "everyone" (total
+  // present that day) -- not a user-initiated correction, so no confirm
+  // dialog and no visible error on failure (best-effort; a still-missing
+  // count just gets picked up again on the next load). Never overwrites an
+  // already-saved count -- callers only invoke this when one doesn't exist.
+  async function autoFillDefaultCount(categoryId: string, date: string, total: number) {
+    const key = cellKey(categoryId, myGrade, date);
+    setDraftCounts((prev) => ({ ...prev, [key]: String(total) }));
+    try {
+      const res = await fetch("/api/specialist/participation", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch, categoryId, grade: myGrade, date, count: total }),
+      });
+      if (!res.ok) throw new Error("failed");
+      savedCountsRef.current[key] = total;
+    } catch {
+      // best-effort -- leave the optimistic draft showing, retry next load
     }
   }
 
@@ -281,6 +334,13 @@ export default function SpecialistCoachPage() {
           "チェックは外しましたが、参加人数の削除に失敗しました。もう一度チェックを付けて外すか、再読み込みしてください / Unchecked, but couldn't clear the saved count — check it and uncheck it again, or reload"
         );
       }
+    }
+    // Just checked, and that day's attendance is already taken -- default
+    // straight to "everyone" (see autoFillDefaultCount) instead of leaving
+    // it blank for the teacher to type in every time.
+    if (next && existingCount === undefined) {
+      const total = presentTotals[myGrade]?.[date] ?? 0;
+      if (total > 0) await autoFillDefaultCount(categoryId, date, total);
     }
     setBusyCellKey(null);
   }
