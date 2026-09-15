@@ -24,6 +24,14 @@ function stripStrayQuotes(s: string): string {
   return s.replace(/^["“”]+/, "").replace(/["“”]+$/, "").trim();
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+function todayDateString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /**
  * Parses the bulk-add textarea: one student per line. Accepts either a
  * straight paste of two adjacent spreadsheet columns (kanji + English,
@@ -120,6 +128,10 @@ export default function StudentsPage() {
   const [addMode, setAddMode] = useState<AddMode>("single");
   const [nameKanji, setNameKanji] = useState("");
   const [nameEnglish, setNameEnglish] = useState("");
+  // 入園日 -- defaults to today (the common case: registering a student who
+  // starts right away) but editable/clearable. "" means no restriction --
+  // see Student.startDate for what setting it actually does.
+  const [startDate, setStartDate] = useState(todayDateString);
   const [bulkText, setBulkText] = useState("");
   // For pasting a "名前" column where each cell has kanji+romaji on 2 lines
   // (e.g. the school's own roster spreadsheet) -- see parseBulkNamesTwoLine.
@@ -153,6 +165,7 @@ export default function StudentsPage() {
     nameEnglish: string;
     nameHiragana: string;
     birthDate: string;
+    startDate: string;
   } | null>(null);
   const [editNameSaving, setEditNameSaving] = useState(false);
   const [editNameError, setEditNameError] = useState<string | null>(null);
@@ -322,12 +335,14 @@ export default function StudentsPage() {
           nameKanji: nameKanji.trim(),
           nameEnglish: nameEnglish.trim(),
           className: selectedClass,
+          startDate,
         }),
       });
       if (!res.ok) throw new Error("failed");
 
       setNameKanji("");
       setNameEnglish("");
+      setStartDate(todayDateString());
       await loadStudents(selectedClass);
     } catch {
       setError("生徒の追加に失敗しました / Failed to add student");
@@ -394,6 +409,7 @@ export default function StudentsPage() {
       nameEnglish: student.nameEnglish,
       nameHiragana: student.nameHiragana,
       birthDate: student.birthDate,
+      startDate: student.startDate,
     });
     setEditNameError(null);
   }
@@ -412,6 +428,7 @@ export default function StudentsPage() {
           nameEnglish: editNameModal.nameEnglish.trim(),
           nameHiragana: editNameModal.nameHiragana.trim(),
           birthDate: editNameModal.birthDate,
+          startDate: editNameModal.startDate,
         }),
       });
       if (!res.ok) throw new Error("failed");
@@ -424,6 +441,7 @@ export default function StudentsPage() {
                 nameEnglish: editNameModal.nameEnglish.trim(),
                 nameHiragana: editNameModal.nameHiragana.trim(),
                 birthDate: editNameModal.birthDate,
+                startDate: editNameModal.startDate,
               }
             : s
         )
@@ -955,6 +973,19 @@ export default function StudentsPage() {
                 placeholder="TARO YAMADA"
               />
             </label>
+            <label className="flex flex-col gap-1 text-sm">
+              入園日（任意）
+              <span className="text-xs font-normal text-gray-500">
+                Start date (optional) — before this date, attendance can&apos;t be
+                recorded for this student
+              </span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="border rounded px-3 py-2"
+              />
+            </label>
             <button
               type="submit"
               disabled={saving || !nameKanji.trim()}
@@ -1177,6 +1208,9 @@ export default function StudentsPage() {
                   )}
                   {s.birthDate && (
                     <span className="text-[10px] text-gray-400 block">🎂 {s.birthDate}</span>
+                  )}
+                  {s.startDate && (
+                    <span className="text-[10px] text-gray-400 block">🏫 {s.startDate}</span>
                   )}
                   {locationsByStudent[s.studentId] && (
                     <p className="text-[10px] text-green-700 truncate max-w-xs">
@@ -2136,6 +2170,22 @@ export default function StudentsPage() {
                 value={editNameModal.birthDate}
                 onChange={(e) =>
                   setEditNameModal({ ...editNameModal, birthDate: e.target.value })
+                }
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              入園日（任意）
+              <span className="text-xs font-normal text-gray-500">
+                Start date (optional) — before this date, attendance can&apos;t be
+                recorded, and any existing record before it is hidden and
+                excluded from every count
+              </span>
+              <input
+                type="date"
+                value={editNameModal.startDate}
+                onChange={(e) =>
+                  setEditNameModal({ ...editNameModal, startDate: e.target.value })
                 }
                 className="border border-gray-300 rounded-lg px-3 py-2"
               />

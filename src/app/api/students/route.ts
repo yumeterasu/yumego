@@ -15,6 +15,7 @@ import { randomUUID } from "crypto";
 
 const CHECK_COLUMNS: CheckColumn[] = ["check1", "check2", "check3"];
 const BIRTH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const START_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // GET /api/students?class=プロンポン　年長[&includeInactive=true]
 export async function GET(req: NextRequest) {
@@ -42,11 +43,13 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST /api/students  { nameKanji, nameEnglish, className, birthDate? }
-// birthDate, if given, must be "YYYY-MM-DD".
+// POST /api/students  { nameKanji, nameEnglish, className, birthDate?, startDate? }
+// birthDate/startDate, if given, must be "YYYY-MM-DD". startDate is the day
+// this student actually starts attending -- leave it blank for no
+// restriction (see Student.startDate for what setting it does).
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { nameKanji, nameEnglish, className, birthDate } = body ?? {};
+  const { nameKanji, nameEnglish, className, birthDate, startDate } = body ?? {};
 
   if (!nameKanji || !className) {
     return NextResponse.json(
@@ -60,6 +63,12 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  if (startDate && !START_DATE_RE.test(startDate)) {
+    return NextResponse.json(
+      { error: "startDate must be YYYY-MM-DD" },
+      { status: 400 }
+    );
+  }
 
   try {
     const studentId = randomUUID();
@@ -69,6 +78,7 @@ export async function POST(req: NextRequest) {
       nameEnglish: nameEnglish ?? "",
       className,
       birthDate: birthDate ?? "",
+      startDate: startDate ?? "",
     });
     return NextResponse.json({ studentId });
   } catch (err) {
@@ -82,10 +92,11 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/students  { studentId, remark? } or { studentId, column, value }
 // or { studentId, active } to withdraw/graduate (false) or restore (true)
-// or { studentId, nameKanji, nameEnglish?, nameHiragana?, birthDate? } to
-// correct a student's name/birth date -- takes effect everywhere it's
-// shown, since it's all read live from this same row. birthDate, if given
-// and non-empty, must be "YYYY-MM-DD"; pass "" to clear it.
+// or { studentId, nameKanji, nameEnglish?, nameHiragana?, birthDate?, startDate? }
+// to correct a student's name/birth date/start date -- takes effect
+// everywhere it's shown, since it's all read live from this same row.
+// birthDate/startDate, if given and non-empty, must be "YYYY-MM-DD"; pass
+// "" to clear either one.
 // or { studentId, moveToClassName } to transfer a student to a different
 // class -- see updateStudentClass() for exactly what this does and doesn't
 // touch (historical records stay put; StudentLocations/Transport/PickupLog
@@ -105,6 +116,7 @@ export async function PATCH(req: NextRequest) {
     nameEnglish,
     nameHiragana,
     birthDate,
+    startDate,
     moveToClassName,
   } = body ?? {};
 
@@ -129,12 +141,17 @@ export async function PATCH(req: NextRequest) {
       if (trimmedBirthDate && !BIRTH_DATE_RE.test(trimmedBirthDate)) {
         return NextResponse.json({ error: "birthDate must be YYYY-MM-DD" }, { status: 400 });
       }
+      const trimmedStartDate = (startDate ?? "").trim();
+      if (trimmedStartDate && !START_DATE_RE.test(trimmedStartDate)) {
+        return NextResponse.json({ error: "startDate must be YYYY-MM-DD" }, { status: 400 });
+      }
       await updateStudentName(
         studentId,
         nameKanji.trim(),
         (nameEnglish ?? "").trim(),
         (nameHiragana ?? "").trim(),
-        trimmedBirthDate
+        trimmedBirthDate,
+        trimmedStartDate
       );
       return NextResponse.json({ ok: true });
     }

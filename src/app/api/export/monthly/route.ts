@@ -21,13 +21,21 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [students, records, checkLabels, checks] = await Promise.all([
+    const [students, allRecords, checkLabels, checks] = await Promise.all([
       getStudentsByClass(className),
       getAttendanceForMonth(className, yearMonth),
       getClassCheckLabels(className, yearMonth),
       getMonthlyChecks(className, yearMonth),
     ]);
     const monthlyChecks = new Map(checks.map((c) => [c.studentId, c]));
+
+    // A record dated before a student's own startDate is excluded, same
+    // as the on-screen Dashboard grid. See Student.startDate.
+    const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+    const records = allRecords.filter((r) => {
+      const start = startDateByStudent.get(r.studentId);
+      return !start || r.date >= start;
+    });
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Yumego";

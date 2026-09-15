@@ -119,12 +119,19 @@ export default function SummaryPage() {
 
   if (!loaded || !selectedClass) return null;
 
+  // studentId -> startDate ("" if none) -- a record dated before a
+  // student's own startDate is excluded from every count below, same as
+  // the monthly Dashboard. See Student.startDate.
+  const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+
   // Collapse to one status per student+date first (mirrors the monthly
   // Dashboard's per-day Map) — otherwise a stray duplicate row for the same
   // day would be counted twice here even though the monthly view only ever
   // shows/counts it once, making the two pages disagree.
   const dedupedByStudentDate = new Map<string, AttendanceStatus>();
   for (const r of records) {
+    const start = startDateByStudent.get(r.studentId);
+    if (start && r.date < start) continue; // before this student's start date
     dedupedByStudentDate.set(`${r.studentId}|${r.date}`, r.status);
   }
 

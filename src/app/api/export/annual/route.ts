@@ -17,10 +17,18 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [students, records] = await Promise.all([
+    const [students, allRecords] = await Promise.all([
       getStudentsByClass(className),
       getAttendanceForFiscalYear(className, fiscalYearStart),
     ]);
+
+    // A record dated before a student's own startDate is excluded, same
+    // as the on-screen Dashboard/年間まとめ. See Student.startDate.
+    const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+    const records = allRecords.filter((r) => {
+      const start = startDateByStudent.get(r.studentId);
+      return !start || r.date >= start;
+    });
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Yumego";

@@ -134,6 +134,13 @@ function weekdayRange(start: string, end: string): string[] {
   return dates;
 }
 
+/** weekdayRange, further excluding any date before the given student's own
+ *  startDate ("" = no restriction) -- see Student.startDate. */
+function eligibleWeekdayRange(start: string, end: string, studentStartDate: string): string[] {
+  const dates = weekdayRange(start, end);
+  return studentStartDate ? dates.filter((d) => d >= studentStartDate) : dates;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -638,8 +645,13 @@ export default function DashboardPage() {
       setBulkError("終了日は開始日より後にしてください / End date must be after the start date");
       return;
     }
-    if (weekdayRange(bulkStartDate, bulkEndDate).length === 0) {
-      setBulkError("平日が含まれていません / No weekdays in this range");
+    const bulkStudentStart = students.find((s) => s.studentId === bulkStudentId)?.startDate ?? "";
+    if (eligibleWeekdayRange(bulkStartDate, bulkEndDate, bulkStudentStart).length === 0) {
+      setBulkError(
+        bulkStudentStart && weekdayRange(bulkStartDate, bulkEndDate).length > 0
+          ? "この期間はすべて入園日より前です / This whole range is before the student's start date"
+          : "平日が含まれていません / No weekdays in this range"
+      );
       return;
     }
     setBulkError(null);
@@ -650,7 +662,8 @@ export default function DashboardPage() {
     if (!selectedClass || !bulkStudentId || !bulkPending) return;
     const { status, reason } = bulkPending;
 
-    const dates = weekdayRange(bulkStartDate, bulkEndDate);
+    const bulkStudentStart = students.find((s) => s.studentId === bulkStudentId)?.startDate ?? "";
+    const dates = eligibleWeekdayRange(bulkStartDate, bulkEndDate, bulkStudentStart);
     if (dates.length === 0) {
       setBulkError("平日が含まれていません / No weekdays in this range");
       return;
@@ -707,6 +720,12 @@ export default function DashboardPage() {
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
+  // studentId -> startDate ("" if none) -- a record dated before a
+  // student's own startDate is treated as if it doesn't exist at all
+  // (hidden from the grid, excluded from every count below), even though
+  // the row itself stays in the sheet untouched. See Student.startDate.
+  const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+
   // recordMap[studentId][day] = status, reasonMap[studentId][day] = reason.
   // Both keyed by day (not just pushed from the raw records array) so a
   // stray duplicate row for the same day only ever counts once — matching
@@ -714,6 +733,8 @@ export default function DashboardPage() {
   const recordMap = new Map<string, Map<number, AttendanceStatus>>();
   const reasonMap = new Map<string, Map<number, string>>();
   for (const r of records) {
+    const start = startDateByStudent.get(r.studentId);
+    if (start && r.date < start) continue; // before this student's start date
     const day = Number(r.date.slice(8, 10));
     if (!recordMap.has(r.studentId)) recordMap.set(r.studentId, new Map());
     recordMap.get(r.studentId)!.set(day, r.status);
@@ -1065,11 +1086,17 @@ export default function DashboardPage() {
                       // special class) overrides it for just this student.
                       const showHolidayDefault = !status && closedDates.has(date);
                       const isFuture = date > today;
+                      // Before this student's own start date, attendance
+                      // simply isn't possible -- always locked, regardless
+                      // of past/future, and any stray legacy record for it
+                      // was already excluded from recordMap above so it
+                      // never shows here either (see startDateByStudent).
+                      const beforeStart = !!(s.startDate && date < s.startDate);
                       // Blank future days are locked (use 期間で登録 instead)
                       // to avoid casual future taps, but a future day that
                       // already has data (e.g. a mistaken bulk entry) can
                       // still be tapped open to fix or clear it.
-                      const isLocked = isFuture && !status;
+                      const isLocked = (isFuture && !status) || beforeStart;
                       const key = `${s.studentId}|${date}`;
                       const isSaving = savingKey === key;
 
@@ -1088,7 +1115,10 @@ export default function DashboardPage() {
                                     reason
                                   )
                           }
+                          title={beforeStart ? "入園日より前 / Before start date" : undefined}
                           className={`text-center border border-gray-300 py-1 select-none ${weekendCellClasses(dow)} ${
+                            beforeStart ? "bg-gray-100" : ""
+                          } ${
                             isLocked
                               ? ""
                               : "cursor-pointer hover:bg-blue-50 active:bg-blue-100"
@@ -1366,9 +1396,23 @@ export default function DashboardPage() {
                       <span className="block text-[10px]">Days to register</span>
                     </span>
                     <span className="font-semibold">
-                      {weekdayRange(bulkStartDate, bulkEndDate).length}日（平日のみ）
+                      {
+                        eligibleWeekdayRange(
+                          bulkStartDate,
+                          bulkEndDate,
+                          students.find((s) => s.studentId === bulkStudentId)?.startDate ?? ""
+                        ).length
+                      }
+                      日（平日のみ）
                       <span className="block text-[10px] font-normal">
-                        {weekdayRange(bulkStartDate, bulkEndDate).length} day(s), weekdays only
+                        {
+                          eligibleWeekdayRange(
+                            bulkStartDate,
+                            bulkEndDate,
+                            students.find((s) => s.studentId === bulkStudentId)?.startDate ?? ""
+                          ).length
+                        }{" "}
+                        day(s), weekdays only
                       </span>
                     </span>
                   </div>

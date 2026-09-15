@@ -104,6 +104,18 @@ export type Student = {
   /** "YYYY-MM-DD", "" if not recorded. Drives the default (oldest-first)
    *  sort order for a bulk-imported batch -- see addStudentsBulk. */
   birthDate: string;
+  /**
+   * "YYYY-MM-DD", "" if not set -- the day this student actually starts
+   * attending this class. "" means no restriction (backward-compatible
+   * with every student registered before this existed). When set, the
+   * Dashboard's monthly grid locks every cell before this date (can't
+   * record attendance there) and treats any record that already exists
+   * before it as if it didn't -- hidden from that student's row and
+   * excluded from every present-day count (Dashboard, 年間まとめ, the
+   * annual Excel export). The row itself is never deleted, so clearing
+   * startDate later brings old data back into view.
+   */
+  startDate: string;
 };
 
 /** Parses column J (sort_order); blank/non-numeric rows sort after every
@@ -171,7 +183,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:L",
+    range: "Students!A2:M",
   });
 
   const rows = res.data.values ?? [];
@@ -191,6 +203,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
         sortOrder: parseSortOrder(row[9]),
         nameHiragana: row[10] ?? "",
         birthDate: row[11] ?? "",
+        startDate: row[12] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className && s.active)
   );
@@ -205,7 +218,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:L",
+    range: "Students!A2:M",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -223,6 +236,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
         sortOrder: parseSortOrder(row[9]),
         nameHiragana: row[10] ?? "",
         birthDate: row[11] ?? "",
+        startDate: row[12] ?? "",
       }))
       .filter((s) => s.studentId && s.active && s.className.startsWith(branch))
   );
@@ -283,7 +297,8 @@ function deriveNameHiragana(nameKanji: string, nameEnglish: string): string {
 
 /** Append a new student row to the Students sheet. nameHiragana is
  *  auto-filled -- a best-effort starting point the operator can correct
- *  via the name-edit screen. birthDate is optional ("" if not given). */
+ *  via the name-edit screen. birthDate and startDate are optional ("" if
+ *  not given). */
 export async function addStudent(
   student: Omit<
     Student,
@@ -296,7 +311,7 @@ export async function addStudent(
   const nameEnglish = stripStrayQuotes(student.nameEnglish);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:L",
+    range: "Students!A:M",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -313,6 +328,7 @@ export async function addStudent(
           String(nextOrder),
           deriveNameHiragana(nameKanji, nameEnglish),
           student.birthDate ?? "",
+          student.startDate ?? "",
         ],
       ],
     },
@@ -350,7 +366,7 @@ export async function addStudentsBulk(
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:L",
+    range: "Students!A:M",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: ordered.map((s, i) => {
@@ -369,6 +385,7 @@ export async function addStudentsBulk(
           String(orders[i]),
           deriveNameHiragana(nameKanji, nameEnglish),
           s.birthDate ?? "",
+          s.startDate ?? "",
         ];
       }),
     },
@@ -383,7 +400,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:L",
+    range: "Students!A2:M",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -401,6 +418,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
         sortOrder: parseSortOrder(row[9]),
         nameHiragana: row[10] ?? "",
         birthDate: row[11] ?? "",
+        startDate: row[12] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className)
   );
@@ -420,19 +438,21 @@ async function findStudentRowNumber(
 }
 
 /**
- * Corrects a student's name (and birth date) in place -- every page reads
- * nameKanji/nameEnglish/nameHiragana/birthDate live from this same row, so
- * this is the one place a fix needs to happen for it to show up everywhere
- * (Dashboard, 出席確認, 年間まとめ, 送迎管理, etc.). Doesn't touch
- * sort_order -- correcting a birth date after the fact doesn't retroactively
- * reshuffle the roster; use the roster page's own 並び替え for that.
+ * Corrects a student's name (birth date, and start date) in place -- every
+ * page reads nameKanji/nameEnglish/nameHiragana/birthDate/startDate live
+ * from this same row, so this is the one place a fix needs to happen for
+ * it to show up everywhere (Dashboard, 出席確認, 年間まとめ, 送迎管理,
+ * etc.). Doesn't touch sort_order -- correcting a birth date after the
+ * fact doesn't retroactively reshuffle the roster; use the roster page's
+ * own 並び替え for that.
  */
 export async function updateStudentName(
   studentId: string,
   nameKanji: string,
   nameEnglish: string,
   nameHiragana: string,
-  birthDate: string
+  birthDate: string,
+  startDate: string
 ): Promise<void> {
   const sheets = getSheetsClient();
   const rowNum = await findStudentRowNumber(sheets, studentId);
@@ -454,6 +474,10 @@ export async function updateStudentName(
         {
           range: `Students!L${rowNum}`,
           values: [[birthDate]],
+        },
+        {
+          range: `Students!M${rowNum}`,
+          values: [[startDate]],
         },
       ],
     },

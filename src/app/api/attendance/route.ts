@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   upsertAttendance,
   getAttendanceForMonth,
+  getStudentsByClass,
   clearAttendance,
   clearAttendanceForDate,
   AttendanceRecord,
@@ -15,6 +16,14 @@ const VALID_STATUSES: AttendanceStatus[] = [
   "early_leave",
   "suspended",
 ];
+
+/** studentId -> startDate ("" if none) for one class, for the before-start
+ *  guard below -- a student can't have attendance recorded for a date
+ *  before they actually started (see Student.startDate). */
+async function startDatesByStudent(className: string): Promise<Map<string, string>> {
+  const students = await getStudentsByClass(className);
+  return new Map(students.map((s) => [s.studentId, s.startDate]));
+}
 
 // GET /api/attendance?class=...&month=2026-08
 export async function GET(req: NextRequest) {
@@ -57,18 +66,27 @@ export async function POST(req: NextRequest) {
 
   const timestamp = new Date().toISOString();
 
-  const rows: AttendanceRecord[] = records.map(
-    (r: { studentId: string; status: AttendanceStatus; reason?: string }) => ({
-      date,
-      className,
-      studentId: r.studentId,
-      status: VALID_STATUSES.includes(r.status) ? r.status : "present",
-      reason: r.reason ?? "",
-      timestamp,
-    })
-  );
-
   try {
+    // Silently drop any student whose startDate is after this date -- a
+    // whole-day submit shouldn't fail for everyone just because one newly
+    // registered student hasn't started yet.
+    const startDates = await startDatesByStudent(className);
+    const rows: AttendanceRecord[] = records
+      .filter((r: { studentId: string }) => {
+        const start = startDates.get(r.studentId);
+        return !start || date >= start;
+      })
+      .map(
+        (r: { studentId: string; status: AttendanceStatus; reason?: string }) => ({
+          date,
+          className,
+          studentId: r.studentId,
+          status: VALID_STATUSES.includes(r.status) ? r.status : "present",
+          reason: r.reason ?? "",
+          timestamp,
+        })
+      );
+
     await upsertAttendance(rows);
     return NextResponse.json({ ok: true, count: rows.length });
   } catch (err) {
@@ -102,8 +120,22 @@ export async function PATCH(req: NextRequest) {
 
   try {
     if (status === null) {
+      // Clearing a stray legacy row (e.g. one recorded before startDate
+      // existed) is always allowed -- it only ever removes data, never
+      // creates a new before-start record.
       await clearAttendance(date, studentId);
     } else {
+      const startDates = await startDatesByStudent(className);
+      const start = startDates.get(studentId);
+      if (start && date < start) {
+        return NextResponse.json(
+          {
+            error:
+              "この生徒の入園日より前の日付には登録できません / Cannot record attendance before this student's start date",
+          },
+          { status: 400 }
+        );
+      }
       await upsertAttendance([
         {
           date,
