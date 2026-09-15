@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import {
-  getAllStudentsByClass,
+  getStudentsByClass,
   getAllAttendanceForClass,
   getClassCheckLabels,
   getMonthlyChecks,
@@ -21,12 +21,15 @@ function headerRowStyle(row: ExcelJS.Row) {
 }
 
 // GET /api/export/reset-backup?class=...
-// Full-history backup for one class, generated right before a roster-
-// clearing action (学期末リセット, or 全員削除 on the roster page) wipes it.
-// The 年間まとめ and monthly sheets are built with the exact same layout as
-// the Dashboard's own 📊 Excel export buttons (see src/lib/exportSheets.ts)
-// — one sheet per fiscal year and per calendar month actually present in
-// the data, so nothing is lost even from years before the current one.
+// Backup for one class, generated right before a roster-clearing action
+// (学期末リセット, or 全員削除 on the roster page) wipes it. Scoped to
+// exactly 現在の生徒一覧 (the currently active roster) -- a student fully
+// withdrawn/removed long before this backup is left out entirely, so the
+// file doesn't keep accumulating every student who's ever passed through
+// this class. The 年間まとめ and monthly sheets are built with the exact
+// same layout as the Dashboard's own 📊 Excel export buttons (see
+// src/lib/exportSheets.ts) — one sheet per fiscal year and per calendar
+// month actually present in the active roster's own attendance history.
 //
 // 専門コーチ (Coach Schedule/Headcount) sheets only apply to classes on the
 // 長/中/少 continuum -- classNameToBranchGrade() returns null for 小学生-
@@ -41,8 +44,8 @@ export async function GET(req: NextRequest) {
   const branchGrade = classNameToBranchGrade(className);
 
   try {
-    const [allStudents, attendance, categories, schedule, headcount] = await Promise.all([
-      getAllStudentsByClass(className),
+    const [activeStudents, allAttendance, categories, schedule, headcount] = await Promise.all([
+      getStudentsByClass(className),
       getAllAttendanceForClass(className),
       branchGrade ? getSpecialistCategories(branchGrade.branch) : Promise.resolve([]),
       branchGrade
@@ -54,7 +57,6 @@ export async function GET(req: NextRequest) {
     ]);
 
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
-    const activeStudents = allStudents.filter((s) => s.active);
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Yumego";
@@ -68,10 +70,16 @@ export async function GET(req: NextRequest) {
     });
     rosterSheet.columns = [{ width: 20 }, { width: 20 }, { width: 30 }];
 
-    // The monthly/annual sheets use EVERY student who ever has an
-    // attendance row for this class — not just activeStudents — so a kid
-    // who left mid-year (individually removed before this Reset) still
-    // shows up in the historical record instead of silently dropping out.
+    // The monthly/annual sheets are scoped to 現在の生徒一覧 (activeStudents)
+    // only -- a student fully withdrawn/removed long ago (no longer there
+    // at all) is left out here too, so the backup doesn't keep accumulating
+    // every past student forever. A student who left mid-term via 退園日
+    // instead of a full withdrawal is still active and still shows up here
+    // with their history intact (Student.endDate already keeps everything
+    // before it visible/counted, only excluding what's dated after it).
+    const attendance = allAttendance.filter((r) =>
+      activeStudents.some((s) => s.studentId === r.studentId)
+    );
     const monthsPresent = Array.from(new Set(attendance.map((r) => r.date.slice(0, 7)))).sort();
     const fiscalYearsPresent = Array.from(
       new Set(monthsPresent.map((ym) => yearMonthToFiscalYearStart(ym)))
@@ -85,7 +93,7 @@ export async function GET(req: NextRequest) {
       addAnnualSheet(workbook, {
         sheetName: `${fiscalYearStart}年度まとめ`,
         fiscalYearStart,
-        students: allStudents,
+        students: activeStudents,
         records: yearRecords,
       });
     }
@@ -103,7 +111,7 @@ export async function GET(req: NextRequest) {
       addMonthlySheet(workbook, {
         sheetName: yearMonth,
         yearMonth,
-        students: allStudents,
+        students: activeStudents,
         records: monthRecords,
         checkLabels: monthCheckLabels,
         monthlyChecks: new Map(monthChecks.map((c) => [c.studentId, c])),
