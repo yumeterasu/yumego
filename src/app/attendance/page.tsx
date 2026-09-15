@@ -506,7 +506,7 @@ export default function AttendancePage() {
           onClick={() => setReasonPickerFor(null)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-xs flex flex-col gap-3"
+            className="bg-white rounded-2xl p-6 w-full max-w-xs max-h-[85vh] overflow-y-auto flex flex-col gap-3"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="font-bold text-center">{reasonPickerFor.label}</p>
@@ -615,7 +615,7 @@ export default function AttendancePage() {
 
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4">
             <h2 className="text-lg font-bold text-center">
               {isToday ? (
                 <>

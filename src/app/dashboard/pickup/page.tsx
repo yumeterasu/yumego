@@ -1561,7 +1561,7 @@ function PickupPageInner() {
 
       {showCheckinConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4">
             <h2 className="text-lg font-bold text-center">
               {checkinField === "arrival" ? "本日の登園確認" : "本日の降園確認"}
               <span className="block text-sm font-normal text-gray-500">
