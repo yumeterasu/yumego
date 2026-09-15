@@ -9,8 +9,6 @@ import { classNameToEnglish } from "@/lib/classes";
 import type { OutingDestination, OutingLog, Teacher } from "@/lib/sheets";
 import Select from "@/components/Select";
 
-const OTHER_VALUE = "__other__";
-
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
@@ -25,9 +23,11 @@ function nowTimeString() {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-// 退室確認サイン/入室確認サイン用 -- 先生登録（管理メニュー）のリストから選ぶ、
-// 行き先と同じ select + その他(自由入力) パターン。登録がまだ0件でも
-// 自由入力の欄が常に出るので入力自体は止まらない。
+// 退室確認サイン/入室確認サイン用 -- 先生登録（管理メニュー）のリストから選ぶ。
+// 自由入力欄はリストから選んでいない間ずっと出しっぱなしなので、「選択なし」
+// を選ぶことと自由入力欄に直接打つことは最初から同じ状態 -- 以前あった
+// 「その他（自由入力）」という別項目は、選んでも選択なしと同じ結果にしか
+// ならない（常に "" に戻るだけ）死んだ選択肢だったため削除した。
 function TeacherSignField({
   ja,
   en,
@@ -47,18 +47,11 @@ function TeacherSignField({
       {ja}
       <span className="text-xs font-normal text-gray-500">{en}</span>
       <Select
-        value={value === "" ? "" : isFromList ? value : OTHER_VALUE}
-        onChange={(next) => {
-          if (next === OTHER_VALUE) {
-            onChange(isFromList ? "" : value);
-          } else {
-            onChange(next);
-          }
-        }}
+        value={isFromList ? value : ""}
+        onChange={onChange}
         options={[
           { value: "", label: "選択なし / None" },
           ...teachers.map((t) => ({ value: t.name, label: t.name })),
-          { value: OTHER_VALUE, label: "その他（自由入力） / Other (type your own)" },
         ]}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
       />
@@ -667,34 +660,16 @@ export default function OutingsPage() {
                   </span>
                   <Select
                     value={
-                      form.description === ""
-                        ? ""
-                        : destinations.some((d) => d.name === form.description)
-                          ? form.description
-                          : OTHER_VALUE
+                      destinations.some((d) => d.name === form.description)
+                        ? form.description
+                        : ""
                     }
-                    onChange={(value) => {
-                      if (value === OTHER_VALUE) {
-                        // switching to free-input — clear only if the current
-                        // description was itself a picked-from-list value
-                        setForm((f) =>
-                          f
-                            ? {
-                                ...f,
-                                description: destinations.some((d) => d.name === f.description)
-                                  ? ""
-                                  : f.description,
-                              }
-                            : f
-                        );
-                      } else {
-                        setForm((f) => (f ? { ...f, description: value } : f));
-                      }
-                    }}
+                    onChange={(value) =>
+                      setForm((f) => (f ? { ...f, description: value } : f))
+                    }
                     options={[
                       { value: "", label: "選択なし / None" },
                       ...destinations.map((d) => ({ value: d.name, label: d.name })),
-                      { value: OTHER_VALUE, label: "その他（自由入力） / Other (type your own)" },
                     ]}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
                   />
