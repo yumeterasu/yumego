@@ -16,6 +16,7 @@ import { randomUUID } from "crypto";
 const CHECK_COLUMNS: CheckColumn[] = ["check1", "check2", "check3"];
 const BIRTH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const START_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const END_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // GET /api/students?class=プロンポン　年長[&includeInactive=true]
 export async function GET(req: NextRequest) {
@@ -79,6 +80,10 @@ export async function POST(req: NextRequest) {
       className,
       birthDate: birthDate ?? "",
       startDate: startDate ?? "",
+      // endDate isn't collected at registration time -- there's no reason
+      // to set a withdrawal date for a brand new student. Set it later via
+      // the PATCH/edit flow if the student ends up leaving mid-term.
+      endDate: "",
     });
     return NextResponse.json({ studentId });
   } catch (err) {
@@ -92,11 +97,13 @@ export async function POST(req: NextRequest) {
 
 // PATCH /api/students  { studentId, remark? } or { studentId, column, value }
 // or { studentId, active } to withdraw/graduate (false) or restore (true)
-// or { studentId, nameKanji, nameEnglish?, nameHiragana?, birthDate?, startDate? }
-// to correct a student's name/birth date/start date -- takes effect
-// everywhere it's shown, since it's all read live from this same row.
-// birthDate/startDate, if given and non-empty, must be "YYYY-MM-DD"; pass
-// "" to clear either one.
+// or { studentId, nameKanji, nameEnglish?, nameHiragana?, birthDate?, startDate?, endDate? }
+// to correct a student's name/birth date/start date/end date -- takes
+// effect everywhere it's shown, since it's all read live from this same
+// row. birthDate/startDate/endDate, if given and non-empty, must be
+// "YYYY-MM-DD"; pass "" to clear any of them. endDate is this student's
+// last day still attending (inclusive) -- for a mid-term withdrawal, see
+// Student.endDate for exactly what setting it does.
 // or { studentId, moveToClassName } to transfer a student to a different
 // class -- see updateStudentClass() for exactly what this does and doesn't
 // touch (historical records stay put; StudentLocations/Transport/PickupLog
@@ -117,6 +124,7 @@ export async function PATCH(req: NextRequest) {
     nameHiragana,
     birthDate,
     startDate,
+    endDate,
     moveToClassName,
   } = body ?? {};
 
@@ -145,13 +153,24 @@ export async function PATCH(req: NextRequest) {
       if (trimmedStartDate && !START_DATE_RE.test(trimmedStartDate)) {
         return NextResponse.json({ error: "startDate must be YYYY-MM-DD" }, { status: 400 });
       }
+      const trimmedEndDate = (endDate ?? "").trim();
+      if (trimmedEndDate && !END_DATE_RE.test(trimmedEndDate)) {
+        return NextResponse.json({ error: "endDate must be YYYY-MM-DD" }, { status: 400 });
+      }
+      if (trimmedStartDate && trimmedEndDate && trimmedEndDate < trimmedStartDate) {
+        return NextResponse.json(
+          { error: "endDate cannot be before startDate" },
+          { status: 400 }
+        );
+      }
       await updateStudentName(
         studentId,
         nameKanji.trim(),
         (nameEnglish ?? "").trim(),
         (nameHiragana ?? "").trim(),
         trimmedBirthDate,
-        trimmedStartDate
+        trimmedStartDate,
+        trimmedEndDate
       );
       return NextResponse.json({ ok: true });
     }

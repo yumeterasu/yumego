@@ -29,12 +29,17 @@ export async function GET(req: NextRequest) {
     ]);
     const monthlyChecks = new Map(checks.map((c) => [c.studentId, c]));
 
-    // A record dated before a student's own startDate is excluded, same
-    // as the on-screen Dashboard grid. See Student.startDate.
+    // A record dated before a student's own startDate, or after their
+    // endDate, is excluded, same as the on-screen Dashboard grid. See
+    // Student.startDate/endDate.
     const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+    const endDateByStudent = new Map(students.map((s) => [s.studentId, s.endDate]));
     const records = allRecords.filter((r) => {
       const start = startDateByStudent.get(r.studentId);
-      return !start || r.date >= start;
+      if (start && r.date < start) return false;
+      const end = endDateByStudent.get(r.studentId);
+      if (end && r.date > end) return false;
+      return true;
     });
 
     const workbook = new ExcelJS.Workbook();

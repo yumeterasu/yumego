@@ -116,6 +116,17 @@ export type Student = {
    * startDate later brings old data back into view.
    */
   startDate: string;
+  /**
+   * "YYYY-MM-DD", "" if not set -- this student's last day still
+   * attending this class (inclusive -- that day itself is still normal).
+   * "" means no restriction. When set, the Dashboard's monthly grid locks
+   * every cell AFTER this date and treats any record that already exists
+   * after it as if it didn't -- same hide-and-exclude treatment as
+   * startDate, just at the other end (mid-term withdrawal). The row
+   * itself is never deleted, so clearing endDate later brings any data
+   * after it back into view.
+   */
+  endDate: string;
 };
 
 /** Parses column J (sort_order); blank/non-numeric rows sort after every
@@ -183,7 +194,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:M",
+    range: "Students!A2:N",
   });
 
   const rows = res.data.values ?? [];
@@ -204,6 +215,7 @@ export async function getStudentsByClass(className: string): Promise<Student[]> 
         nameHiragana: row[10] ?? "",
         birthDate: row[11] ?? "",
         startDate: row[12] ?? "",
+        endDate: row[13] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className && s.active)
   );
@@ -218,7 +230,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:M",
+    range: "Students!A2:N",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -237,6 +249,7 @@ export async function getStudentsByBranch(branch: string): Promise<Student[]> {
         nameHiragana: row[10] ?? "",
         birthDate: row[11] ?? "",
         startDate: row[12] ?? "",
+        endDate: row[13] ?? "",
       }))
       .filter((s) => s.studentId && s.active && s.className.startsWith(branch))
   );
@@ -311,7 +324,7 @@ export async function addStudent(
   const nameEnglish = stripStrayQuotes(student.nameEnglish);
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:M",
+    range: "Students!A:N",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [
@@ -329,6 +342,7 @@ export async function addStudent(
           deriveNameHiragana(nameKanji, nameEnglish),
           student.birthDate ?? "",
           student.startDate ?? "",
+          student.endDate ?? "",
         ],
       ],
     },
@@ -366,7 +380,7 @@ export async function addStudentsBulk(
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Students!A:M",
+    range: "Students!A:N",
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: ordered.map((s, i) => {
@@ -386,6 +400,7 @@ export async function addStudentsBulk(
           deriveNameHiragana(nameKanji, nameEnglish),
           s.birthDate ?? "",
           s.startDate ?? "",
+          s.endDate ?? "",
         ];
       }),
     },
@@ -400,7 +415,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "Students!A2:M",
+    range: "Students!A2:N",
   });
   const rows = res.data.values ?? [];
   return sortStudentsByOrder(
@@ -419,6 +434,7 @@ export async function getAllStudentsByClass(className: string): Promise<Student[
         nameHiragana: row[10] ?? "",
         birthDate: row[11] ?? "",
         startDate: row[12] ?? "",
+        endDate: row[13] ?? "",
       }))
       .filter((s) => s.studentId && s.className === className)
   );
@@ -452,7 +468,8 @@ export async function updateStudentName(
   nameEnglish: string,
   nameHiragana: string,
   birthDate: string,
-  startDate: string
+  startDate: string,
+  endDate: string
 ): Promise<void> {
   const sheets = getSheetsClient();
   const rowNum = await findStudentRowNumber(sheets, studentId);
@@ -476,8 +493,8 @@ export async function updateStudentName(
           values: [[birthDate]],
         },
         {
-          range: `Students!M${rowNum}`,
-          values: [[startDate]],
+          range: `Students!M${rowNum}:N${rowNum}`,
+          values: [[startDate, endDate]],
         },
       ],
     },

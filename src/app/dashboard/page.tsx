@@ -135,10 +135,18 @@ function weekdayRange(start: string, end: string): string[] {
 }
 
 /** weekdayRange, further excluding any date before the given student's own
- *  startDate ("" = no restriction) -- see Student.startDate. */
-function eligibleWeekdayRange(start: string, end: string, studentStartDate: string): string[] {
-  const dates = weekdayRange(start, end);
-  return studentStartDate ? dates.filter((d) => d >= studentStartDate) : dates;
+ *  startDate or after their endDate ("" = no restriction on that end) --
+ *  see Student.startDate/endDate. */
+function eligibleWeekdayRange(
+  start: string,
+  end: string,
+  studentStartDate: string,
+  studentEndDate: string
+): string[] {
+  let dates = weekdayRange(start, end);
+  if (studentStartDate) dates = dates.filter((d) => d >= studentStartDate);
+  if (studentEndDate) dates = dates.filter((d) => d <= studentEndDate);
+  return dates;
 }
 
 function sleep(ms: number) {
@@ -645,11 +653,13 @@ export default function DashboardPage() {
       setBulkError("終了日は開始日より後にしてください / End date must be after the start date");
       return;
     }
-    const bulkStudentStart = students.find((s) => s.studentId === bulkStudentId)?.startDate ?? "";
-    if (eligibleWeekdayRange(bulkStartDate, bulkEndDate, bulkStudentStart).length === 0) {
+    const bulkStudent = students.find((s) => s.studentId === bulkStudentId);
+    const bulkStudentStart = bulkStudent?.startDate ?? "";
+    const bulkStudentEnd = bulkStudent?.endDate ?? "";
+    if (eligibleWeekdayRange(bulkStartDate, bulkEndDate, bulkStudentStart, bulkStudentEnd).length === 0) {
       setBulkError(
-        bulkStudentStart && weekdayRange(bulkStartDate, bulkEndDate).length > 0
-          ? "この期間はすべて入園日より前です / This whole range is before the student's start date"
+        (bulkStudentStart || bulkStudentEnd) && weekdayRange(bulkStartDate, bulkEndDate).length > 0
+          ? "この期間はすべて在籍期間外です（入園日より前、または退園日より後）/ This whole range falls outside the student's enrollment (before their start date, or after their end date)"
           : "平日が含まれていません / No weekdays in this range"
       );
       return;
@@ -662,8 +672,13 @@ export default function DashboardPage() {
     if (!selectedClass || !bulkStudentId || !bulkPending) return;
     const { status, reason } = bulkPending;
 
-    const bulkStudentStart = students.find((s) => s.studentId === bulkStudentId)?.startDate ?? "";
-    const dates = eligibleWeekdayRange(bulkStartDate, bulkEndDate, bulkStudentStart);
+    const bulkStudent = students.find((s) => s.studentId === bulkStudentId);
+    const dates = eligibleWeekdayRange(
+      bulkStartDate,
+      bulkEndDate,
+      bulkStudent?.startDate ?? "",
+      bulkStudent?.endDate ?? ""
+    );
     if (dates.length === 0) {
       setBulkError("平日が含まれていません / No weekdays in this range");
       return;
@@ -711,6 +726,16 @@ export default function DashboardPage() {
 
   if (!loaded || !selectedClass) return null;
 
+  // Eligible day count for the 期間で登録 confirmation screen -- recomputed
+  // from current state each render, same as everything else below.
+  const bulkModalStudent = students.find((s) => s.studentId === bulkStudentId);
+  const bulkEligibleDayCount = eligibleWeekdayRange(
+    bulkStartDate,
+    bulkEndDate,
+    bulkModalStudent?.startDate ?? "",
+    bulkModalStudent?.endDate ?? ""
+  ).length;
+
   // 専門コーチ (and the Reset button on 生徒管理) are scoped to the
   // 長/中/少 grade continuum — 小学生 classes don't have a grade row there,
   // so hide the button rather than let it silently bounce back from a
@@ -725,6 +750,10 @@ export default function DashboardPage() {
   // (hidden from the grid, excluded from every count below), even though
   // the row itself stays in the sheet untouched. See Student.startDate.
   const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+  // studentId -> endDate ("" if none) -- same idea, at the other end: a
+  // record dated after a student's own endDate (their last enrolled day)
+  // is treated as if it doesn't exist. See Student.endDate.
+  const endDateByStudent = new Map(students.map((s) => [s.studentId, s.endDate]));
 
   // recordMap[studentId][day] = status, reasonMap[studentId][day] = reason.
   // Both keyed by day (not just pushed from the raw records array) so a
@@ -735,6 +764,8 @@ export default function DashboardPage() {
   for (const r of records) {
     const start = startDateByStudent.get(r.studentId);
     if (start && r.date < start) continue; // before this student's start date
+    const end = endDateByStudent.get(r.studentId);
+    if (end && r.date > end) continue; // after this student's end date
     const day = Number(r.date.slice(8, 10));
     if (!recordMap.has(r.studentId)) recordMap.set(r.studentId, new Map());
     recordMap.get(r.studentId)!.set(day, r.status);
@@ -1092,11 +1123,15 @@ export default function DashboardPage() {
                       // was already excluded from recordMap above so it
                       // never shows here either (see startDateByStudent).
                       const beforeStart = !!(s.startDate && date < s.startDate);
+                      // Same idea at the other end -- after this student's
+                      // last enrolled day (inclusive), attendance isn't
+                      // possible either. See endDateByStudent above.
+                      const afterEnd = !!(s.endDate && date > s.endDate);
                       // Blank future days are locked (use 期間で登録 instead)
                       // to avoid casual future taps, but a future day that
                       // already has data (e.g. a mistaken bulk entry) can
                       // still be tapped open to fix or clear it.
-                      const isLocked = (isFuture && !status) || beforeStart;
+                      const isLocked = (isFuture && !status) || beforeStart || afterEnd;
                       const key = `${s.studentId}|${date}`;
                       const isSaving = savingKey === key;
 
@@ -1115,9 +1150,15 @@ export default function DashboardPage() {
                                     reason
                                   )
                           }
-                          title={beforeStart ? "入園日より前 / Before start date" : undefined}
+                          title={
+                            beforeStart
+                              ? "入園日より前 / Before start date"
+                              : afterEnd
+                              ? "退園日より後 / After end date"
+                              : undefined
+                          }
                           className={`text-center border border-gray-300 py-1 select-none ${weekendCellClasses(dow)} ${
-                            beforeStart ? "bg-gray-100" : ""
+                            beforeStart || afterEnd ? "bg-gray-100" : ""
                           } ${
                             isLocked
                               ? ""
@@ -1396,23 +1437,9 @@ export default function DashboardPage() {
                       <span className="block text-[10px]">Days to register</span>
                     </span>
                     <span className="font-semibold">
-                      {
-                        eligibleWeekdayRange(
-                          bulkStartDate,
-                          bulkEndDate,
-                          students.find((s) => s.studentId === bulkStudentId)?.startDate ?? ""
-                        ).length
-                      }
-                      日（平日のみ）
+                      {bulkEligibleDayCount}日（平日のみ）
                       <span className="block text-[10px] font-normal">
-                        {
-                          eligibleWeekdayRange(
-                            bulkStartDate,
-                            bulkEndDate,
-                            students.find((s) => s.studentId === bulkStudentId)?.startDate ?? ""
-                          ).length
-                        }{" "}
-                        day(s), weekdays only
+                        {bulkEligibleDayCount} day(s), weekdays only
                       </span>
                     </span>
                   </div>

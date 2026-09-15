@@ -166,6 +166,7 @@ export default function StudentsPage() {
     nameHiragana: string;
     birthDate: string;
     startDate: string;
+    endDate: string;
   } | null>(null);
   const [editNameSaving, setEditNameSaving] = useState(false);
   const [editNameError, setEditNameError] = useState<string | null>(null);
@@ -410,6 +411,7 @@ export default function StudentsPage() {
       nameHiragana: student.nameHiragana,
       birthDate: student.birthDate,
       startDate: student.startDate,
+      endDate: student.endDate,
     });
     setEditNameError(null);
   }
@@ -429,6 +431,7 @@ export default function StudentsPage() {
           nameHiragana: editNameModal.nameHiragana.trim(),
           birthDate: editNameModal.birthDate,
           startDate: editNameModal.startDate,
+          endDate: editNameModal.endDate,
         }),
       });
       if (!res.ok) throw new Error("failed");
@@ -442,6 +445,7 @@ export default function StudentsPage() {
                 nameHiragana: editNameModal.nameHiragana.trim(),
                 birthDate: editNameModal.birthDate,
                 startDate: editNameModal.startDate,
+                endDate: editNameModal.endDate,
               }
             : s
         )
@@ -1211,6 +1215,9 @@ export default function StudentsPage() {
                   )}
                   {s.startDate && (
                     <span className="text-[10px] text-gray-400 block">🏫 {s.startDate}</span>
+                  )}
+                  {s.endDate && (
+                    <span className="text-[10px] text-red-400 block">🚪 {s.endDate}</span>
                   )}
                   {locationsByStudent[s.studentId] && (
                     <p className="text-[10px] text-green-700 truncate max-w-xs">
@@ -2186,6 +2193,23 @@ export default function StudentsPage() {
                 value={editNameModal.startDate}
                 onChange={(e) =>
                   setEditNameModal({ ...editNameModal, startDate: e.target.value })
+                }
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              退園日（任意・中途退園した場合のみ）
+              <span className="text-xs font-normal text-gray-500">
+                End date (optional, for a mid-term withdrawal only) — that day
+                itself is still normal, but after it attendance can&apos;t be
+                recorded, and any existing record after it is hidden and
+                excluded from every count
+              </span>
+              <input
+                type="date"
+                value={editNameModal.endDate}
+                onChange={(e) =>
+                  setEditNameModal({ ...editNameModal, endDate: e.target.value })
                 }
                 className="border border-gray-300 rounded-lg px-3 py-2"
               />

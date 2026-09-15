@@ -119,10 +119,12 @@ export default function SummaryPage() {
 
   if (!loaded || !selectedClass) return null;
 
-  // studentId -> startDate ("" if none) -- a record dated before a
-  // student's own startDate is excluded from every count below, same as
-  // the monthly Dashboard. See Student.startDate.
+  // studentId -> startDate/endDate ("" if none) -- a record dated before a
+  // student's own startDate, or after their endDate, is excluded from
+  // every count below, same as the monthly Dashboard. See
+  // Student.startDate/endDate.
   const startDateByStudent = new Map(students.map((s) => [s.studentId, s.startDate]));
+  const endDateByStudent = new Map(students.map((s) => [s.studentId, s.endDate]));
 
   // Collapse to one status per student+date first (mirrors the monthly
   // Dashboard's per-day Map) — otherwise a stray duplicate row for the same
@@ -132,6 +134,8 @@ export default function SummaryPage() {
   for (const r of records) {
     const start = startDateByStudent.get(r.studentId);
     if (start && r.date < start) continue; // before this student's start date
+    const end = endDateByStudent.get(r.studentId);
+    if (end && r.date > end) continue; // after this student's end date
     dedupedByStudentDate.set(`${r.studentId}|${r.date}`, r.status);
   }
 

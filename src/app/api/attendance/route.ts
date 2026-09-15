@@ -17,12 +17,15 @@ const VALID_STATUSES: AttendanceStatus[] = [
   "suspended",
 ];
 
-/** studentId -> startDate ("" if none) for one class, for the before-start
- *  guard below -- a student can't have attendance recorded for a date
- *  before they actually started (see Student.startDate). */
-async function startDatesByStudent(className: string): Promise<Map<string, string>> {
+/** studentId -> {startDate, endDate} ("" if none) for one class, for the
+ *  enrollment-window guards below -- a student can't have attendance
+ *  recorded for a date before they started or after they left (see
+ *  Student.startDate/endDate). */
+async function enrollmentByStudent(
+  className: string
+): Promise<Map<string, { startDate: string; endDate: string }>> {
   const students = await getStudentsByClass(className);
-  return new Map(students.map((s) => [s.studentId, s.startDate]));
+  return new Map(students.map((s) => [s.studentId, { startDate: s.startDate, endDate: s.endDate }]));
 }
 
 // GET /api/attendance?class=...&month=2026-08
@@ -67,14 +70,17 @@ export async function POST(req: NextRequest) {
   const timestamp = new Date().toISOString();
 
   try {
-    // Silently drop any student whose startDate is after this date -- a
-    // whole-day submit shouldn't fail for everyone just because one newly
-    // registered student hasn't started yet.
-    const startDates = await startDatesByStudent(className);
+    // Silently drop any student outside their own enrollment window (not
+    // started yet, or already left) -- a whole-day submit shouldn't fail
+    // for everyone just because one student's row can't be written.
+    const enrollment = await enrollmentByStudent(className);
     const rows: AttendanceRecord[] = records
       .filter((r: { studentId: string }) => {
-        const start = startDates.get(r.studentId);
-        return !start || date >= start;
+        const e = enrollment.get(r.studentId);
+        if (!e) return true;
+        if (e.startDate && date < e.startDate) return false;
+        if (e.endDate && date > e.endDate) return false;
+        return true;
       })
       .map(
         (r: { studentId: string; status: AttendanceStatus; reason?: string }) => ({
@@ -125,13 +131,22 @@ export async function PATCH(req: NextRequest) {
       // creates a new before-start record.
       await clearAttendance(date, studentId);
     } else {
-      const startDates = await startDatesByStudent(className);
-      const start = startDates.get(studentId);
-      if (start && date < start) {
+      const enrollment = await enrollmentByStudent(className);
+      const e = enrollment.get(studentId);
+      if (e?.startDate && date < e.startDate) {
         return NextResponse.json(
           {
             error:
               "この生徒の入園日より前の日付には登録できません / Cannot record attendance before this student's start date",
+          },
+          { status: 400 }
+        );
+      }
+      if (e?.endDate && date > e.endDate) {
+        return NextResponse.json(
+          {
+            error:
+              "この生徒の退園日より後の日付には登録できません / Cannot record attendance after this student's end date",
           },
           { status: 400 }
         );

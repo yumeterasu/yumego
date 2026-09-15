@@ -30,10 +30,12 @@ export async function POST(req: NextRequest) {
     nameEnglish: string;
     className: string;
     birthDate: string;
-    // Bulk import doesn't collect a start date -- "" means no restriction
-    // (see Student.startDate), same as every student added before this
-    // existed. Set one afterward per-student via the edit screen if needed.
+    // Bulk import doesn't collect a start/end date -- "" means no
+    // restriction (see Student.startDate/endDate), same as every student
+    // added before these existed. Set them afterward per-student via the
+    // edit screen if needed.
     startDate: string;
+    endDate: string;
   }[] = [];
   for (const r of rows) {
     if (typeof r?.nameKanji !== "string" || !r.nameKanji.trim()) continue;
@@ -45,6 +47,7 @@ export async function POST(req: NextRequest) {
       className,
       birthDate: BIRTH_DATE_RE.test(rawBirthDate) ? rawBirthDate : "",
       startDate: "",
+      endDate: "",
     });
   }
 
