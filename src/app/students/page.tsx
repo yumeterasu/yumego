@@ -980,8 +980,7 @@ export default function StudentsPage() {
             <label className="flex flex-col gap-1 text-sm">
               入園日（任意）
               <span className="text-xs font-normal text-gray-500">
-                Start date (optional) — before this date, attendance can&apos;t be
-                recorded for this student
+                Start date (optional) — locks attendance before this date
               </span>
               <input
                 type="date"
@@ -1242,7 +1241,7 @@ export default function StudentsPage() {
                     disabled={reorderMode}
                     className="text-xs text-gray-400 hover:text-blue-500 underline disabled:opacity-40"
                   >
-                    ✏️ 名前
+                    ✏️ 編集
                   </button>
                   <button
                     onClick={() => openMoveClass(s)}
@@ -2123,12 +2122,12 @@ export default function StudentsPage() {
           onClick={() => !editNameSaving && setEditNameModal(null)}
         >
           <div
-            className="bg-white rounded-2xl p-6 w-full max-w-sm flex flex-col gap-3"
+            className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-3"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-bold text-lg text-center">
-              名前を修正
-              <span className="block text-sm font-normal text-gray-500">Edit name</span>
+              生徒情報を修正
+              <span className="block text-sm font-normal text-gray-500">Edit student info</span>
             </h2>
             <label className="flex flex-col gap-1 text-sm">
               名前（漢字）
@@ -2184,9 +2183,7 @@ export default function StudentsPage() {
             <label className="flex flex-col gap-1 text-sm">
               入園日（任意）
               <span className="text-xs font-normal text-gray-500">
-                Start date (optional) — before this date, attendance can&apos;t be
-                recorded, and any existing record before it is hidden and
-                excluded from every count
+                Start date (optional) — locks attendance before this date
               </span>
               <input
                 type="date"
@@ -2200,10 +2197,8 @@ export default function StudentsPage() {
             <label className="flex flex-col gap-1 text-sm">
               退園日（任意・中途退園した場合のみ）
               <span className="text-xs font-normal text-gray-500">
-                End date (optional, for a mid-term withdrawal only) — that day
-                itself is still normal, but after it attendance can&apos;t be
-                recorded, and any existing record after it is hidden and
-                excluded from every count
+                End date (optional, mid-term withdrawal) — locks attendance
+                after this date
               </span>
               <input
                 type="date"
