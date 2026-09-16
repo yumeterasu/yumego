@@ -136,6 +136,16 @@ function daysInMonth(year: number, month: number) {
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
+function addDays(dateStr: string, delta: number) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+}
+function formatDateLabel(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${y}年${m}月${d}日(${WEEKDAY_LABELS[dow]})`;
+}
 function cellKey(studentId: string, date: string) {
   return `${studentId}|${date}`;
 }
@@ -163,6 +173,7 @@ function PickupPageInner() {
   const branch = (searchParams.get("branch") ?? "") as Branch | "";
 
   const now = new Date();
+  const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1); // 1-based
 
@@ -178,20 +189,25 @@ function PickupPageInner() {
 
   // 登園確認／降園確認 — mirrors /attendance's own card-grid check-in
   // screen (see toggleCheckinCard/submitCheckin below), just 2 states
-  // instead of 4. Only ever targets today; opening it always starts
-  // everyone present, independent of whatever's already on the grid for
-  // today. checkinField picks which one is open -- the roster shown is
-  // filtered to only students whose EFFECTIVE mode for that leg today is
-  // "self" (a 往復バス student never needs checking in either screen; a
-  // 帰り自分/行き自分 student only shows up in the one screen that
-  // applies to them), resolved from today's ⚡ override if one exists,
-  // else that month's バス・送迎設定 pattern -- see effectiveModeForToday.
+  // instead of 4. Defaults to today when opened, but can be navigated
+  // back (never forward past today) to backfill a missed day, same as
+  // /attendance's own ◀/▶ day nav -- opening or changing the day always
+  // starts everyone present, independent of whatever's already saved
+  // for that day. checkinField picks which one is open -- the roster
+  // shown is filtered to only students whose EFFECTIVE mode for that leg
+  // on checkinDate is "self" (a 往復バス student never needs checking in
+  // either screen; a 帰り自分/行き自分 student only shows up in the one
+  // screen that applies to them), resolved from that day's ⚡ override if
+  // one exists, else that day's month's バス・送迎設定 pattern -- see
+  // effectiveModeForDate.
   const [showCheckin, setShowCheckin] = useState(false);
   const [checkinField, setCheckinField] = useState<"arrival" | "departure">("arrival");
+  const [checkinDate, setCheckinDate] = useState(todayStr);
   const [checkinDataLoading, setCheckinDataLoading] = useState(false);
   const [checkinAbsent, setCheckinAbsent] = useState<Set<string>>(new Set());
   const [checkinSubmitting, setCheckinSubmitting] = useState(false);
   const [showCheckinConfirm, setShowCheckinConfirm] = useState(false);
+  const isCheckinToday = checkinDate === todayStr;
 
   // 特定の日を削除 — same permanent, no-backup "clear a whole day" pattern
   // as the Dashboard's own DELETE /api/attendance.
@@ -236,7 +252,6 @@ function PickupPageInner() {
   const [overrideSavingKey, setOverrideSavingKey] = useState<string | null>(null);
 
   const yearMonth = `${year}-${pad2(month)}`;
-  const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
   const isViewingCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
 
   const load = useCallback(async () => {
@@ -609,53 +624,48 @@ function PickupPageInner() {
     }
   }
 
-  /** Today's effective bus/pickup mode for one student -- today's ⚡
-   *  override if one is set, else this month's パターン, else the
+  /** One day's effective bus/pickup mode for one student -- that day's ⚡
+   *  override if one is set, else that day's month's パターン, else the
    *  self/self default. Drives which of 登園確認/降園確認 a student
-   *  shows up in (see openCheckin below). */
-  function effectiveModeForToday(studentId: string): {
-    arrivalMode: BusLegMode;
-    departureMode: BusLegMode;
-  } {
-    const todayOverride = (busOverridesByStudent[studentId] ?? []).find(
-      (o) => o.date === todayStr
-    );
-    if (todayOverride) {
-      return { arrivalMode: todayOverride.arrivalMode, departureMode: todayOverride.departureMode };
+   *  shows up in (see openCheckin/loadCheckinBusData below). */
+  function effectiveModeForDate(
+    studentId: string,
+    dateStr: string
+  ): { arrivalMode: BusLegMode; departureMode: BusLegMode } {
+    const override = (busOverridesByStudent[studentId] ?? []).find((o) => o.date === dateStr);
+    if (override) {
+      return { arrivalMode: override.arrivalMode, departureMode: override.departureMode };
     }
-    const pattern = monthPatternFor(studentId, year, month);
+    const dateYear = Number(dateStr.slice(0, 4));
+    const dateMonth = Number(dateStr.slice(5, 7));
+    const pattern = monthPatternFor(studentId, dateYear, dateMonth);
     return { arrivalMode: pattern?.arrivalMode ?? "self", departureMode: pattern?.departureMode ?? "self" };
   }
 
-  /** Students who actually need checking for this leg today -- anyone
-   *  whose effective mode has the bus on this leg is skipped entirely
-   *  (往復バス never appears in either screen; 帰り自分/行き自分 only
-   *  appear in the one screen that applies to them). */
-  function checkinRosterFor(field: "arrival" | "departure") {
+  /** Students who actually need checking for this leg on this day --
+   *  anyone whose effective mode has the bus on this leg is skipped
+   *  entirely (往復バス never appears in either screen; 帰り自分/行き
+   *  自分 only appear in the one screen that applies to them). */
+  function checkinRosterFor(field: "arrival" | "departure", dateStr: string) {
     return students.filter((s) => {
-      const mode = effectiveModeForToday(s.studentId);
+      const mode = effectiveModeForDate(s.studentId, dateStr);
       return (field === "arrival" ? mode.arrivalMode : mode.departureMode) === "self";
     });
   }
 
-  // 本日は全員登園／全員降園 — default everyone present for today; tap
-  // individual absentees off afterward via the normal per-cell toggle
-  // above, same as any other day. One batched write for the filtered
-  // roster instead of tapping in each present student one at a time.
-  // Loads this month's バス・送迎設定 pattern + overrides fresh every
-  // time (merged additively into the same state バス・送迎設定 itself
-  // uses), since this screen can be opened without ever having visited
-  // that one first.
-  async function openCheckin(field: "arrival" | "departure") {
-    setCheckinField(field);
-    setCheckinAbsent(new Set()); // always starts everyone present
-    setShowCheckin(true);
+  // Loads one month's バス・送迎設定 pattern + overrides (merged
+  // additively into the same state バス・送迎設定 itself uses), since
+  // 登園確認/降園確認 can be opened -- and navigated across a month
+  // boundary -- without ever having visited that screen first.
+  const loadedCheckinMonthsRef = useRef<Set<string>>(new Set());
+  async function loadCheckinBusData(ym: string) {
+    if (loadedCheckinMonthsRef.current.has(ym)) return;
     setCheckinDataLoading(true);
     setError(null);
     try {
       const [patternRes, overrideRes] = await Promise.all([
-        apiFetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
-        apiFetch(`/api/students/bus-override?month=${encodeURIComponent(yearMonth)}`),
+        apiFetch(`/api/students/bus-pattern?month=${encodeURIComponent(ym)}`),
+        apiFetch(`/api/students/bus-override?month=${encodeURIComponent(ym)}`),
       ]);
       if (patternRes.ok) {
         const data = await patternRes.json();
@@ -688,6 +698,7 @@ function PickupPageInner() {
           return next;
         });
       }
+      loadedCheckinMonthsRef.current.add(ym);
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         setError("__SESSION_EXPIRED__");
@@ -699,6 +710,38 @@ function PickupPageInner() {
     }
   }
 
+  // 本日は全員登園／全員降園 — default everyone present for the selected
+  // day; tap individual absentees off afterward via the normal per-cell
+  // toggle above, same as any other day. One batched write for the
+  // filtered roster instead of tapping in each present student one at a
+  // time. Always opens on today -- use the ◀/▶ nav inside the screen to
+  // back up to an earlier day.
+  function openCheckin(field: "arrival" | "departure") {
+    setCheckinField(field);
+    setCheckinDate(todayStr);
+    setCheckinAbsent(new Set()); // always starts everyone present
+    setShowCheckin(true);
+  }
+
+  function goCheckinPrevDay() {
+    setCheckinDate((d) => addDays(d, -1));
+    setCheckinAbsent(new Set());
+  }
+  function goCheckinNextDay() {
+    setCheckinDate((d) => (d < todayStr ? addDays(d, 1) : d));
+    setCheckinAbsent(new Set());
+  }
+  function goCheckinToday() {
+    setCheckinDate(todayStr);
+    setCheckinAbsent(new Set());
+  }
+
+  useEffect(() => {
+    if (!showCheckin) return;
+    loadCheckinBusData(checkinDate.slice(0, 7));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCheckin, checkinDate]);
+
   function toggleCheckinCard(studentId: string) {
     setCheckinAbsent((prev) => {
       const next = new Set(prev);
@@ -709,7 +752,7 @@ function PickupPageInner() {
   }
 
   async function submitCheckin() {
-    const roster = checkinRosterFor(checkinField);
+    const roster = checkinRosterFor(checkinField, checkinDate);
     setCheckinSubmitting(true);
     setError(null);
     try {
@@ -720,21 +763,21 @@ function PickupPageInner() {
       const res = await fetch("/api/pickup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: todayStr, field: checkinField, entries }),
+        body: JSON.stringify({ date: checkinDate, field: checkinField, entries }),
       });
       if (!res.ok) throw new Error("failed");
       setDrafts((prev) => {
         const next = { ...prev };
         for (const { studentId, present } of entries) {
-          next[`${cellKey(studentId, todayStr)}|${checkinField}`] = present ? "TRUE" : "";
+          next[`${cellKey(studentId, checkinDate)}|${checkinField}`] = present ? "TRUE" : "";
         }
         return next;
       });
       for (const { studentId, present } of entries) {
-        const key = cellKey(studentId, todayStr);
+        const key = cellKey(studentId, checkinDate);
         const saved = savedRef.current.get(key);
         savedRef.current.set(key, {
-          date: todayStr,
+          date: checkinDate,
           studentId,
           arrivalTime: checkinField === "arrival" ? (present ? "TRUE" : "") : (saved?.arrivalTime ?? ""),
           departureTime:
@@ -805,16 +848,21 @@ function PickupPageInner() {
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
 
-  // Whether today already has at least one arrival/departure recorded for
-  // whichever leg is currently open -- 登園確認/降園確認 always start
-  // everyone marked present (the right default the first time either is
-  // opened each day), but re-opening one later after some
-  // present/absent marks are already saved would otherwise silently
+  // Whether the selected day already has at least one arrival/departure
+  // recorded for whichever leg is currently open -- 登園確認/降園確認
+  // always start everyone marked present (the right default the first
+  // time either is opened for a day), but re-opening one later after
+  // some present/absent marks are already saved would otherwise silently
   // reset the whole day back to "everyone present" if submitted without
   // noticing -- surfaced as a warning rather than changing that default.
-  const checkinRoster = checkinRosterFor(checkinField);
+  // Best-effort: only reflects data for whichever month is already
+  // loaded into drafts (the main grid's current month), so backing up
+  // across a month boundary won't show this warning even if that day
+  // does have saved data -- submitting is still always correct either
+  // way, this just controls whether the heads-up banner appears.
+  const checkinRoster = checkinRosterFor(checkinField, checkinDate);
   const checkinHasExistingData = checkinRoster.some(
-    (s) => (drafts[`${cellKey(s.studentId, todayStr)}|${checkinField}`] ?? "") !== ""
+    (s) => (drafts[`${cellKey(s.studentId, checkinDate)}|${checkinField}`] ?? "") !== ""
   );
 
   return (
@@ -833,7 +881,7 @@ function PickupPageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden ml-auto">
-          {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
+          {students.length > 0 && !showCheckin && (
             <>
               <button
                 type="button"
@@ -1291,13 +1339,41 @@ function PickupPageInner() {
         </>
       ) : showCheckin ? (
         <>
+          <div className="flex items-center justify-center gap-3 print:hidden flex-wrap">
+            <button
+              onClick={goCheckinPrevDay}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+              aria-label="前日 / Previous day"
+            >
+              ◀
+            </button>
+            <p className="text-lg font-bold w-48 text-center">{formatDateLabel(checkinDate)}</p>
+            <button
+              onClick={goCheckinNextDay}
+              disabled={isCheckinToday}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center disabled:opacity-30"
+              aria-label="翌日 / Next day"
+            >
+              ▶
+            </button>
+            {!isCheckinToday && (
+              <button
+                onClick={goCheckinToday}
+                className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold"
+              >
+                今日に戻る
+                <span className="block text-[9px] font-normal opacity-70">Back to today</span>
+              </button>
+            )}
+          </div>
+
           <p className="text-sm text-gray-600 print:hidden">
             {checkinField === "arrival" ? (
               <>
                 全員デフォルトで登園済みです。お休みの生徒だけタップしてください（送迎のみ・行き自分の生徒のみ表示）
                 <span className="block text-xs text-gray-400">
-                  Everyone starts marked arrived — tap only the students who are absent today
-                  (showing only students dropped off by a parent today)
+                  Everyone starts marked arrived — tap only the students who are absent that day
+                  (showing only students dropped off by a parent)
                 </span>
               </>
             ) : (
@@ -1305,7 +1381,7 @@ function PickupPageInner() {
                 全員デフォルトで降園済みです。お迎えがまだの生徒だけタップしてください（送迎のみ・帰り自分の生徒のみ表示）
                 <span className="block text-xs text-gray-400">
                   Everyone starts marked picked up — tap only the students not yet picked up
-                  (showing only students picked up by a parent today)
+                  (showing only students picked up by a parent)
                 </span>
               </>
             )}
@@ -1317,9 +1393,9 @@ function PickupPageInner() {
             </p>
           ) : checkinRoster.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8 print:hidden">
-              本日、この確認が必要な生徒はいません（全員バス利用のため）
+              この日、この確認が必要な生徒はいません（全員バス利用のため）
               <span className="block text-xs">
-                No students need this check today — everyone uses the bus for this leg
+                No students need this check on this day — everyone uses the bus for this leg
               </span>
             </p>
           ) : (
@@ -1328,10 +1404,10 @@ function PickupPageInner() {
                 <p className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-4 py-2 print:hidden">
                   ⚠️{" "}
                   {checkinField === "arrival"
-                    ? "本日はすでに登園記録があります。このまま送信すると、記録済みのお休みも「登園」で上書きされます"
-                    : "本日はすでに降園記録があります。このまま送信すると、記録済みのお迎え待ちも「降園」で上書きされます"}
+                    ? "この日はすでに登園記録があります。このまま送信すると、記録済みのお休みも「登園」で上書きされます"
+                    : "この日はすでに降園記録があります。このまま送信すると、記録済みのお迎え待ちも「降園」で上書きされます"}
                   <span className="block text-xs opacity-80">
-                    Today already has {checkinField === "arrival" ? "arrival" : "departure"} data
+                    This day already has {checkinField === "arrival" ? "arrival" : "departure"} data
                     saved — submitting now will overwrite any recorded absences back to{" "}
                     {checkinField === "arrival" ? '"arrived"' : '"picked up"'} too
                   </span>
@@ -1582,9 +1658,10 @@ function PickupPageInner() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4">
             <h2 className="text-lg font-bold text-center">
-              {checkinField === "arrival" ? "本日の登園確認" : "本日の降園確認"}
+              {formatDateLabel(checkinDate)}{" "}
+              {checkinField === "arrival" ? "の登園確認" : "の降園確認"}
               <span className="block text-sm font-normal text-gray-500">
-                {checkinField === "arrival" ? "Today's arrival check-in" : "Today's departure check-out"}
+                {checkinField === "arrival" ? "Arrival check-in" : "Departure check-out"}
               </span>
             </h2>
             <div className="flex justify-around text-center">
@@ -1626,9 +1703,9 @@ function PickupPageInner() {
             )}
             {checkinHasExistingData && (
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 text-center">
-                ⚠️ 本日の記録を全て上書きします。お休みのはずの生徒が漏れていないか確認してください
+                ⚠️ この日の記録を全て上書きします。お休みのはずの生徒が漏れていないか確認してください
                 <span className="block opacity-80">
-                  This overwrites today&apos;s existing record entirely — double-check no one
+                  This overwrites this day&apos;s existing record entirely — double-check no one
                   who&apos;s actually absent is missing above
                 </span>
               </p>
