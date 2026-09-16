@@ -25,6 +25,22 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Several pages center their content and conditionally show/hide a block
+   (a warning banner, a "back to today" button, a loading state) that
+   changes the page's total height. On Windows/Linux Chrome and Firefox,
+   a classic (non-overlay) scrollbar takes up layout width only while it's
+   needed -- so crossing the viewport-height threshold toggles the
+   scrollbar on/off, which shifts every centered element sideways by
+   about half the scrollbar's width. Reserving the scrollbar's gutter
+   permanently (even on short pages that don't need to scroll) stops that
+   width from ever changing, so nothing shifts. Safari and other
+   overlay-scrollbar browsers already don't have this problem and are
+   unaffected either way.
+*/
+html {
+  scrollbar-gutter: stable;
+}
+
 /* Print support for the monthly Dashboard and annual まとめ tables.
    Both wrap their <table> in the same "overflow-x-auto" Tailwind combo,
    which would otherwise clip the (very wide) table to the on-screen
