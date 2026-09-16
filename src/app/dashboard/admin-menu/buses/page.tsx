@@ -130,7 +130,7 @@ export default function BusesSettingsPage() {
             <span className="block text-xs">Register bus names. An emoji mark is optional</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto">
           <Link
             href="/dashboard/admin-menu"
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"

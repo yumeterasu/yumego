@@ -819,7 +819,7 @@ function PickupPageInner() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap print:hidden">
+        <div className="flex items-center gap-2 flex-wrap print:hidden ml-auto">
           {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
             <>
               <button

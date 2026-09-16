@@ -374,7 +374,7 @@ export default function MasterCalendarPage() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap justify-end ml-auto">
           <label className="flex items-center gap-2 rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-5 py-2 text-sm font-semibold cursor-pointer select-none">
             <input
               type="checkbox"

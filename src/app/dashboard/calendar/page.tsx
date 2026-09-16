@@ -195,7 +195,7 @@ export default function ClassCalendarPage() {
             </span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto">
           <Link
             href="/dashboard"
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"

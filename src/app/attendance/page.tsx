@@ -303,7 +303,7 @@ export default function AttendancePage() {
           </p>
           <p className="text-sm text-gray-500">{date}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 ml-auto">
           <Link
             href="/dashboard"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"

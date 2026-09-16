@@ -808,7 +808,7 @@ export default function DashboardPage() {
             <span className="ml-1 text-xs text-gray-400">Attendance Register</span>
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap ml-auto">
           <Link
             href="/students"
             className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
