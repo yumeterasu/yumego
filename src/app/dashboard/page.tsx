@@ -1157,8 +1157,10 @@ export default function DashboardPage() {
                               ? "退園日より後 / After end date"
                               : undefined
                           }
-                          className={`text-center border border-gray-300 py-1 select-none ${weekendCellClasses(dow)} ${
-                            beforeStart || afterEnd ? "bg-gray-100" : ""
+                          className={`text-center border border-gray-300 py-1 select-none ${
+                            beforeStart || afterEnd
+                              ? "bg-gray-100"
+                              : weekendCellClasses(dow)
                           } ${
                             isLocked
                               ? ""
