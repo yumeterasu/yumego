@@ -136,6 +136,16 @@ function daysInMonth(year: number, month: number) {
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
+function addDays(dateStr: string, delta: number) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+}
+function formatDateLabel(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${y}年${m}月${d}日(${WEEKDAY_LABELS[dow]})`;
+}
 function cellKey(studentId: string, date: string) {
   return `${studentId}|${date}`;
 }
@@ -144,27 +154,21 @@ function classOrderIndex(className: string) {
   return idx === -1 ? CLASS_ORDER.length : idx;
 }
 
-// Dark gray for both weekend days -- deliberately NOT the 出席確認/Dashboard
-// red-Sunday/blue-Saturday convention, so this page reads as visually
-// distinct from that one at a glance.
-function weekendHeaderClasses(dow: number): string {
-  if (dow === 0 || dow === 6) return "bg-gray-600 text-gray-50";
-  return "bg-gray-50";
-}
-// Weekend color takes priority over the 降園 row's own light-orange tint
-// where the two would otherwise overlap.
-function cellBgClass(dow: number, field: "arrival" | "departure"): string {
-  if (dow === 0 || dow === 6) return "bg-gray-300";
-  return field === "departure" ? "bg-orange-50" : "";
-}
-
 function PickupPageInner() {
   const searchParams = useSearchParams();
   const branch = (searchParams.get("branch") ?? "") as Branch | "";
 
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() + 1); // 1-based
+  const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  // Main view checks one day at a time, like the 出席確認 roll-call page --
+  // defaults to today, navigable back to backfill a missed day (see the
+  // ◀/▶ nav below). Never allowed past today. year/month (still needed
+  // for the month-scoped API load, Excel export, and バス・送迎設定
+  // month context) are derived from this rather than tracked separately.
+  const [date, setDate] = useState(todayStr);
+  const isToday = date === todayStr;
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
 
   const [students, setStudents] = useState<Student[]>([]);
   // "studentId|date" -> confirmed-saved record, kept separate from the
@@ -236,8 +240,6 @@ function PickupPageInner() {
   const [overrideSavingKey, setOverrideSavingKey] = useState<string | null>(null);
 
   const yearMonth = `${year}-${pad2(month)}`;
-  const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
-  const isViewingCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
 
   const load = useCallback(async () => {
     if (!branch) return;
@@ -550,21 +552,11 @@ function PickupPageInner() {
     }
   }
 
-  function goPrevMonth() {
-    if (month === 1) {
-      setYear((y) => y - 1);
-      setMonth(12);
-    } else {
-      setMonth((m) => m - 1);
-    }
+  function goPrevDay() {
+    setDate((d) => addDays(d, -1));
   }
-  function goNextMonth() {
-    if (month === 12) {
-      setYear((y) => y + 1);
-      setMonth(1);
-    } else {
-      setMonth((m) => m + 1);
-    }
+  function goNextDay() {
+    setDate((d) => (d < todayStr ? addDays(d, 1) : d));
   }
 
   // A checked cell just stores "TRUE" (matching the boolean-string
@@ -755,7 +747,7 @@ function PickupPageInner() {
   }
 
   function openClearDayModal() {
-    setClearDayDate(isViewingCurrentMonth ? todayStr : `${yearMonth}-01`);
+    setClearDayDate(date);
     setClearDayFinalStep(false);
     setClearDayError(null);
     setClearDayDone(null);
@@ -802,9 +794,6 @@ function PickupPageInner() {
     );
   }
 
-  const numDays = daysInMonth(year, month);
-  const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
-
   // Whether today already has at least one arrival/departure recorded for
   // whichever leg is currently open -- 登園確認/降園確認 always start
   // everyone marked present (the right default the first time either is
@@ -833,7 +822,7 @@ function PickupPageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden ml-auto">
-          {isViewingCurrentMonth && students.length > 0 && !showCheckin && (
+          {isToday && students.length > 0 && !showCheckin && (
             <>
               <button
                 type="button"
@@ -882,30 +871,36 @@ function PickupPageInner() {
         </div>
       </div>
 
-      {!showBusSettings && (
+      {!showBusSettings && !showCheckin && (
         <>
-          <div className="flex items-center justify-center gap-4 print:hidden">
+          <div className="flex items-center justify-center gap-3 print:hidden flex-wrap">
             <button
-              onClick={goPrevMonth}
+              onClick={goPrevDay}
               className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-              aria-label="前の月 / Previous month"
+              aria-label="前日 / Previous day"
             >
               ◀
             </button>
-            <p className="text-lg font-bold w-32 text-center">
-              {year}年{month}月
-            </p>
+            <p className="text-lg font-bold w-48 text-center">{formatDateLabel(date)}</p>
             <button
-              onClick={goNextMonth}
-              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-              aria-label="次の月 / Next month"
+              onClick={goNextDay}
+              disabled={isToday}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center disabled:opacity-30"
+              aria-label="翌日 / Next day"
             >
               ▶
             </button>
+            {!isToday && (
+              <button
+                onClick={() => setDate(todayStr)}
+                className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold"
+              >
+                今日に戻る
+                <span className="block text-[9px] font-normal opacity-70">Back to today</span>
+              </button>
+            )}
           </div>
-          <p className="text-lg font-bold text-center hidden print:block">
-            {year}年{month}月
-          </p>
+          <p className="text-lg font-bold text-center hidden print:block">{formatDateLabel(date)}</p>
         </>
       )}
 
@@ -1470,112 +1465,65 @@ function PickupPageInner() {
           )}
         </>
       ) : (
-        <div className="overflow-x-auto border border-gray-300 rounded-xl">
-          <table className="text-sm border-collapse min-w-max">
-            <thead>
-              <tr>
-                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10 w-28">
-                  氏名
-                  <span className="block text-[9px] font-normal text-gray-400">Name</span>
-                </th>
-                <th className="sticky left-28 bg-gray-100 border border-gray-300 px-1 py-1 text-center whitespace-nowrap z-10 w-11">
-                  —
-                </th>
-                {dayNumbers.map((day) => {
-                  const dow = new Date(year, month - 1, day).getDay();
-                  return (
-                    <th
-                      key={day}
-                      className={`border border-gray-300 px-0.5 py-1 text-center w-10 ${weekendHeaderClasses(dow)}`}
-                    >
-                      <div>{day}</div>
-                      <div className="text-[10px] font-normal">{WEEKDAY_LABELS[dow]}</div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {(() => {
-                let lastClassName: string | null = null;
-                return students.map((s) => {
-                  const showGroupHeader = s.className !== lastClassName;
-                  lastClassName = s.className;
-
-                  return (
-                    <Fragment key={s.studentId}>
-                      {showGroupHeader && (
-                        <tr>
-                          <td
-                            colSpan={dayNumbers.length + 2}
-                            className="sticky left-0 bg-blue-50 border border-gray-300 px-3 py-1 font-semibold text-blue-800 text-xs"
-                          >
-                            {s.className}
-                          </td>
-                        </tr>
-                      )}
-                      {(["arrival", "departure"] as const).map((field, fi) => (
-                        <tr key={field}>
-                          {fi === 0 && (
-                            <td
-                              rowSpan={2}
-                              className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap align-top z-10 leading-tight"
+        (() => {
+          const dow = new Date(year, month - 1, Number(date.slice(8, 10))).getDay();
+          const isWeekend = dow === 0 || dow === 6;
+          let lastClassName: string | null = null;
+          return (
+            <div className="flex flex-col gap-2 max-w-2xl w-full mx-auto">
+              {isWeekend && (
+                <p className="text-xs text-gray-400 text-center">
+                  土日は記録がありません（表示のみ）
+                  <span className="block">Weekends have no school (view only)</span>
+                </p>
+              )}
+              {students.map((s) => {
+                const showGroupHeader = s.className !== lastClassName;
+                lastClassName = s.className;
+                return (
+                  <Fragment key={s.studentId}>
+                    {showGroupHeader && (
+                      <p className="text-xs font-semibold text-blue-800 bg-blue-50 rounded-lg px-3 py-1 mt-1">
+                        {s.className}
+                      </p>
+                    )}
+                    <div className="border border-gray-300 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold truncate">{s.nameKanji}</p>
+                        {s.nameEnglish && (
+                          <p className="text-xs text-gray-400 truncate">{s.nameEnglish}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        {(["arrival", "departure"] as const).map((field) => {
+                          const draftKey = `${cellKey(s.studentId, date)}|${field}`;
+                          const isSaving = savingKey === draftKey;
+                          const isChecked = (drafts[draftKey] ?? "") !== "";
+                          return (
+                            <button
+                              key={field}
+                              type="button"
+                              disabled={isWeekend || isSaving}
+                              onClick={() => toggleCheck(s.studentId, date, field)}
+                              className={`rounded-full border-2 px-3 py-2 text-xs font-semibold min-w-[4.5rem] disabled:opacity-40 ${
+                                isChecked
+                                  ? "bg-red-50 border-red-600 text-red-700"
+                                  : "bg-white border-gray-300 text-gray-400"
+                              } ${isSaving ? "opacity-40 cursor-wait" : ""}`}
                             >
-                              {s.nameKanji}
-                              {s.nameEnglish && (
-                                <span className="block text-[10px] text-gray-400">
-                                  {s.nameEnglish}
-                                </span>
-                              )}
-                            </td>
-                          )}
-                          <td
-                            className={`sticky left-28 border border-gray-300 px-1 py-1 text-center whitespace-nowrap text-xs text-gray-500 z-10 ${
-                              field === "departure" ? "bg-orange-50" : "bg-white"
-                            }`}
-                          >
-                            {field === "arrival" ? "登園" : "降園"}
-                          </td>
-                          {dayNumbers.map((day) => {
-                            const date = `${year}-${pad2(month)}-${pad2(day)}`;
-                            const dow = new Date(year, month - 1, day).getDay();
-                            const isWeekend = dow === 0 || dow === 6;
-                            const draftKey = `${cellKey(s.studentId, date)}|${field}`;
-                            const isSaving = savingKey === draftKey;
-                            const isChecked = (drafts[draftKey] ?? "") !== "";
-                            return (
-                              <td
-                                key={day}
-                                onClick={() =>
-                                  !isSaving && !isWeekend && toggleCheck(s.studentId, date, field)
-                                }
-                                className={`text-center border border-gray-300 py-1 select-none ${
-                                  isWeekend
-                                    ? "cursor-default"
-                                    : isSaving
-                                      ? "opacity-40 cursor-wait"
-                                      : "cursor-pointer"
-                                } ${cellBgClass(dow, field)}`}
-                              >
-                                <div className="w-6 h-6 mx-auto flex items-center justify-center">
-                                  {isWeekend ? null : isChecked ? (
-                                    <span className="w-6 h-6 rounded-full border-[3px] border-red-600" />
-                                  ) : (
-                                    <span className="text-gray-300 text-base leading-none">—</span>
-                                  )}
-                                </div>
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </Fragment>
-                  );
-                });
-              })()}
-            </tbody>
-          </table>
-        </div>
+                              {field === "arrival" ? "登園" : "降園"}
+                              {isChecked && " ✓"}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+            </div>
+          );
+        })()
       )}
 
       {showCheckinConfirm && (
