@@ -5,6 +5,7 @@ import {
   getSpecialistAttendance,
   getSpecialistParticipation,
 } from "@/lib/sheets";
+import { applyGridBorders } from "@/lib/exportSheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const GRADES = ["長", "中", "少"] as const;
@@ -143,6 +144,8 @@ export async function GET(req: NextRequest) {
       { width: 9 },
       { width: 10 },
     ];
+
+    applyGridBorders(sheet, 5 + dayNumbers.length);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `${branch}_専門コーチ_${yearMonth}.xlsx`;

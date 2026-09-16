@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { getStudentsByBranch, getPickupRecordsForMonth } from "@/lib/sheets";
+import { applyGridBorders } from "@/lib/exportSheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 // Same grouping order as the on-screen 送迎管理 roster.
@@ -135,6 +136,8 @@ export async function GET(req: NextRequest) {
     sheet.getColumn(2).width = 16;
     sheet.getColumn(3).width = 7;
     for (let i = 0; i < numDays; i++) sheet.getColumn(4 + i).width = 4.5;
+
+    applyGridBorders(sheet, 3 + numDays);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `${branch}_送迎_${yearMonth}.xlsx`;

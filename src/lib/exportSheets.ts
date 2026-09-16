@@ -44,6 +44,28 @@ function headerRowStyle(row: ExcelJS.Row) {
   });
 }
 
+const THIN_BORDER: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FFB0B0B0" } },
+  left: { style: "thin", color: { argb: "FFB0B0B0" } },
+  bottom: { style: "thin", color: { argb: "FFB0B0B0" } },
+  right: { style: "thin", color: { argb: "FFB0B0B0" } },
+};
+
+/**
+ * Draws a thin grid border around every cell in the sheet's used rectangle
+ * (row 1..rowCount, column 1..totalCols) — without this, ExcelJS sheets
+ * have no borders at all, so a printed page just shows floating text with
+ * no cell lines. Called once after a sheet's rows are fully built.
+ */
+export function applyGridBorders(sheet: ExcelJS.Worksheet, totalCols: number) {
+  for (let r = 1; r <= sheet.rowCount; r++) {
+    const row = sheet.getRow(r);
+    for (let c = 1; c <= totalCols; c++) {
+      row.getCell(c).border = THIN_BORDER;
+    }
+  }
+}
+
 /**
  * One month's day-by-day grid, exactly like the Dashboard's own 📊 Excel
  * export: one row per student, one column per day, 出/欠 totals, reason
@@ -188,6 +210,8 @@ export function addMonthlySheet(
     { width: 24 },
   ];
 
+  applyGridBorders(sheet, headerRowValues.length);
+
   return sheet;
 }
 
@@ -277,6 +301,8 @@ export function addAnnualSheet(
     { width: 10 },
     { width: 24 },
   ];
+
+  applyGridBorders(sheet, 3 + FISCAL_MONTHS.length);
 
   return sheet;
 }
