@@ -1158,9 +1158,12 @@ export default function DashboardPage() {
                               : undefined
                           }
                           className={`text-center border border-gray-300 py-1 select-none ${
-                            beforeStart || afterEnd
-                              ? "bg-gray-100"
-                              : weekendCellClasses(dow)
+                            // Weekend color always wins, even on a locked
+                            // (before-start/after-end) cell -- 土/日 stay
+                            // visually recognizable as weekends either way,
+                            // gray only applies to locked weekdays.
+                            weekendCellClasses(dow) ||
+                            (beforeStart || afterEnd ? "bg-gray-100" : "")
                           } ${
                             isLocked
                               ? ""
