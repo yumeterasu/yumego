@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { MasterHoliday, ClassCalendarOverride } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -48,16 +49,20 @@ export default function ClassCalendarPage() {
     setError(null);
     try {
       const [holidaysRes, overridesRes] = await Promise.all([
-        fetch("/api/calendar/master"),
-        fetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
+        apiFetch("/api/calendar/master"),
+        apiFetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
       ]);
       if (!holidaysRes.ok || !overridesRes.ok) throw new Error("failed");
       const holidaysData = await holidaysRes.json();
       const overridesData = await overridesRes.json();
       setHolidays(holidaysData.holidays ?? []);
       setOverrides(overridesData.overrides ?? []);
-    } catch {
-      setError("データの取得に失敗しました / Failed to load data");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("データの取得に失敗しました / Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -252,13 +257,19 @@ export default function ClassCalendarPage() {
 
       {error && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-red-600 text-sm text-center">{error}</p>
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
           <button
-            onClick={() => load()}
+            onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
           >
-            🔄 再読み込み
-            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+            {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
+            <span className="block text-[9px] font-normal opacity-70">
+              {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
+            </span>
           </button>
         </div>
       )}

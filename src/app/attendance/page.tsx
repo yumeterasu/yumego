@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
@@ -119,8 +120,8 @@ export default function AttendancePage() {
     try {
       const yearMonth = forDate.slice(0, 7);
       const [studentsRes, attendanceRes] = await Promise.all([
-        fetch(`/api/students?class=${encodeURIComponent(className)}`),
-        fetch(
+        apiFetch(`/api/students?class=${encodeURIComponent(className)}`),
+        apiFetch(
           `/api/attendance?class=${encodeURIComponent(className)}&month=${yearMonth}`
         ),
       ]);
@@ -149,16 +150,20 @@ export default function AttendancePage() {
       setAbsences(existing);
       setSubmitted(false);
       setQueuedOffline(false);
-    } catch {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        setStudents(JSON.parse(cached));
-        setAbsences(new Map());
-        setError(
-          "オフラインです。前回保存した生徒一覧を表示しています / Offline — showing the last saved student list"
-        );
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
       } else {
-        setError("生徒一覧の取得に失敗しました / Failed to load students");
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          setStudents(JSON.parse(cached));
+          setAbsences(new Map());
+          setError(
+            "オフラインです。前回保存した生徒一覧を表示しています / Offline — showing the last saved student list"
+          );
+        } else {
+          setError("生徒一覧の取得に失敗しました / Failed to load students");
+        }
       }
     } finally {
       setLoading(false);
@@ -493,7 +498,24 @@ export default function AttendancePage() {
         </>
       )}
 
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
+          {error === "__SESSION_EXPIRED__" && (
+            <button
+              onClick={() => window.location.reload()}
+              className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
+            >
+              🔄 ページを再読み込み
+              <span className="block text-[9px] font-normal opacity-70">Reload page</span>
+            </button>
+          )}
+        </div>
+      )}
 
       <Link href="/students" className="text-xs text-gray-400 underline mt-4">
         生徒一覧の管理 / Manage student list

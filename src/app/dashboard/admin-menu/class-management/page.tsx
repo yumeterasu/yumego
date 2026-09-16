@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { CLASSES, classNameToEnglish } from "@/lib/classes";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { ExtraClass, Teacher } from "@/lib/sheets";
 import {
   CLASS_COLOR_OPTIONS,
@@ -44,10 +45,10 @@ export default function ClassManagementPage() {
     setError(null);
     try {
       const [classesRes, colorsRes, teachersRes, classTeachersRes] = await Promise.all([
-        fetch("/api/extra-classes"),
-        fetch("/api/class-colors"),
-        fetch("/api/teachers"),
-        fetch("/api/class-teacher"),
+        apiFetch("/api/extra-classes"),
+        apiFetch("/api/class-colors"),
+        apiFetch("/api/teachers"),
+        apiFetch("/api/class-teacher"),
       ]);
       if (!classesRes.ok) throw new Error("failed");
       const classesData = await classesRes.json();
@@ -70,8 +71,12 @@ export default function ClassManagementPage() {
         for (const a of classTeachersData.assignments ?? []) teacherIdMap[a.className] = a.teacherId;
       }
       setClassTeacherIds(teacherIdMap);
-    } catch {
-      setError("データの取得に失敗しました / Failed to load data");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("データの取得に失敗しました / Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -314,13 +319,19 @@ export default function ClassManagementPage() {
 
       {error && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-red-600 text-sm text-center">{error}</p>
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
           <button
-            onClick={() => load()}
+            onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
           >
-            🔄 再読み込み
-            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+            {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
+            <span className="block text-[9px] font-normal opacity-70">
+              {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
+            </span>
           </button>
         </div>
       )}

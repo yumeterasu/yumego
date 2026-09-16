@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { AbsenceReason } from "@/lib/sheets";
 
 type Editing = { id: string | null; label: string; en: string; status: "absent" | "suspended" };
@@ -21,12 +22,16 @@ export default function AbsenceReasonsSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/absence-reasons");
+      const res = await apiFetch("/api/absence-reasons");
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
       setReasons(data.reasons ?? []);
-    } catch {
-      setError("データの取得に失敗しました / Failed to load data");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("データの取得に失敗しました / Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -139,13 +144,19 @@ export default function AbsenceReasonsSettingsPage() {
 
       {error && (
         <div className="flex flex-col items-center gap-2">
-          <p className="text-red-600 text-sm text-center">{error}</p>
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
           <button
-            onClick={() => load()}
+            onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
           >
-            🔄 再読み込み
-            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+            {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
+            <span className="block text-[9px] font-normal opacity-70">
+              {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
+            </span>
           </button>
         </div>
       )}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { Student, PickupRecord, StudentLocation, BusLegMode } from "@/lib/sheets";
 import { branchToEnglish, type Branch } from "@/lib/classes";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import Select from "@/components/Select";
 
 type BusWeekBucket = { weekStart: string; days: string[]; label: string };
@@ -243,7 +244,7 @@ function PickupPageInner() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/pickup?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
       );
       if (!res.ok) throw new Error("failed");
@@ -263,8 +264,12 @@ function PickupPageInner() {
       }
       savedRef.current = saved;
       setDrafts(nextDrafts);
-    } catch {
-      setError("データの取得に失敗しました / Failed to load data");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("データの取得に失敗しました / Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -314,9 +319,9 @@ function PickupPageInner() {
     setError(null);
     try {
       const [patternRes, overrideRes, locationRes] = await Promise.all([
-        fetch(`/api/students/bus-pattern?start=${busTermStartDate}&end=${busTermEndDate}`),
-        fetch(`/api/students/bus-override?start=${busTermStartDate}&end=${busTermEndDate}`),
-        fetch("/api/students/location"),
+        apiFetch(`/api/students/bus-pattern?start=${busTermStartDate}&end=${busTermEndDate}`),
+        apiFetch(`/api/students/bus-override?start=${busTermStartDate}&end=${busTermEndDate}`),
+        apiFetch("/api/students/location"),
       ]);
       if (patternRes.ok) {
         const data = await patternRes.json();
@@ -348,8 +353,12 @@ function PickupPageInner() {
         for (const loc of (data.locations ?? []) as StudentLocation[]) map[loc.studentId] = loc;
         setLocationsByStudent(map);
       }
-    } catch {
-      setError("バス・送迎設定の取得に失敗しました / Failed to load bus/pickup settings");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("バス・送迎設定の取得に失敗しました / Failed to load bus/pickup settings");
+      }
     } finally {
       setBusSettingsLoading(false);
     }
@@ -645,8 +654,8 @@ function PickupPageInner() {
     setError(null);
     try {
       const [patternRes, overrideRes] = await Promise.all([
-        fetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
-        fetch(`/api/students/bus-override?month=${encodeURIComponent(yearMonth)}`),
+        apiFetch(`/api/students/bus-pattern?month=${encodeURIComponent(yearMonth)}`),
+        apiFetch(`/api/students/bus-override?month=${encodeURIComponent(yearMonth)}`),
       ]);
       if (patternRes.ok) {
         const data = await patternRes.json();
@@ -679,8 +688,12 @@ function PickupPageInner() {
           return next;
         });
       }
-    } catch {
-      setError("通学方法の取得に失敗しました / Failed to load bus/pickup patterns");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("通学方法の取得に失敗しました / Failed to load bus/pickup patterns");
+      }
     } finally {
       setCheckinDataLoading(false);
     }
@@ -941,13 +954,19 @@ function PickupPageInner() {
 
       {error && (
         <div className="flex flex-col items-center gap-2 print:hidden">
-          <p className="text-red-600 text-sm text-center">{error}</p>
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
           <button
-            onClick={() => load()}
+            onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
           >
-            🔄 再読み込み
-            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+            {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
+            <span className="block text-[9px] font-normal opacity-70">
+              {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
+            </span>
           </button>
         </div>
       )}

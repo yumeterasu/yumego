@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 
 type AttendanceRecord = { date: string; studentId: string; status: AttendanceStatus };
@@ -63,8 +64,8 @@ export default function SummaryPage() {
     setError(null);
     try {
       const [studentsRes, summaryRes] = await Promise.all([
-        fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
-        fetch(
+        apiFetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
+        apiFetch(
           `/api/attendance/summary?class=${encodeURIComponent(selectedClass)}&fiscalYear=${fiscalYearStart}`
         ),
       ]);
@@ -77,8 +78,12 @@ export default function SummaryPage() {
       setRemarks(
         Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
       );
-    } catch {
-      setError("データの取得に失敗しました / Failed to load data");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("データの取得に失敗しました / Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -241,13 +246,19 @@ export default function SummaryPage() {
 
       {error && (
         <div className="flex flex-col items-center gap-2 print:hidden">
-          <p className="text-red-600 text-sm text-center">{error}</p>
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
           <button
-            onClick={() => load()}
+            onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
           >
-            🔄 再読み込み
-            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+            {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
+            <span className="block text-[9px] font-normal opacity-70">
+              {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
+            </span>
           </button>
         </div>
       )}

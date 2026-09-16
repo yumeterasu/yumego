@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
+import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
 import Select from "@/components/Select";
@@ -283,19 +284,19 @@ export default function DashboardPage() {
         overridesRes,
         reasonsRes,
       ] = await Promise.all([
-        fetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
-        fetch(
+        apiFetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
+        apiFetch(
           `/api/attendance?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
         ),
-        fetch(
+        apiFetch(
           `/api/class-settings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
         ),
-        fetch(
+        apiFetch(
           `/api/monthly-checks?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
         ),
-        fetch("/api/calendar/master"),
-        fetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
-        fetch("/api/absence-reasons"),
+        apiFetch("/api/calendar/master"),
+        apiFetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
+        apiFetch("/api/absence-reasons"),
       ]);
       setReasonOptions(reasonsRes.ok ? ((await reasonsRes.json()).reasons ?? []) : []);
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
@@ -342,8 +343,12 @@ export default function DashboardPage() {
         else closed.add(o.date);
       }
       setClosedDates(closed);
-    } catch {
-      setError("データの取得に失敗しました / Failed to load data");
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setError("__SESSION_EXPIRED__");
+      } else {
+        setError("データの取得に失敗しました / Failed to load data");
+      }
     } finally {
       setLoading(false);
     }
@@ -946,13 +951,19 @@ export default function DashboardPage() {
 
       {error && (
         <div className="flex flex-col items-center gap-2 print:hidden">
-          <p className="text-red-600 text-sm text-center">{error}</p>
+          <p className="text-red-600 text-sm text-center">
+            {error === "__SESSION_EXPIRED__"
+              ? "セッションの有効期限が切れました / Your session has expired"
+              : error}
+          </p>
           <button
-            onClick={() => load()}
+            onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
           >
-            🔄 再読み込み
-            <span className="block text-[9px] font-normal opacity-70">Retry</span>
+            {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
+            <span className="block text-[9px] font-normal opacity-70">
+              {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
+            </span>
           </button>
         </div>
       )}
