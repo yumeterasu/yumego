@@ -1356,15 +1356,16 @@ function PickupPageInner() {
             >
               ▶
             </button>
-            {!isCheckinToday && (
-              <button
-                onClick={goCheckinToday}
-                className="rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold"
-              >
-                今日に戻る
-                <span className="block text-[9px] font-normal opacity-70">Back to today</span>
-              </button>
-            )}
+            <button
+              onClick={goCheckinToday}
+              tabIndex={isCheckinToday ? -1 : 0}
+              className={`rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold ${
+                isCheckinToday ? "invisible" : ""
+              }`}
+            >
+              今日に戻る
+              <span className="block text-[9px] font-normal opacity-70">Back to today</span>
+            </button>
           </div>
 
           <p className="text-sm text-gray-600 print:hidden">
