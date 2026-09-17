@@ -164,14 +164,15 @@ export default function SelectClassPage() {
         </button>
         <div className="flex flex-col items-center">
           <p className="font-bold text-sm">{selectedDate}</p>
-          {selectedDate !== today && (
-            <button
-              onClick={() => setSelectedDate(today)}
-              className="text-xs text-blue-600 underline"
-            >
-              今日に戻る / Back to today
-            </button>
-          )}
+          <button
+            onClick={() => setSelectedDate(today)}
+            tabIndex={selectedDate === today ? -1 : 0}
+            className={`text-xs text-blue-600 underline ${
+              selectedDate === today ? "invisible" : ""
+            }`}
+          >
+            今日に戻る / Back to today
+          </button>
         </div>
         <button
           onClick={() => setSelectedDate((d) => addDays(d, 1))}
