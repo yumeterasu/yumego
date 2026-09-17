@@ -39,7 +39,7 @@ const ADMIN_LINKS: { href: string; icon: string; ja: string; en: string }[] = [
 
 export default function AdminMenuPage() {
   return (
-    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4 max-w-md mx-auto w-full">
+    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-xl font-bold">
           <Bi ja="管理メニュー" en="Management Menu" enClassName="block text-sm font-normal text-gray-400" />
@@ -53,7 +53,7 @@ export default function AdminMenuPage() {
         </Link>
       </div>
 
-      <div className="flex flex-col gap-3 w-full">
+      <div className="flex flex-col gap-3 max-w-md mx-auto w-full">
         {ADMIN_LINKS.map((item) => (
           <Link
             key={item.href}

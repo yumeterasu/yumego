@@ -111,7 +111,7 @@ export default function AbsenceReasonsSettingsPage() {
   }
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4 max-w-lg mx-auto w-full">
+    <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold">欠席理由設定</h1>
@@ -142,6 +142,7 @@ export default function AbsenceReasonsSettingsPage() {
         </div>
       </div>
 
+      <div className="max-w-lg mx-auto w-full flex flex-col gap-4">
       {error && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-red-600 text-sm text-center">
@@ -233,6 +234,7 @@ export default function AbsenceReasonsSettingsPage() {
           </button>
         </div>
       )}
+      </div>
 
       {editing && (
         <div
