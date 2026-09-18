@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
@@ -37,6 +37,24 @@ function formatDateLabel(dateStr: string) {
 }
 
 type Absence = { status: AbsenceBucket | "late" | "early_leave"; reason: string };
+type AttendanceRecord = {
+  date: string;
+  studentId: string;
+  status: AttendanceStatus;
+  reason: string;
+};
+
+// Prefill from whatever's already recorded for this exact date -- e.g. a
+// half-finished backfill -- instead of wiping it back to "everyone present"
+// every time the date changes.
+function computeExistingAbsences(records: AttendanceRecord[], forDate: string): Map<string, Absence> {
+  const existing = new Map<string, Absence>();
+  for (const r of records) {
+    if (r.date !== forDate || r.status === "present") continue;
+    existing.set(r.studentId, { status: r.status as Absence["status"], reason: r.reason ?? "" });
+  }
+  return existing;
+}
 
 export default function AttendancePage() {
   const router = useRouter();
@@ -85,13 +103,34 @@ export default function AttendancePage() {
     }
   }, [refreshPendingCount]);
 
+  // Caches the currently-loaded class+month's attendance records so that
+  // navigating the ◀/▶ date nav to another day IN THE SAME MONTH never
+  // re-fetches or shows 読み込み中 -- it was refetching the whole roster +
+  // month on every single date change before, collapsing the whole card
+  // grid down to a loading line and back on every tap. Only a genuine
+  // class switch or crossing a month boundary still needs the network
+  // round-trip.
+  const monthCacheRef = useRef<{
+    className: string;
+    yearMonth: string;
+    records: AttendanceRecord[];
+  } | null>(null);
+
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
       router.replace("/select-class");
       return;
     }
-    load(selectedClass, date);
+    const yearMonth = date.slice(0, 7);
+    const cached = monthCacheRef.current;
+    if (cached && cached.className === selectedClass && cached.yearMonth === yearMonth) {
+      setAbsences(computeExistingAbsences(cached.records, date));
+      setSubmitted(false);
+      setQueuedOffline(false);
+      return;
+    }
+    load(selectedClass, yearMonth, date);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, selectedClass, date]);
 
@@ -113,12 +152,11 @@ export default function AttendancePage() {
       .catch(() => {});
   }, []);
 
-  async function load(className: string, forDate: string) {
+  async function load(className: string, yearMonth: string, forDate: string) {
     setLoading(true);
     setError(null);
     const cacheKey = `yumego.studentsCache.${className}`;
     try {
-      const yearMonth = forDate.slice(0, 7);
       const [studentsRes, attendanceRes] = await Promise.all([
         apiFetch(`/api/students?class=${encodeURIComponent(className)}`),
         apiFetch(
@@ -131,23 +169,11 @@ export default function AttendancePage() {
       setStudents(loadedStudents);
       localStorage.setItem(cacheKey, JSON.stringify(loadedStudents));
 
-      // Prefill from whatever's already recorded for this exact date —
-      // e.g. a half-finished backfill — instead of wiping it back to
-      // "everyone present" every time the date changes.
-      const existing = new Map<string, Absence>();
-      if (attendanceRes.ok) {
-        const attendanceData = await attendanceRes.json();
-        const records: { date: string; studentId: string; status: AttendanceStatus; reason: string }[] =
-          attendanceData.records ?? [];
-        for (const r of records) {
-          if (r.date !== forDate || r.status === "present") continue;
-          existing.set(r.studentId, {
-            status: r.status as Absence["status"],
-            reason: r.reason ?? "",
-          });
-        }
-      }
-      setAbsences(existing);
+      const records: AttendanceRecord[] = attendanceRes.ok
+        ? ((await attendanceRes.json()).records ?? [])
+        : [];
+      monthCacheRef.current = { className, yearMonth, records };
+      setAbsences(computeExistingAbsences(records, forDate));
       setSubmitted(false);
       setQueuedOffline(false);
     } catch (err) {
