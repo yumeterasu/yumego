@@ -550,10 +550,10 @@ export default function AttendancePage() {
           {error === "__SESSION_EXPIRED__" && (
             <button
               onClick={() => window.location.reload()}
-              className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
+              className="rounded-full bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-base font-semibold"
             >
               🔄 ページを再読み込み
-              <span className="block text-[9px] font-normal opacity-70">Reload page</span>
+              <span className="block text-xs font-normal opacity-80">Reload page</span>
             </button>
           )}
         </div>

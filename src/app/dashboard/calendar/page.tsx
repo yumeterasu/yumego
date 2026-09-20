@@ -265,10 +265,10 @@ export default function ClassCalendarPage() {
           </p>
           <button
             onClick={error === "__SESSION_EXPIRED__" ? () => window.location.reload() : () => load()}
-            className="rounded-full bg-gray-100 text-gray-600 px-4 py-1.5 text-xs font-semibold"
+            className="rounded-full bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-base font-semibold"
           >
             {error === "__SESSION_EXPIRED__" ? "🔄 ページを再読み込み" : "🔄 再読み込み"}
-            <span className="block text-[9px] font-normal opacity-70">
+            <span className="block text-xs font-normal opacity-80">
               {error === "__SESSION_EXPIRED__" ? "Reload page" : "Retry"}
             </span>
           </button>
