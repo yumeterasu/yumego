@@ -360,7 +360,18 @@ export default function AttendancePage() {
         >
           ◀
         </button>
-        <p className="text-lg font-bold w-48 text-center">{formatDateLabel(date)}</p>
+        <div className="flex flex-col items-center">
+          <p className="text-lg font-bold w-48 text-center">{formatDateLabel(date)}</p>
+          <button
+            onClick={() => setDate(today)}
+            tabIndex={isToday ? -1 : 0}
+            className={`text-xs text-blue-600 underline ${
+              isToday ? "invisible" : ""
+            }`}
+          >
+            今日に戻る / Back to today
+          </button>
+        </div>
         <button
           onClick={() => setDate((d) => (d < today ? addDays(d, 1) : d))}
           disabled={isToday}
@@ -368,16 +379,6 @@ export default function AttendancePage() {
           aria-label="翌日 / Next day"
         >
           ▶
-        </button>
-        <button
-          onClick={() => setDate(today)}
-          tabIndex={isToday ? -1 : 0}
-          className={`rounded-full bg-gray-100 text-gray-600 px-3 py-1.5 text-xs font-semibold ${
-            isToday ? "invisible" : ""
-          }`}
-        >
-          今日に戻る
-          <span className="block text-[9px] font-normal opacity-70">Back to today</span>
         </button>
       </div>
 
