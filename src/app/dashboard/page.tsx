@@ -10,6 +10,7 @@ import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
 import Select from "@/components/Select";
+import { SkeletonBlock } from "@/components/Skeleton";
 
 // English names for the 5 attendance statuses, used only in the edit
 // popup's buttons — NOT in the compact day-by-day grid cells (出/欠/遅/
@@ -969,7 +970,7 @@ export default function DashboardPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonBlock />
       ) : students.length === 0 ? (
         <p className="text-gray-500 text-sm text-center">
           このクラスにはまだ生徒が登録されていません

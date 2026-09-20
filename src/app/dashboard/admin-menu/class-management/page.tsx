@@ -11,6 +11,7 @@ import {
   CLASS_COLOR_SWATCH_STYLES,
 } from "@/lib/classColors";
 import Select from "@/components/Select";
+import { SkeletonBlock } from "@/components/Skeleton";
 
 const UNSET_TEACHER = "__unset__";
 
@@ -338,7 +339,7 @@ export default function ClassManagementPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonBlock />
       ) : (
         <>
           <div className="flex flex-col gap-2">

@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { CLASSES, classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonBlock } from "@/components/Skeleton";
 import type { Student, StudentLocation } from "@/lib/sheets";
 import Select from "@/components/Select";
 
@@ -1193,7 +1194,7 @@ export default function StudentsPage() {
           </p>
         )}
         {loading ? (
-          <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
+          <SkeletonBlock />
         ) : students.length === 0 ? (
           <p className="text-gray-500 text-sm">
             まだ生徒が登録されていません / No students registered yet

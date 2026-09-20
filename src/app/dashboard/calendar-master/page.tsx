@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { MasterHoliday } from "@/lib/sheets";
 import ThaiFlagIcon from "@/components/ThaiFlagIcon";
+import { SkeletonBlock } from "@/components/Skeleton";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const MONTH_EN = [
@@ -488,7 +489,7 @@ export default function MasterCalendarPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonBlock className="h-[500px] max-w-5xl w-full mx-auto" />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 max-w-5xl w-full mx-auto">
           {FISCAL_MONTHS.map((fm, idx) => (

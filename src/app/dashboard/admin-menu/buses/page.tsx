@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonRows } from "@/components/Skeleton";
 import type { Bus } from "@/lib/sheets";
 
 type Editing = { id: string | null; name: string; emoji: string };
@@ -174,7 +175,7 @@ export default function BusesSettingsPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonRows />
       ) : (
         <div className="flex flex-col gap-3">
           {buses.map((b) => (

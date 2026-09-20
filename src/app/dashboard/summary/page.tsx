@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonBlock } from "@/components/Skeleton";
 import type { Student, AttendanceStatus } from "@/lib/sheets";
 
 type AttendanceRecord = { date: string; studentId: string; status: AttendanceStatus };
@@ -264,7 +265,7 @@ export default function SummaryPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonBlock />
       ) : students.length === 0 ? (
         <p className="text-gray-500 text-sm text-center">
           このクラスにはまだ生徒が登録されていません

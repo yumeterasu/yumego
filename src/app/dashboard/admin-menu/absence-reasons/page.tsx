@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonRows } from "@/components/Skeleton";
 import type { AbsenceReason } from "@/lib/sheets";
 
 type Editing = { id: string | null; label: string; en: string; status: "absent" | "suspended" };
@@ -163,7 +164,7 @@ export default function AbsenceReasonsSettingsPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonRows />
       ) : (
         <div className="flex flex-col gap-3">
           {reasons.map((r) => (

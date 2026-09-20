@@ -7,6 +7,7 @@ import type { Student, PickupRecord, StudentLocation, BusLegMode } from "@/lib/s
 import { branchToEnglish, type Branch } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import Select from "@/components/Select";
+import { SkeletonBlock, SkeletonRows } from "@/components/Skeleton";
 
 type BusWeekBucket = { weekStart: string; days: string[]; label: string };
 type BusOverride = { studentId: string; date: string; arrivalMode: BusLegMode; departureMode: BusLegMode };
@@ -1020,7 +1021,7 @@ function PickupPageInner() {
       )}
 
       {!showCheckin && !showBusSettings && loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonBlock />
       ) : !showCheckin && !showBusSettings && students.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">
           このブランチにはまだ生徒が登録されていません
@@ -1051,7 +1052,7 @@ function PickupPageInner() {
           </p>
 
           {busSettingsLoading ? (
-            <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+            <SkeletonBlock />
           ) : (
             <div className="overflow-x-auto border border-gray-300 rounded-xl">
               <table className="text-sm border-collapse min-w-max w-full">
@@ -1389,9 +1390,9 @@ function PickupPageInner() {
           </p>
 
           {checkinDataLoading ? (
-            <p className="text-gray-500 text-sm text-center print:hidden">
-              読み込み中... / Loading...
-            </p>
+            <div className="print:hidden">
+              <SkeletonRows count={4} />
+            </div>
           ) : checkinRoster.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8 print:hidden">
               この日、この確認が必要な生徒はいません（全員バス利用のため）

@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonBlock } from "@/components/Skeleton";
 import type { OutingLog } from "@/lib/sheets";
 
 function pad2(n: number) {
@@ -170,7 +171,9 @@ export default function OutingsSummaryPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <div className="max-w-2xl w-full mx-auto">
+          <SkeletonBlock className="h-[360px]" />
+        </div>
       ) : (
         <div className="max-w-2xl w-full mx-auto flex flex-col gap-4">
           <div className="grid grid-cols-3 gap-3">

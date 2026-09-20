@@ -411,7 +411,22 @@ export default function AttendancePage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm">読み込み中... / Loading...</p>
+        // A plain "読み込み中" line collapsed the whole page down to almost
+        // nothing right after navigating in from Dashboard's much taller
+        // grid, then snapped back out once the roster arrived -- a jarring
+        // shrink-then-expand. A skeleton shaped like the real card grid
+        // keeps the page roughly the same height throughout instead.
+        <div
+          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3"
+          aria-label="読み込み中... / Loading..."
+        >
+          {Array.from({ length: 16 }, (_, i) => (
+            <div
+              key={i}
+              className="rounded-xl border-2 border-gray-200 bg-gray-100 px-3 py-6 h-[72px] animate-pulse"
+            />
+          ))}
+        </div>
       ) : students.length === 0 ? (
         <div className="flex flex-col gap-3 items-start">
           <p className="text-gray-500 text-sm">

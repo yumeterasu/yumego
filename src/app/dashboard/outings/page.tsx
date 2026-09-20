@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonRows } from "@/components/Skeleton";
 import type { OutingDestination, OutingLog, Teacher } from "@/lib/sheets";
 import Select from "@/components/Select";
 
@@ -464,7 +465,9 @@ export default function OutingsPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <div className="max-w-2xl w-full mx-auto">
+          <SkeletonRows count={4} />
+        </div>
       ) : entries.length === 0 ? (
         <p className="text-gray-400 text-sm text-center py-8">
           この月の記録はまだありません

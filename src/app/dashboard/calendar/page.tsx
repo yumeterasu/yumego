@@ -7,6 +7,7 @@ import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonBlock } from "@/components/Skeleton";
 import type { MasterHoliday, ClassCalendarOverride } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -275,7 +276,9 @@ export default function ClassCalendarPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <div className="max-w-md w-full mx-auto">
+          <SkeletonBlock className="h-[380px]" />
+        </div>
       ) : (
         <div className="max-w-md w-full mx-auto border border-gray-300 rounded-xl p-4">
           <div className="grid grid-cols-7 gap-1 text-center">

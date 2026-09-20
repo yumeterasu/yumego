@@ -10,6 +10,7 @@ import {
   type GradeShort,
 } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
+import { SkeletonBlock } from "@/components/Skeleton";
 import type { AttendanceStatus, SpecialistCategory } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -592,7 +593,7 @@ export default function SpecialistCoachPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500 text-sm text-center">読み込み中... / Loading...</p>
+        <SkeletonBlock />
       ) : (
         <div className="overflow-x-auto border border-gray-300 rounded-xl">
           <table className="text-sm border-collapse min-w-max print-table-specialist">
