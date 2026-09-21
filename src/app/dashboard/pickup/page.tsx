@@ -1519,9 +1519,9 @@ function PickupPageInner() {
                             <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
                               {num}
                             </span>
-                            <span className="block">{s.nameKanji}</span>
+                            <span className="block text-[17px]">{s.nameKanji}</span>
                             {s.nameEnglish && (
-                              <span className="block text-[10px] font-normal opacity-70">
+                              <span className="block text-[11px] font-normal opacity-70">
                                 {s.nameEnglish}
                               </span>
                             )}
