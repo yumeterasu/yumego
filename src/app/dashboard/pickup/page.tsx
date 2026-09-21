@@ -882,56 +882,77 @@ function PickupPageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap print:hidden ml-auto">
-          {students.length > 0 && !showCheckin && (
+          {!showCheckin ? (
             <>
-              <button
-                type="button"
-                onClick={() => openCheckin("arrival")}
-                className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
+              {students.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openCheckin("arrival")}
+                    className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
+                  >
+                    ✅ 登園確認
+                    <span className="block text-[10px] font-normal opacity-70">Arrival check-in</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openCheckin("departure")}
+                    className="rounded-full bg-blue-600 text-white px-5 py-2.5 font-semibold text-sm"
+                  >
+                    ✅ 降園確認
+                    <span className="block text-[10px] font-normal opacity-70">Departure check-out</span>
+                  </button>
+                </>
+              )}
+              <Link
+                href="/select-class"
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="トップページ / Home"
               >
-                ✅ 登園確認
-                <span className="block text-[10px] font-normal opacity-70">Arrival check-in</span>
+                🏠
+              </Link>
+              <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
+              <button
+                onClick={() => window.print()}
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="印刷 / Print"
+              >
+                🖨️
               </button>
               <button
-                type="button"
-                onClick={() => openCheckin("departure")}
-                className="rounded-full bg-blue-600 text-white px-5 py-2.5 font-semibold text-sm"
+                onClick={() =>
+                  (window.location.href = `/api/export/pickup?branch=${encodeURIComponent(
+                    branch
+                  )}&month=${yearMonth}`)
+                }
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="Excelエクスポート / Excel Export"
               >
-                ✅ 降園確認
-                <span className="block text-[10px] font-normal opacity-70">Departure check-out</span>
+                📊
               </button>
             </>
+          ) : (
+            <>
+              <button
+                onClick={() => setShowCheckin(false)}
+                className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+              >
+                ← 送迎管理に戻る
+                <span className="block text-[10px] font-normal opacity-70">Back to pickup management</span>
+              </button>
+              <Link
+                href="/select-class"
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="トップページ / Home"
+              >
+                🏠
+              </Link>
+            </>
           )}
-          <Link
-            href="/select-class"
-            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
-            aria-label="トップページ / Home"
-          >
-            🏠
-          </Link>
-          <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
-          <button
-            onClick={() => window.print()}
-            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
-            aria-label="印刷 / Print"
-          >
-            🖨️
-          </button>
-          <button
-            onClick={() =>
-              (window.location.href = `/api/export/pickup?branch=${encodeURIComponent(
-                branch
-              )}&month=${yearMonth}`)
-            }
-            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
-            aria-label="Excelエクスポート / Excel Export"
-          >
-            📊
-          </button>
         </div>
       </div>
 
-      {!showBusSettings && (
+      {!showBusSettings && !showCheckin && (
         <>
           <div className="flex items-center justify-center gap-4 print:hidden">
             <button
