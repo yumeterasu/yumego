@@ -1598,7 +1598,7 @@ export default function DashboardPage() {
               {Array.from({ length: 16 }, (_, i) => (
                 <div
                   key={i}
-                  className="rounded-xl border-2 border-gray-200 bg-gray-100 px-3 py-6 min-h-24 animate-pulse"
+                  className="rounded-xl border-2 border-gray-200 bg-gray-100 px-3 py-6 min-h-28 animate-pulse"
                 />
               ))}
             </div>
@@ -1633,7 +1633,7 @@ export default function DashboardPage() {
                     <button
                       key={s.studentId}
                       onClick={() => handleAttendanceStudentClick(s.studentId, label)}
-                      className={`relative rounded-xl border-2 px-3 py-6 min-h-24 flex flex-col items-center justify-center text-center font-medium transition ${
+                      className={`relative rounded-xl border-2 px-3 py-6 min-h-28 flex flex-col items-center justify-center text-center font-medium transition ${
                         isSuspended
                           ? "bg-purple-50 border-purple-500 text-purple-800"
                           : isAbsent
