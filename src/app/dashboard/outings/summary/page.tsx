@@ -1,11 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useSelectedClass } from "@/hooks/useSelectedClass";
-import { useExtraClasses } from "@/hooks/useExtraClasses";
-import { classNameToEnglish } from "@/lib/classes";
+import { useSearchParams } from "next/navigation";
+import { type Branch, branchToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import { SkeletonBlock } from "@/components/Skeleton";
 import type { OutingLog } from "@/lib/sheets";
@@ -14,10 +12,9 @@ function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-export default function OutingsSummaryPage() {
-  const router = useRouter();
-  const { selectedClass, loaded } = useSelectedClass();
-  const { enNames: extraClassEnNames } = useExtraClasses();
+function OutingsSummaryPageInner() {
+  const searchParams = useSearchParams();
+  const branch = (searchParams.get("branch") ?? "") as Branch | "";
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -30,12 +27,12 @@ export default function OutingsSummaryPage() {
   const yearMonth = `${year}-${pad2(month)}`;
 
   const load = useCallback(async () => {
-    if (!selectedClass) return;
+    if (!branch) return;
     setLoading(true);
     setError(null);
     try {
       const res = await apiFetch(
-        `/api/outings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        `/api/outings?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
       );
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
@@ -49,16 +46,12 @@ export default function OutingsSummaryPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClass, yearMonth]);
+  }, [branch, yearMonth]);
 
   useEffect(() => {
-    if (!loaded) return;
-    if (!selectedClass) {
-      router.replace("/select-class");
-      return;
-    }
+    if (!branch) return;
     load();
-  }, [loaded, selectedClass, router, load]);
+  }, [branch, load]);
 
   function goPrevMonth() {
     if (month === 1) {
@@ -78,7 +71,21 @@ export default function OutingsSummaryPage() {
     }
   }
 
-  if (!loaded || !selectedClass) return null;
+  if (!branch) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center flex flex-col items-center gap-3">
+          <p className="text-gray-500 text-sm">
+            支店が選択されていません
+            <span className="block text-xs">No branch selected</span>
+          </p>
+          <Link href="/select-class" className="text-blue-600 underline text-sm">
+            トップページに戻る / Back to top page
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   const totalOutings = entries.length;
   const totalHeadcount = entries.reduce((sum, e) => sum + e.headcount, 0);
@@ -100,9 +107,9 @@ export default function OutingsSummaryPage() {
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">{selectedClass} 入退出まとめ</h1>
+          <h1 className="text-xl font-bold">{branch} 入退出まとめ</h1>
           <p className="text-xs text-gray-400">
-            {classNameToEnglish(selectedClass, extraClassEnNames)} · Entry/Exit Summary
+            {branchToEnglish(branch)} · Entry/Exit Summary
           </p>
           <p className="text-sm text-gray-500">
             この月の外出回数・人数・行き先の内訳
@@ -113,7 +120,7 @@ export default function OutingsSummaryPage() {
         </div>
         <div className="flex items-center gap-2 ml-auto">
           <Link
-            href="/dashboard/outings"
+            href={`/dashboard/outings?branch=${encodeURIComponent(branch)}`}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             ← 入退出記録に戻る
@@ -261,5 +268,13 @@ export default function OutingsSummaryPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function OutingsSummaryPage() {
+  return (
+    <Suspense fallback={null}>
+      <OutingsSummaryPageInner />
+    </Suspense>
   );
 }

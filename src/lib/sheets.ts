@@ -1670,12 +1670,9 @@ export type OutingLog = {
   description: string; // free text, optional — where/what
 };
 
-export async function getOutingLogs(
-  className: string,
-  yearMonth: string // "2026-08"
-): Promise<OutingLog[]> {
+async function readOutingRows(): Promise<OutingLog[]> {
   const sheets = getSheetsClient();
-  const res = await safeValuesGet(sheets,{
+  const res = await safeValuesGet(sheets, {
     spreadsheetId: SHEET_ID,
     range: "OutingLog!A2:J",
   });
@@ -1692,10 +1689,39 @@ export async function getOutingLogs(
       returnSign: (row[7] ?? "").toString(),
       description: (row[8] ?? "").toString(),
     }))
-    .filter(
-      (r) => r.id && r.className === className && r.date.startsWith(yearMonth)
+    .filter((r) => r.id);
+}
+
+// Newest first -- the log reads like a feed, most recent activity first.
+function sortOutingsNewestFirst(entries: OutingLog[]): OutingLog[] {
+  return [...entries].sort((a, b) =>
+    (b.date + b.departureTime).localeCompare(a.date + a.departureTime)
+  );
+}
+
+export async function getOutingLogs(
+  className: string,
+  yearMonth: string // "2026-08"
+): Promise<OutingLog[]> {
+  const rows = await readOutingRows();
+  return sortOutingsNewestFirst(
+    rows.filter((r) => r.className === className && r.date.startsWith(yearMonth))
+  );
+}
+
+// Merged across every class in one branch -- used by the branch-wide
+// 入退出記録 entry point on the Top page, since staff there manage a whole
+// branch's outings together, not one already-selected class at a time.
+export async function getOutingLogsForBranch(
+  branch: string,
+  yearMonth: string
+): Promise<OutingLog[]> {
+  const rows = await readOutingRows();
+  return sortOutingsNewestFirst(
+    rows.filter(
+      (r) => r.className.split("　")[0] === branch && r.date.startsWith(yearMonth)
     )
-    .sort((a, b) => (a.date + a.departureTime).localeCompare(b.date + b.departureTime));
+  );
 }
 
 export async function addOutingLog(entry: OutingLog): Promise<void> {

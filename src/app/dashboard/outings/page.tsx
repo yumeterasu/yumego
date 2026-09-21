@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useSelectedClass } from "@/hooks/useSelectedClass";
+import { useSearchParams } from "next/navigation";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
-import { classNameToEnglish } from "@/lib/classes";
+import { CLASSES, type Branch, branchToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import { SkeletonRows } from "@/components/Skeleton";
 import type { OutingDestination, OutingLog, Teacher } from "@/lib/sheets";
@@ -76,6 +75,7 @@ type FormState = {
   mode: FormMode;
   id?: string;
   date: string;
+  className: string;
   headcount: string; // kept as text while editing, parsed on submit
   departureTime: string;
   departureSign: string;
@@ -84,44 +84,41 @@ type FormState = {
   description: string;
 };
 
-// defaultSign: the current class's own teacher (if one is set on クラス管理)
-// -- pre-filled so the common case (a class's own teacher takes them out
-// and brings them back) needs no picking at all, while the dropdown below
-// still allows choosing a different teacher from the same branch instead.
-function blankAddForm(defaultSign: string): FormState {
+// 退室確認サイン/入室確認サインは常に空欄スタート -- 毎回手動で選んでもらう
+// （以前あった「今開いているクラス自身の担当を自動で入れる」動作は廃止）。
+function blankAddForm(defaultClassName: string): FormState {
   return {
     mode: "add",
     date: todayDateString(),
+    className: defaultClassName,
     headcount: "",
     departureTime: nowTimeString(),
-    departureSign: defaultSign,
+    departureSign: "",
     returnTime: "",
     returnSign: "",
     description: "",
   };
 }
 
-function toEditForm(entry: OutingLog, mode: FormMode, defaultSign: string): FormState {
+function toEditForm(entry: OutingLog, mode: FormMode): FormState {
   return {
     mode,
     id: entry.id,
     date: entry.date,
+    className: entry.className,
     headcount: String(entry.headcount),
     departureTime: entry.departureTime,
     departureSign: entry.departureSign,
     returnTime: mode === "return" ? nowTimeString() : entry.returnTime,
-    // Only default an EMPTY returnSign -- an "edit" of an already-recorded
-    // entry keeps whatever was actually saved, even if that happens to be
-    // blank on purpose.
-    returnSign: mode === "return" && !entry.returnSign ? defaultSign : entry.returnSign,
+    returnSign: entry.returnSign,
     description: entry.description,
   };
 }
 
-export default function OutingsPage() {
-  const router = useRouter();
-  const { selectedClass, loaded } = useSelectedClass();
-  const { enNames: extraClassEnNames } = useExtraClasses();
+function OutingsPageInner() {
+  const searchParams = useSearchParams();
+  const branch = (searchParams.get("branch") ?? "") as Branch | "";
+  const { activeClasses } = useExtraClasses();
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -154,13 +151,19 @@ export default function OutingsPage() {
 
   const yearMonth = `${year}-${pad2(month)}`;
 
+  const branchRegularClasses = branch ? CLASSES.filter((c) => c.startsWith(branch)) : [];
+  const branchExtraClasses = branch
+    ? activeClasses.filter((c) => c.branch === branch).map((c) => `${branch}　${c.suffix}`)
+    : [];
+  const branchClasses = [...branchRegularClasses, ...branchExtraClasses];
+
   const load = useCallback(async () => {
-    if (!selectedClass) return;
+    if (!branch) return;
     setLoading(true);
     setError(null);
     try {
       const res = await apiFetch(
-        `/api/outings?class=${encodeURIComponent(selectedClass)}&month=${yearMonth}`
+        `/api/outings?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
       );
       if (!res.ok) throw new Error("failed");
       const data = await res.json();
@@ -174,7 +177,7 @@ export default function OutingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClass, yearMonth]);
+  }, [branch, yearMonth]);
 
   const loadDestinations = useCallback(async () => {
     try {
@@ -198,30 +201,20 @@ export default function OutingsPage() {
     }
   }, []);
 
-  // "プロンポン　年長" -> "プロンポン". Extra classes (e.g. トンロー　小学生)
-  // split the same way, so this doesn't need the fixed-continuum check
-  // classNameToBranchGrade() does.
-  const currentBranch = selectedClass?.split("　")[0] ?? "";
   const branchTeachers: Teacher[] = Array.from(
     new Map(
       classTeacherAssignments
-        .filter((a) => a.className.startsWith(currentBranch))
+        .filter((a) => a.className.startsWith(branch))
         .map((a) => [a.teacherId, { id: a.teacherId, name: a.teacherName }])
     ).values()
   );
-  const defaultTeacherName =
-    classTeacherAssignments.find((a) => a.className === selectedClass)?.teacherName ?? "";
 
   useEffect(() => {
-    if (!loaded) return;
-    if (!selectedClass) {
-      router.replace("/select-class");
-      return;
-    }
+    if (!branch) return;
     load();
     loadDestinations();
     loadTeachers();
-  }, [loaded, selectedClass, router, load, loadDestinations, loadTeachers]);
+  }, [branch, load, loadDestinations, loadTeachers]);
 
   async function addDestination() {
     const name = newDestinationName.trim();
@@ -286,27 +279,27 @@ export default function OutingsPage() {
 
   function openAddForm() {
     setFormError(null);
-    setForm(blankAddForm(defaultTeacherName));
+    setForm(blankAddForm(branchClasses[0] ?? ""));
   }
 
   function openReturnForm(entry: OutingLog) {
     setFormError(null);
-    setForm(toEditForm(entry, "return", defaultTeacherName));
+    setForm(toEditForm(entry, "return"));
   }
 
   function openEditForm(entry: OutingLog) {
     setFormError(null);
-    setForm(toEditForm(entry, "edit", defaultTeacherName));
+    setForm(toEditForm(entry, "edit"));
   }
 
   async function submitForm() {
-    if (!form || !selectedClass) return;
+    if (!form || !branch) return;
     const headcountNum = Number(form.headcount);
 
     if (form.mode === "add" || form.mode === "edit") {
-      if (!form.date || !form.departureTime || !form.departureSign.trim()) {
+      if (!form.date || !form.className || !form.departureTime || !form.departureSign.trim()) {
         setFormError(
-          "日付・退室時間・退室確認サインは必須です / Date, departure time, and departure sign are required"
+          "日付・クラス・退室時間・退室確認サインは必須です / Date, class, departure time, and departure sign are required"
         );
         return;
       }
@@ -328,7 +321,7 @@ export default function OutingsPage() {
     setFormError(null);
     const payload = {
       date: form.date,
-      className: selectedClass,
+      className: form.className,
       headcount: Math.floor(headcountNum),
       departureTime: form.departureTime,
       departureSign: form.departureSign.trim(),
@@ -373,15 +366,29 @@ export default function OutingsPage() {
     }
   }
 
-  if (!loaded || !selectedClass) return null;
+  if (!branch) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <div className="text-center flex flex-col items-center gap-3">
+          <p className="text-gray-500 text-sm">
+            支店が選択されていません
+            <span className="block text-xs">No branch selected</span>
+          </p>
+          <Link href="/select-class" className="text-blue-600 underline text-sm">
+            トップページに戻る / Back to top page
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">{selectedClass} 入退出記録</h1>
+          <h1 className="text-xl font-bold">{branch} 入退出記録</h1>
           <p className="text-xs text-gray-400">
-            {classNameToEnglish(selectedClass, extraClassEnNames)} · Entry/Exit Log
+            {branchToEnglish(branch)} · Entry/Exit Log
           </p>
           <p className="text-sm text-gray-500">
             行き先は登録済みのリストから選ぶか、自由入力できます
@@ -392,20 +399,11 @@ export default function OutingsPage() {
         </div>
         <div className="flex items-center gap-2 ml-auto">
           <Link
-            href="/dashboard/outings/summary"
+            href={`/dashboard/outings/summary?branch=${encodeURIComponent(branch)}`}
             className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
           >
             入退出まとめ
             <span className="block text-[10px] font-normal opacity-70">Summary</span>
-          </Link>
-          <Link
-            href="/dashboard"
-            className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
-          >
-            ← 出席簿に戻る
-            <span className="block text-[10px] font-normal opacity-70">
-              Back to attendance
-            </span>
           </Link>
           <Link
             href="/select-class"
@@ -486,7 +484,7 @@ export default function OutingsPage() {
               >
                 <div>
                   <p className="font-semibold">
-                    {entry.date}　{entry.headcount}人
+                    {entry.className}　{entry.date}　{entry.headcount}人
                     {entry.description ? `　${entry.description}` : ""}
                   </p>
                   <p className="text-sm text-gray-600">
@@ -629,6 +627,19 @@ export default function OutingsPage() {
                 </label>
 
                 <label className="flex flex-col gap-1 text-sm">
+                  クラス
+                  <span className="text-xs font-normal text-gray-500">Class</span>
+                  <Select
+                    value={form.className}
+                    onChange={(value) =>
+                      setForm((f) => (f ? { ...f, className: value } : f))
+                    }
+                    options={branchClasses.map((c) => ({ value: c, label: c }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white flex items-center justify-between gap-2"
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1 text-sm">
                   人数
                   <span className="text-xs font-normal text-gray-500">Headcount</span>
                   <input
@@ -749,5 +760,13 @@ export default function OutingsPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function OutingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <OutingsPageInner />
+    </Suspense>
   );
 }

@@ -9,6 +9,7 @@ import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
+import { enqueue, flushQueue, getQueue } from "@/lib/offlineQueue";
 import Select from "@/components/Select";
 import { SkeletonBlock } from "@/components/Skeleton";
 
@@ -31,6 +32,37 @@ type AttendanceRecord = {
   status: AttendanceStatus;
   reason: string;
 };
+
+// 出席確認 overlay's per-student state — everyone starts present, only
+// students tapped-out show up here (mirrors the old /attendance page).
+type Absence = { status: AbsenceBucket | "late" | "early_leave"; reason: string };
+
+function addDays(dateStr: string, delta: number) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function formatDateLabel(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dow = new Date(y, m - 1, d).getDay();
+  return `${y}年${m}月${d}日(${WEEKDAY_LABELS[dow]})`;
+}
+
+// Prefill from whatever's already recorded for this exact date -- e.g. a
+// half-finished backfill -- instead of wiping it back to "everyone present"
+// every time the date changes.
+function computeExistingAbsences(records: AttendanceRecord[], forDate: string): Map<string, Absence> {
+  const existing = new Map<string, Absence>();
+  for (const r of records) {
+    if (r.date !== forDate || r.status === "present") continue;
+    existing.set(r.studentId, { status: r.status as Absence["status"], reason: r.reason ?? "" });
+  }
+  return existing;
+}
 
 type EditingCell = {
   studentId: string;
@@ -186,6 +218,36 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  // 出席確認 overlay — replaces what used to be a full navigation to
+  // /attendance. Stays on this page (mirrors 送迎's 登園確認/降園確認
+  // overlay pattern) so ◀/▶ day-nav never triggers a route change.
+  const [showAttendance, setShowAttendance] = useState(false);
+  const [attendanceDate, setAttendanceDate] = useState(todayDateString());
+  const [attendanceStudents, setAttendanceStudents] = useState<Student[]>([]);
+  const [attendanceAbsences, setAttendanceAbsences] = useState<Map<string, Absence>>(new Map());
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const [attendanceSubmitting, setAttendanceSubmitting] = useState(false);
+  const [attendanceSubmitted, setAttendanceSubmitted] = useState(false);
+  const [attendanceQueuedOffline, setAttendanceQueuedOffline] = useState(false);
+  const [attendanceShowConfirmModal, setAttendanceShowConfirmModal] = useState(false);
+  const [attendancePendingCount, setAttendancePendingCount] = useState(0);
+  const [attendanceSyncing, setAttendanceSyncing] = useState(false);
+  const [attendanceReasonPickerFor, setAttendanceReasonPickerFor] = useState<{
+    studentId: string;
+    label: string;
+  } | null>(null);
+  const [attendanceShowOtherInput, setAttendanceShowOtherInput] = useState(false);
+  const [attendanceOtherText, setAttendanceOtherText] = useState("");
+  const [attendanceOtherStatus, setAttendanceOtherStatus] = useState<AbsenceBucket>("absent");
+  // Caches the currently-loaded class+month's attendance records so ◀/▶
+  // within the same month never re-fetches or flashes a loading state.
+  const attendanceMonthCacheRef = useRef<{
+    className: string;
+    yearMonth: string;
+    records: AttendanceRecord[];
+  } | null>(null);
 
   // Brief corner notification when a チェック1/2/3 box gets unchecked —
   // lighter-weight than a confirm dialog (these boxes get tapped many
@@ -354,6 +416,202 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [selectedClass, yearMonth]);
+
+  const refreshAttendancePendingCount = useCallback(() => {
+    setAttendancePendingCount(getQueue().length);
+  }, []);
+
+  const syncAttendancePending = useCallback(async () => {
+    setAttendanceSyncing(true);
+    try {
+      await flushQueue();
+    } finally {
+      refreshAttendancePendingCount();
+      setAttendanceSyncing(false);
+    }
+  }, [refreshAttendancePendingCount]);
+
+  // Try to flush any queued offline attendance submissions on load and
+  // whenever the device comes back online.
+  useEffect(() => {
+    refreshAttendancePendingCount();
+    syncAttendancePending();
+    window.addEventListener("online", syncAttendancePending);
+    return () => window.removeEventListener("online", syncAttendancePending);
+  }, [refreshAttendancePendingCount, syncAttendancePending]);
+
+  async function loadAttendance(className: string, attendanceYearMonth: string, forDate: string) {
+    setAttendanceLoading(true);
+    setAttendanceError(null);
+    const cacheKey = `yumego.studentsCache.${className}`;
+    try {
+      const [studentsRes, attendanceRes] = await Promise.all([
+        apiFetch(`/api/students?class=${encodeURIComponent(className)}`),
+        apiFetch(
+          `/api/attendance?class=${encodeURIComponent(className)}&month=${attendanceYearMonth}`
+        ),
+      ]);
+      if (!studentsRes.ok) throw new Error("failed");
+      const data = await studentsRes.json();
+      const loadedStudents: Student[] = data.students ?? [];
+      setAttendanceStudents(loadedStudents);
+      localStorage.setItem(cacheKey, JSON.stringify(loadedStudents));
+
+      const attendanceRecords: AttendanceRecord[] = attendanceRes.ok
+        ? ((await attendanceRes.json()).records ?? [])
+        : [];
+      attendanceMonthCacheRef.current = {
+        className,
+        yearMonth: attendanceYearMonth,
+        records: attendanceRecords,
+      };
+      setAttendanceAbsences(computeExistingAbsences(attendanceRecords, forDate));
+      setAttendanceSubmitted(false);
+      setAttendanceQueuedOffline(false);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setAttendanceError("__SESSION_EXPIRED__");
+      } else {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          setAttendanceStudents(JSON.parse(cached));
+          setAttendanceAbsences(new Map());
+          setAttendanceError(
+            "オフラインです。前回保存した生徒一覧を表示しています / Offline — showing the last saved student list"
+          );
+        } else {
+          setAttendanceError("生徒一覧の取得に失敗しました / Failed to load students");
+        }
+      }
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!showAttendance || !selectedClass) return;
+    const attendanceYearMonth = attendanceDate.slice(0, 7);
+    const cached = attendanceMonthCacheRef.current;
+    if (
+      cached &&
+      cached.className === selectedClass &&
+      cached.yearMonth === attendanceYearMonth
+    ) {
+      setAttendanceAbsences(computeExistingAbsences(cached.records, attendanceDate));
+      setAttendanceSubmitted(false);
+      setAttendanceQueuedOffline(false);
+      return;
+    }
+    loadAttendance(selectedClass, attendanceYearMonth, attendanceDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAttendance, selectedClass, attendanceDate]);
+
+  function handleAttendanceStudentClick(studentId: string, label: string) {
+    if (attendanceAbsences.has(studentId)) {
+      // Already marked absent/late — tapping again undoes it back to
+      // present immediately (no popup), since sometimes you know right away
+      // you tapped the wrong thing.
+      setAttendanceAbsences((prev) => {
+        const next = new Map(prev);
+        next.delete(studentId);
+        return next;
+      });
+      return;
+    }
+    setAttendanceShowOtherInput(false);
+    setAttendanceOtherText("");
+    setAttendanceOtherStatus("absent");
+    setAttendanceReasonPickerFor({ studentId, label });
+  }
+
+  function pickAttendanceReason(label: string, status: AbsenceBucket) {
+    if (!attendanceReasonPickerFor) return;
+    setAttendanceAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(attendanceReasonPickerFor.studentId, { status, reason: label });
+      return next;
+    });
+    setAttendanceReasonPickerFor(null);
+  }
+
+  function pickAttendanceLate() {
+    if (!attendanceReasonPickerFor) return;
+    setAttendanceAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(attendanceReasonPickerFor.studentId, { status: "late", reason: "" });
+      return next;
+    });
+    setAttendanceReasonPickerFor(null);
+  }
+
+  function pickAttendanceEarlyLeave() {
+    if (!attendanceReasonPickerFor) return;
+    setAttendanceAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(attendanceReasonPickerFor.studentId, { status: "early_leave", reason: "" });
+      return next;
+    });
+    setAttendanceReasonPickerFor(null);
+  }
+
+  function applyAttendanceOtherReason() {
+    if (!attendanceReasonPickerFor || !attendanceOtherText.trim()) return;
+    setAttendanceAbsences((prev) => {
+      const next = new Map(prev);
+      next.set(attendanceReasonPickerFor.studentId, {
+        status: attendanceOtherStatus,
+        reason: attendanceOtherText.trim(),
+      });
+      return next;
+    });
+    setAttendanceReasonPickerFor(null);
+  }
+
+  async function handleAttendanceSubmit() {
+    if (!selectedClass) return;
+    setAttendanceSubmitting(true);
+    setAttendanceError(null);
+
+    const attendanceRecords = attendanceStudents.map((s) => {
+      const absence = attendanceAbsences.get(s.studentId);
+      const status: AttendanceStatus = absence ? absence.status : "present";
+      return { studentId: s.studentId, status, reason: absence?.reason ?? "" };
+    });
+    const payload = { date: attendanceDate, className: selectedClass, records: attendanceRecords };
+
+    try {
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("failed");
+      setAttendanceSubmitted(true);
+      setAttendanceQueuedOffline(false);
+      setAttendanceShowConfirmModal(false);
+      // For today, close the overlay straight away as before. For a
+      // backfilled past date, stay put so ◀ can keep walking back through
+      // other missed days without re-opening this each time.
+      if (attendanceDate === today) {
+        setShowAttendance(false);
+        load(); // refresh the 出席簿 table with what was just recorded
+      }
+    } catch {
+      // Network failure (offline) or the request never reached the server —
+      // save it locally and retry automatically once the connection returns.
+      enqueue(payload);
+      refreshAttendancePendingCount();
+      setAttendanceSubmitted(true);
+      setAttendanceQueuedOffline(true);
+      setAttendanceShowConfirmModal(false);
+      if (attendanceDate === today) {
+        setShowAttendance(false);
+        load();
+      }
+    } finally {
+      setAttendanceSubmitting(false);
+    }
+  }
 
   async function handleRemarkBlur(studentId: string, value: string) {
     const original = students.find((s) => s.studentId === studentId)?.remark ?? "";
@@ -815,89 +1073,106 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap ml-auto">
-          <Link
-            href="/students"
-            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-          >
-            🧒 生徒管理
-            <span className="block text-[10px] font-normal opacity-70">
-              Manage Students
-            </span>
-          </Link>
-          <Link
-            href="/dashboard/summary"
-            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-          >
-            📈 年間まとめ
-            <span className="block text-[10px] font-normal opacity-70">Annual Summary</span>
-          </Link>
-          {hasBranchGrade && (
-            <Link
-              href="/dashboard/specialist"
-              className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-            >
-              🏅 専門コーチ
-              <span className="block text-[10px] font-normal opacity-70">
-                Specialist Coach
-              </span>
-            </Link>
+          {!showAttendance ? (
+            <>
+              <Link
+                href="/students"
+                className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+              >
+                🧒 生徒管理
+                <span className="block text-[10px] font-normal opacity-70">
+                  Manage Students
+                </span>
+              </Link>
+              <Link
+                href="/dashboard/summary"
+                className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+              >
+                📈 年間まとめ
+                <span className="block text-[10px] font-normal opacity-70">Annual Summary</span>
+              </Link>
+              {hasBranchGrade && (
+                <Link
+                  href="/dashboard/specialist"
+                  className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+                >
+                  🏅 専門コーチ
+                  <span className="block text-[10px] font-normal opacity-70">
+                    Specialist Coach
+                  </span>
+                </Link>
+              )}
+              <Link
+                href="/dashboard/calendar"
+                className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+              >
+                📅 カレンダー管理
+                <span className="block text-[10px] font-normal opacity-70">
+                  Calendar Management
+                </span>
+              </Link>
+              <button
+                onClick={() => {
+                  setAttendanceDate(today);
+                  setShowAttendance(true);
+                }}
+                className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
+              >
+                ✅ 出席確認
+                <span className="block text-[10px] font-normal opacity-70">
+                  Take Attendance
+                </span>
+              </button>
+              <Link
+                href="/select-class"
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="トップページ / Home"
+              >
+                🏠
+              </Link>
+              <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
+              <button
+                onClick={() => window.print()}
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="印刷 / Print"
+              >
+                🖨️
+              </button>
+              <button
+                onClick={() =>
+                  (window.location.href = `/api/export/monthly?class=${encodeURIComponent(
+                    selectedClass
+                  )}&month=${yearMonth}`)
+                }
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="Excelエクスポート / Excel Export"
+              >
+                📊
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setShowAttendance(false)}
+                className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
+              >
+                ← 出席簿に戻る
+                <span className="block text-[10px] font-normal opacity-70">Back to attendance</span>
+              </button>
+              <Link
+                href="/select-class"
+                className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+                aria-label="トップページ / Home"
+              >
+                🏠
+              </Link>
+            </>
           )}
-          <Link
-            href="/dashboard/outings"
-            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-          >
-            🚪 入退出記録
-            <span className="block text-[10px] font-normal opacity-70">
-              Entry/Exit Log
-            </span>
-          </Link>
-          <Link
-            href="/dashboard/calendar"
-            className="rounded-full bg-gray-100 text-gray-600 px-5 py-2.5 font-semibold text-sm"
-          >
-            📅 カレンダー管理
-            <span className="block text-[10px] font-normal opacity-70">
-              Calendar Management
-            </span>
-          </Link>
-          <Link
-            href="/attendance"
-            className="rounded-full bg-green-600 text-white px-5 py-2.5 font-semibold text-sm"
-          >
-            ✅ 出席確認
-            <span className="block text-[10px] font-normal opacity-70">
-              Take Attendance
-            </span>
-          </Link>
-          <Link
-            href="/select-class"
-            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
-            aria-label="トップページ / Home"
-          >
-            🏠
-          </Link>
-          <div className="w-px h-6 bg-gray-300 mx-1" aria-hidden="true" />
-          <button
-            onClick={() => window.print()}
-            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
-            aria-label="印刷 / Print"
-          >
-            🖨️
-          </button>
-          <button
-            onClick={() =>
-              (window.location.href = `/api/export/monthly?class=${encodeURIComponent(
-                selectedClass
-              )}&month=${yearMonth}`)
-            }
-            className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
-            aria-label="Excelエクスポート / Excel Export"
-          >
-            📊
-          </button>
         </div>
       </div>
 
+      {!showAttendance && (
+      <>
       <div className="flex items-center justify-center gap-4 print:hidden">
         <button
           onClick={goPrevMonth}
@@ -1250,6 +1525,471 @@ export default function DashboardPage() {
             </tbody>
           </table>
         </div>
+      )}
+      </>
+      )}
+
+      {showAttendance && (
+        <>
+          <div className="flex items-center justify-center gap-4">
+            <button
+              onClick={() => setAttendanceDate((d) => addDays(d, -1))}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
+              aria-label="前日 / Previous day"
+            >
+              ◀
+            </button>
+            <div className="flex flex-col items-center">
+              <p className="text-lg font-bold w-48 text-center">{formatDateLabel(attendanceDate)}</p>
+              <button
+                onClick={() => setAttendanceDate(today)}
+                tabIndex={attendanceDate === today ? -1 : 0}
+                className={`text-xs text-blue-600 underline ${
+                  attendanceDate === today ? "invisible" : ""
+                }`}
+              >
+                今日に戻る / Back to today
+              </button>
+            </div>
+            <button
+              onClick={() => setAttendanceDate((d) => (d < today ? addDays(d, 1) : d))}
+              disabled={attendanceDate === today}
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center disabled:opacity-30"
+              aria-label="翌日 / Next day"
+            >
+              ▶
+            </button>
+          </div>
+
+          {attendanceDate !== today && (
+            <div className="bg-orange-50 border border-orange-300 rounded-xl px-4 py-3">
+              <p className="text-sm text-orange-800 font-semibold">
+                ⚠ {formatDateLabel(attendanceDate)} の出席を記録しています（本日ではありません）
+                <span className="block text-xs font-normal">
+                  Recording attendance for {formatDateLabel(attendanceDate)} — not today
+                </span>
+              </p>
+            </div>
+          )}
+
+          {attendancePendingCount > 0 && (
+            <div className="flex items-center justify-between gap-3 bg-yellow-50 border border-yellow-300 rounded-xl px-4 py-3">
+              <p className="text-sm text-yellow-800">
+                ⚠ オフライン保存中の出席が <b>{attendancePendingCount}件</b> あります
+                <span className="block text-xs font-normal">
+                  {attendancePendingCount} attendance record(s) saved offline
+                </span>
+              </p>
+              <button
+                onClick={syncAttendancePending}
+                disabled={attendanceSyncing}
+                className="shrink-0 text-sm font-semibold text-yellow-900 border border-yellow-400 rounded-full px-3 py-1 disabled:opacity-40"
+              >
+                {attendanceSyncing ? "送信中... / Sending..." : "今すぐ送信 / Send now"}
+              </button>
+            </div>
+          )}
+
+          {attendanceLoading ? (
+            <div
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3"
+              aria-label="読み込み中... / Loading..."
+            >
+              {Array.from({ length: 16 }, (_, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border-2 border-gray-200 bg-gray-100 px-3 py-6 min-h-24 animate-pulse"
+                />
+              ))}
+            </div>
+          ) : attendanceStudents.length === 0 ? (
+            <div className="flex flex-col gap-3 items-start">
+              <p className="text-gray-500 text-sm">
+                このクラスにはまだ生徒が登録されていません
+                <span className="block text-xs">No students registered in this class yet</span>
+              </p>
+              <Link href="/students" className="text-blue-600 underline text-sm">
+                生徒を追加する / Add students
+              </Link>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600">
+                全員デフォルトで出席済みです。休みの生徒だけタップしてください
+                <span className="block text-xs text-gray-400">
+                  Everyone starts marked present — tap only the students who are absent
+                </span>
+              </p>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                {attendanceStudents.map((s, i) => {
+                  const label = s.nameEnglish || s.nameKanji;
+                  const absence = attendanceAbsences.get(s.studentId);
+                  const isSuspended = absence?.status === "suspended";
+                  const isAbsent = absence?.status === "absent";
+                  const isLate = absence?.status === "late";
+                  const isEarlyLeave = absence?.status === "early_leave";
+                  return (
+                    <button
+                      key={s.studentId}
+                      onClick={() => handleAttendanceStudentClick(s.studentId, label)}
+                      className={`relative rounded-xl border-2 px-3 py-6 min-h-24 flex flex-col items-center justify-center text-center font-medium transition ${
+                        isSuspended
+                          ? "bg-purple-50 border-purple-500 text-purple-800"
+                          : isAbsent
+                            ? "bg-red-50 border-red-500 text-red-800"
+                            : isLate
+                              ? "bg-amber-50 border-amber-500 text-amber-800"
+                              : isEarlyLeave
+                                ? "bg-blue-50 border-blue-500 text-blue-800"
+                                : "bg-green-50 border-green-400 text-green-800"
+                      }`}
+                    >
+                      <span className="absolute top-1 left-2 text-xs font-normal text-gray-400">
+                        {i + 1}
+                      </span>
+                      <span className="block">{s.nameKanji}</span>
+                      {s.nameEnglish && (
+                        <span className="block text-[10px] font-normal opacity-70">
+                          {s.nameEnglish}
+                        </span>
+                      )}
+                      {absence && (
+                        <span className="block text-[10px] font-normal mt-0.5">
+                          {absence.reason || (isLate ? "遅刻" : isEarlyLeave ? "早退" : "")}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                const lateStudents = attendanceStudents.filter(
+                  (s) => attendanceAbsences.get(s.studentId)?.status === "late"
+                );
+                const earlyLeaveStudents = attendanceStudents.filter(
+                  (s) => attendanceAbsences.get(s.studentId)?.status === "early_leave"
+                );
+                const absentStudents = attendanceStudents.filter((s) => {
+                  const a = attendanceAbsences.get(s.studentId);
+                  return a && a.status !== "late" && a.status !== "early_leave";
+                });
+                const presentCount = attendanceStudents.length - absentStudents.length;
+                const absentCount = absentStudents.length;
+                const lateCount = lateStudents.length;
+                const earlyLeaveCount = earlyLeaveStudents.length;
+                const attIsToday = attendanceDate === today;
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between border-t pt-4">
+                      <p className="text-sm">
+                        出席: <span className="font-bold">{presentCount}</span> / 遅刻:{" "}
+                        <span className="font-bold">{lateCount}</span> / 早退:{" "}
+                        <span className="font-bold">{earlyLeaveCount}</span> / 欠席:{" "}
+                        <span className="font-bold">{absentCount}</span>
+                        <span className="block text-xs text-gray-400">
+                          Present: {presentCount} / Late: {lateCount} / Early leave: {earlyLeaveCount} /
+                          Absent: {absentCount}
+                        </span>
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowAttendance(false)}
+                          disabled={attendanceSubmitting}
+                          className="rounded-full bg-gray-100 text-gray-600 px-6 py-3 font-semibold disabled:opacity-40"
+                        >
+                          キャンセル
+                          <span className="block text-[10px] font-normal opacity-70">Cancel</span>
+                        </button>
+                        <button
+                          onClick={() => setAttendanceShowConfirmModal(true)}
+                          disabled={attendanceSubmitting}
+                          className="rounded-full bg-green-600 text-white px-6 py-3 font-semibold disabled:opacity-40"
+                        >
+                          確定する
+                          <span className="block text-[10px] font-normal opacity-70">Confirm</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {attendanceSubmitted && !attendanceQueuedOffline && (
+                      <p className="text-green-700 font-semibold">
+                        ✓ 出席を記録しました
+                        <span className="block text-xs font-normal">Attendance recorded</span>
+                      </p>
+                    )}
+                    {attendanceSubmitted && attendanceQueuedOffline && (
+                      <p className="text-yellow-800 font-semibold">
+                        📶 オフラインのため端末に保存しました。オンラインになったら自動で送信します
+                        <span className="block text-xs font-normal">
+                          Saved on device (offline) — will send automatically once back online
+                        </span>
+                      </p>
+                    )}
+
+                    {attendanceError && (
+                      <div className="flex flex-col items-center gap-2">
+                        <p className="text-red-600 text-sm text-center">
+                          {attendanceError === "__SESSION_EXPIRED__"
+                            ? "セッションの有効期限が切れました / Your session has expired"
+                            : attendanceError}
+                        </p>
+                        {attendanceError === "__SESSION_EXPIRED__" && (
+                          <button
+                            onClick={() => window.location.reload()}
+                            className="rounded-full bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 text-base font-semibold"
+                          >
+                            🔄 ページを再読み込み
+                            <span className="block text-xs font-normal opacity-80">Reload page</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {attendanceReasonPickerFor && (
+                      <div
+                        className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50"
+                        onClick={() => setAttendanceReasonPickerFor(null)}
+                      >
+                        <div
+                          className="bg-white rounded-2xl p-6 w-full max-w-xs max-h-[85vh] overflow-y-auto flex flex-col gap-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <p className="font-bold text-center">{attendanceReasonPickerFor.label}</p>
+                          <p className="text-xs text-gray-500 text-center mb-1">
+                            状況を選んでください
+                            <span className="block">Please choose an option</span>
+                          </p>
+
+                          {!attendanceShowOtherInput ? (
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={pickAttendanceLate}
+                                className="rounded-full border py-3 font-semibold bg-amber-50 border-amber-400 text-amber-800"
+                              >
+                                遅刻
+                                <span className="block text-[10px] font-normal opacity-70">Late</span>
+                              </button>
+                              <button
+                                onClick={pickAttendanceEarlyLeave}
+                                className="rounded-full border py-3 font-semibold bg-blue-50 border-blue-400 text-blue-800"
+                              >
+                                早退
+                                <span className="block text-[10px] font-normal opacity-70">Early leave</span>
+                              </button>
+                              {reasonOptions.map((opt) => (
+                                <button
+                                  key={opt.id}
+                                  onClick={() => pickAttendanceReason(opt.label, opt.status)}
+                                  className={`rounded-full border py-3 font-semibold ${
+                                    opt.status === "suspended"
+                                      ? "bg-purple-50 border-purple-400 text-purple-800"
+                                      : "bg-red-50 border-red-400 text-red-700"
+                                  }`}
+                                >
+                                  {opt.label}
+                                  <span className="block text-[10px] font-normal opacity-70">{opt.en}</span>
+                                </button>
+                              ))}
+                              <button
+                                onClick={() => setAttendanceShowOtherInput(true)}
+                                className="rounded-full bg-gray-100 text-gray-600 font-semibold py-3"
+                              >
+                                その他
+                                <span className="block text-[10px] font-normal opacity-70">Other</span>
+                              </button>
+                              <button
+                                onClick={() => setAttendanceReasonPickerFor(null)}
+                                className="text-sm text-gray-400 underline mt-1"
+                              >
+                                キャンセル / Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-3">
+                              <input
+                                value={attendanceOtherText}
+                                onChange={(e) => setAttendanceOtherText(e.target.value)}
+                                placeholder="理由を入力 / Enter reason"
+                                autoFocus
+                                className="border rounded-lg px-3 py-2"
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setAttendanceOtherStatus("absent")}
+                                  className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                                    attendanceOtherStatus === "absent"
+                                      ? "bg-red-50 border-red-400 text-red-700"
+                                      : "border-gray-200 text-gray-400"
+                                  }`}
+                                >
+                                  欠席として
+                                  <span className="block text-[10px] font-normal opacity-70">As absent</span>
+                                </button>
+                                <button
+                                  onClick={() => setAttendanceOtherStatus("suspended")}
+                                  className={`flex-1 rounded-full border py-2 text-sm font-semibold ${
+                                    attendanceOtherStatus === "suspended"
+                                      ? "bg-purple-50 border-purple-400 text-purple-800"
+                                      : "border-gray-200 text-gray-400"
+                                  }`}
+                                >
+                                  出停として
+                                  <span className="block text-[10px] font-normal opacity-70">
+                                    As suspended
+                                  </span>
+                                </button>
+                              </div>
+                              <button
+                                onClick={applyAttendanceOtherReason}
+                                disabled={!attendanceOtherText.trim()}
+                                className="rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
+                              >
+                                適用する / Apply
+                              </button>
+                              <button
+                                onClick={() => setAttendanceShowOtherInput(false)}
+                                className="text-sm text-gray-400 underline"
+                              >
+                                戻る / Back
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {attendanceShowConfirmModal && (
+                      <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-6 z-50">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto flex flex-col gap-4">
+                          <h2 className="text-lg font-bold text-center">
+                            {attIsToday ? (
+                              <>
+                                本日の出席状況
+                                <span className="block text-sm font-normal text-gray-500">
+                                  Today&apos;s attendance
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                {formatDateLabel(attendanceDate)}の出席状況
+                                <span className="block text-sm font-normal text-orange-600">
+                                  ⚠ Not today — {attendanceDate}
+                                </span>
+                              </>
+                            )}
+                          </h2>
+                          <div className="flex justify-around text-center">
+                            <div>
+                              <p className="text-3xl font-bold text-green-700">{presentCount}</p>
+                              <p className="text-sm text-gray-500">
+                                出席
+                                <span className="block text-xs">Present</span>
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-3xl font-bold text-amber-600">{lateCount}</p>
+                              <p className="text-sm text-gray-500">
+                                遅刻
+                                <span className="block text-xs">Late</span>
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-3xl font-bold text-blue-600">{earlyLeaveCount}</p>
+                              <p className="text-sm text-gray-500">
+                                早退
+                                <span className="block text-xs">Early leave</span>
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-3xl font-bold text-red-600">{absentCount}</p>
+                              <p className="text-sm text-gray-500">
+                                欠席
+                                <span className="block text-xs">Absent</span>
+                              </p>
+                            </div>
+                          </div>
+                          {earlyLeaveStudents.length > 0 && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">早退の生徒: / Early-leave students:</p>
+                              <ul className="flex flex-wrap gap-2">
+                                {earlyLeaveStudents.map((s) => (
+                                  <li
+                                    key={s.studentId}
+                                    className="text-xs bg-blue-50 text-blue-800 rounded-full px-3 py-1"
+                                  >
+                                    {s.nameEnglish || s.nameKanji}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {lateStudents.length > 0 && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">遅刻の生徒: / Late students:</p>
+                              <ul className="flex flex-wrap gap-2">
+                                {lateStudents.map((s) => (
+                                  <li
+                                    key={s.studentId}
+                                    className="text-xs bg-amber-50 text-amber-800 rounded-full px-3 py-1"
+                                  >
+                                    {s.nameEnglish || s.nameKanji}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {absentStudents.length > 0 && (
+                            <div>
+                              <p className="text-xs text-gray-500 mb-1">欠席の生徒: / Absent students:</p>
+                              <ul className="flex flex-wrap gap-2">
+                                {absentStudents.map((s) => {
+                                  const absence = attendanceAbsences.get(s.studentId);
+                                  return (
+                                    <li
+                                      key={s.studentId}
+                                      className="text-xs bg-gray-100 text-gray-700 rounded-full px-3 py-1"
+                                    >
+                                      {s.nameEnglish || s.nameKanji}
+                                      {absence && ` (${absence.reason})`}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          )}
+
+                          <p className="text-xs text-gray-400 text-center">
+                            この内容で記録します。よろしいですか？
+                            <span className="block">Record with this content — is that OK?</span>
+                          </p>
+                          <div className="flex gap-3 mt-2">
+                            <button
+                              onClick={() => setAttendanceShowConfirmModal(false)}
+                              disabled={attendanceSubmitting}
+                              className="flex-1 rounded-full border border-gray-300 py-3 font-semibold disabled:opacity-40"
+                            >
+                              キャンセル / Cancel
+                            </button>
+                            <button
+                              onClick={handleAttendanceSubmit}
+                              disabled={attendanceSubmitting}
+                              className="flex-1 rounded-full bg-green-600 text-white py-3 font-semibold disabled:opacity-40"
+                            >
+                              {attendanceSubmitting ? "送信中... / Sending..." : "送信する / Submit"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </>
+          )}
+        </>
       )}
 
       {editingCell && (

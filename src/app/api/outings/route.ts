@@ -2,25 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import {
   getOutingLogs,
+  getOutingLogsForBranch,
   addOutingLog,
   updateOutingLog,
   deleteOutingLog,
 } from "@/lib/sheets";
 
 // GET /api/outings?class=プロンポン　年長&month=2026-08
+// GET /api/outings?branch=プロンポン&month=2026-08 (merged across the branch's classes)
 export async function GET(req: NextRequest) {
   const className = req.nextUrl.searchParams.get("class");
+  const branch = req.nextUrl.searchParams.get("branch");
   const month = req.nextUrl.searchParams.get("month");
 
-  if (!className || !month || !/^\d{4}-\d{2}$/.test(month)) {
+  if ((!className && !branch) || !month || !/^\d{4}-\d{2}$/.test(month)) {
     return NextResponse.json(
-      { error: "Missing or invalid 'class'/'month' query params" },
+      { error: "Missing or invalid 'class'/'branch'/'month' query params" },
       { status: 400 }
     );
   }
 
   try {
-    const entries = await getOutingLogs(className, month);
+    const entries = branch
+      ? await getOutingLogsForBranch(branch, month)
+      : await getOutingLogs(className!, month);
     return NextResponse.json({ entries });
   } catch (err) {
     console.error(err);

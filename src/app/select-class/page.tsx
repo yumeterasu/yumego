@@ -138,6 +138,24 @@ export default function SelectClassPage() {
           </span>
         </Link>
         <Link
+          href="/dashboard/outings?branch=プロンポン"
+          className="rounded-full bg-purple-50 border border-purple-300 text-purple-700 px-4 py-2 text-sm font-semibold text-center"
+        >
+          🚪 入退出記録　プロンポン
+          <span className="block text-[9px] font-normal opacity-70">
+            Entry/Exit Log · Phrom Phong
+          </span>
+        </Link>
+        <Link
+          href="/dashboard/outings?branch=トンロー"
+          className="rounded-full bg-purple-50 border border-purple-300 text-purple-700 px-4 py-2 text-sm font-semibold text-center"
+        >
+          🚪 入退出記録　トンロー
+          <span className="block text-[9px] font-normal opacity-70">
+            Entry/Exit Log · Thong Lo
+          </span>
+        </Link>
+        <Link
           href="/dashboard/admin-menu"
           className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold text-center"
         >
