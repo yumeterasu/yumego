@@ -14,6 +14,12 @@ import {
   isClassColorKey,
 } from "@/lib/classColors";
 import { Bi } from "@/components/Bilingual";
+import type { OutingLog } from "@/lib/sheets";
+
+// A departure not yet marked back after this long gets flagged on this
+// page -- staff land here first, so a forgotten check-in surfaces here
+// rather than staying silent until someone happens to open 入退出記録.
+const OVERDUE_HOURS = 3;
 
 // The fixed 3-grade continuum, split by branch. "Extra" classes (like
 // トンロー　小学生) are Master-managed now — see useExtraClasses() below,
@@ -75,6 +81,41 @@ export default function SelectClassPage() {
   useEffect(() => {
     loadSummary(selectedDate);
   }, [selectedDate, loadSummary]);
+
+  const [overdueOutings, setOverdueOutings] = useState<OutingLog[]>([]);
+
+  const loadOverdueOutings = useCallback(async () => {
+    const ym = todayDateString().slice(0, 7);
+    try {
+      const [pp, tl] = await Promise.all([
+        fetch(`/api/outings?branch=${encodeURIComponent("プロンポン")}&month=${ym}`).then((r) =>
+          r.ok ? r.json() : { entries: [] }
+        ),
+        fetch(`/api/outings?branch=${encodeURIComponent("トンロー")}&month=${ym}`).then((r) =>
+          r.ok ? r.json() : { entries: [] }
+        ),
+      ]);
+      const all: OutingLog[] = [...(pp.entries ?? []), ...(tl.entries ?? [])];
+      const now = Date.now();
+      setOverdueOutings(
+        all.filter((e) => {
+          if (e.returnTime !== "") return false;
+          const [h, m] = e.departureTime.split(":").map(Number);
+          const [y, mo, d] = e.date.split("-").map(Number);
+          const departedAt = new Date(y, mo - 1, d, h, m).getTime();
+          return now - departedAt >= OVERDUE_HOURS * 60 * 60 * 1000;
+        })
+      );
+    } catch {
+      // non-fatal -- this is a supplementary heads-up, not core functionality
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOverdueOutings();
+    const timer = setInterval(loadOverdueOutings, 5 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, [loadOverdueOutings]);
 
   function handleSelect(className: string) {
     setSelectedClass(className);
@@ -163,6 +204,29 @@ export default function SelectClassPage() {
           <span className="block text-[9px] font-normal opacity-70">Management</span>
         </Link>
       </div>
+
+      {overdueOutings.length > 0 && (
+        <div className="w-full max-w-2xl bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex flex-col gap-1">
+          <p className="text-sm text-amber-800 font-semibold">
+            ⚠ 3時間以上戻っていない外出が {overdueOutings.length}件あります
+            <span className="block text-xs font-normal">
+              {overdueOutings.length} outing(s) not back for over 3 hours
+            </span>
+          </p>
+          {overdueOutings.map((e) => {
+            const branch = e.className.split("　")[0];
+            return (
+              <Link
+                key={e.id}
+                href={`/dashboard/outings?branch=${encodeURIComponent(branch)}`}
+                className="text-xs text-amber-700 underline"
+              >
+                {e.className}　{e.departureTime}〜　{e.description || "（行き先未記入）"}
+              </Link>
+            );
+          })}
+        </div>
+      )}
 
       <h1 className="text-xl font-bold text-center">
         <Bi
