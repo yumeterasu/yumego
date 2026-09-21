@@ -721,6 +721,7 @@ function PickupPageInner() {
     setCheckinField(field);
     setCheckinDate(todayStr);
     setCheckinAbsent(new Set()); // always starts everyone present
+    setShowBusSettings(false);
     setShowCheckin(true);
   }
 
@@ -884,7 +885,7 @@ function PickupPageInner() {
         <div className="flex items-center gap-2 flex-wrap print:hidden ml-auto">
           {!showCheckin ? (
             <>
-              {students.length > 0 && (
+              {students.length > 0 && !showBusSettings && (
                 <>
                   <button
                     type="button"
@@ -1002,7 +1003,10 @@ function PickupPageInner() {
       {!showCheckin && !showBusSettings && students.length > 0 && (
         <div className="flex items-center justify-center gap-3 flex-wrap print:hidden">
           <button
-            onClick={() => setShowBusSettings(true)}
+            onClick={() => {
+              setShowCheckin(false);
+              setShowBusSettings(true);
+            }}
             className="rounded-full border border-purple-400 text-purple-800 bg-purple-50 px-5 py-2 text-sm font-semibold"
           >
             🚌 バス・送迎設定
