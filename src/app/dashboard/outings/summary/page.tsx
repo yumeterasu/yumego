@@ -23,6 +23,9 @@ function OutingsSummaryPageInner() {
   const [entries, setEntries] = useState<OutingLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Oldest first (top), newest last (bottom) by default -- click the 日付
+  // header to flip it, same comparison key the log itself sorts by.
+  const [sortAsc, setSortAsc] = useState(true);
 
   const yearMonth = `${year}-${pad2(month)}`;
 
@@ -87,21 +90,10 @@ function OutingsSummaryPageInner() {
     );
   }
 
-  const totalOutings = entries.length;
-  const totalHeadcount = entries.reduce((sum, e) => sum + e.headcount, 0);
-  const pending = entries.filter((e) => e.returnTime === "");
-
-  // destination name -> { count, headcount }
-  const byDestination = new Map<string, { count: number; headcount: number }>();
-  for (const e of entries) {
-    const key = e.description.trim() || "（行き先未記入）";
-    const cur = byDestination.get(key) ?? { count: 0, headcount: 0 };
-    cur.count += 1;
-    cur.headcount += e.headcount;
-    byDestination.set(key, cur);
-  }
-  const ranked = Array.from(byDestination.entries()).sort((a, b) => b[1].count - a[1].count);
-  const maxCount = ranked.length > 0 ? ranked[0][1].count : 0;
+  const sortedEntries = [...entries].sort((a, b) => {
+    const cmp = (a.date + a.departureTime).localeCompare(b.date + b.departureTime);
+    return sortAsc ? cmp : -cmp;
+  });
 
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
@@ -112,10 +104,8 @@ function OutingsSummaryPageInner() {
             {branchToEnglish(branch)} · Entry/Exit Summary
           </p>
           <p className="text-sm text-gray-500">
-            この月の外出回数・人数・行き先の内訳
-            <span className="block text-xs">
-              Outing count, headcount, and destination breakdown for the month
-            </span>
+            この月の入退出記録一覧
+            <span className="block text-xs">Entry/exit records for the month</span>
           </p>
         </div>
         <div className="flex items-center gap-2 ml-auto">
@@ -181,90 +171,98 @@ function OutingsSummaryPageInner() {
         <div className="max-w-2xl w-full mx-auto">
           <SkeletonBlock className="h-[360px]" />
         </div>
+      ) : entries.length === 0 ? (
+        <p className="text-gray-400 text-sm text-center py-8">
+          この月の記録はまだありません
+          <span className="block text-xs">No records yet this month</span>
+        </p>
       ) : (
-        <div className="max-w-2xl w-full mx-auto flex flex-col gap-4">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="border rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-gray-800">{totalOutings}</p>
-              <p className="text-xs text-gray-500 mt-1">
-                総回数
-                <span className="block text-[10px] text-gray-400">Total outings</span>
-              </p>
-            </div>
-            <div className="border rounded-xl p-4 text-center">
-              <p className="text-3xl font-bold text-gray-800">{totalHeadcount}</p>
-              <p className="text-xs text-gray-500 mt-1">
-                延べ人数
-                <span className="block text-[10px] text-gray-400">Total headcount</span>
-              </p>
-            </div>
-            <div
-              className={`border rounded-xl p-4 text-center ${
-                pending.length > 0 ? "border-amber-400 bg-amber-50/50" : ""
-              }`}
-            >
-              <p
-                className={`text-3xl font-bold ${
-                  pending.length > 0 ? "text-amber-600" : "text-gray-800"
-                }`}
-              >
-                {pending.length}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                未入室
-                <span className="block text-[10px] text-gray-400">Not back yet</span>
-              </p>
-            </div>
-          </div>
-
-          {pending.length > 0 && (
-            <div className="border border-amber-400 bg-amber-50/50 rounded-xl p-3 flex flex-col gap-1">
-              <p className="text-sm font-semibold text-amber-800">
-                まだ入室記録がありません
-                <span className="block text-xs font-normal">Not yet recorded as returned</span>
-              </p>
-              {pending.map((e) => (
-                <p key={e.id} className="text-xs text-amber-700">
-                  {e.date} {e.departureTime}〜　{e.description || "（行き先未記入）"}　{e.headcount}
-                  人
-                </p>
-              ))}
-            </div>
-          )}
-
-          <div className="border rounded-xl p-4 flex flex-col gap-2">
-            <h2 className="text-sm font-semibold text-gray-700">
-              行き先の内訳
-              <span className="block text-xs font-normal text-gray-400">
-                Breakdown by destination
-              </span>
-            </h2>
-            {ranked.length === 0 ? (
-              <p className="text-gray-400 text-sm text-center py-4">
-                この月の記録はまだありません
-                <span className="block text-xs">No records yet this month</span>
-              </p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {ranked.map(([name, stat]) => (
-                  <div key={name} className="flex items-center gap-3">
-                    <span className="text-sm w-32 shrink-0 truncate" title={name}>
-                      {name}
-                    </span>
-                    <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
-                      <div
-                        className="bg-green-500 h-full rounded-full"
-                        style={{ width: `${(stat.count / maxCount) * 100}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-500 w-24 shrink-0 text-right">
-                      {stat.count}回 / {stat.headcount}人
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="max-w-5xl w-full mx-auto overflow-x-auto border border-gray-300 rounded-xl">
+          <table className="text-sm border-collapse min-w-max w-full">
+            <thead>
+              <tr>
+                <th className="border border-gray-300 bg-gray-50 px-3 py-2">
+                  <button
+                    onClick={() => setSortAsc((v) => !v)}
+                    className="flex items-center gap-1 mx-auto font-semibold"
+                  >
+                    日付
+                    <span className="text-[10px]">{sortAsc ? "▲" : "▼"}</span>
+                  </button>
+                  <span className="block text-[9px] font-normal text-gray-400">DATE</span>
+                </th>
+                <th className="border border-gray-300 bg-gray-50 px-3 py-2">
+                  学年
+                  <span className="block text-[9px] font-normal text-gray-400">CLASS</span>
+                </th>
+                <th className="border border-gray-300 bg-gray-50 px-3 py-2">
+                  人数
+                  <span className="block text-[9px] font-normal text-gray-400">
+                    Number of people
+                  </span>
+                </th>
+                <th className="border border-gray-300 bg-amber-100 text-amber-800 px-3 py-2">
+                  退室時間
+                  <span className="block text-[9px] font-normal">Leaving time</span>
+                </th>
+                <th className="border border-gray-300 bg-amber-100 text-amber-800 px-3 py-2">
+                  退室確認サイン
+                  <span className="block text-[9px] font-normal">Sign</span>
+                </th>
+                <th className="border border-gray-300 bg-blue-100 text-blue-800 px-3 py-2">
+                  入室時間
+                  <span className="block text-[9px] font-normal">Entry time</span>
+                </th>
+                <th className="border border-gray-300 bg-blue-100 text-blue-800 px-3 py-2">
+                  入室確認サイン
+                  <span className="block text-[9px] font-normal">Sign</span>
+                </th>
+                <th className="border border-gray-300 bg-gray-50 px-3 py-2">
+                  行き先
+                  <span className="block text-[9px] font-normal text-gray-400">Destination</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEntries.map((entry) => {
+                const isBack = entry.returnTime !== "";
+                return (
+                  <tr key={entry.id} className={isBack ? "" : "bg-amber-50/50"}>
+                    <td className="border border-gray-300 px-3 py-2 text-center whitespace-nowrap">
+                      {entry.date}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center whitespace-nowrap">
+                      {entry.className.split("　")[1] ?? entry.className}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center">
+                      {entry.headcount}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center whitespace-nowrap">
+                      {entry.departureTime}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center whitespace-nowrap">
+                      {entry.departureSign}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center whitespace-nowrap">
+                      {isBack ? (
+                        entry.returnTime
+                      ) : (
+                        <span className="text-amber-700 font-semibold">
+                          未入室 / Not back yet
+                        </span>
+                      )}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center whitespace-nowrap">
+                      {entry.returnSign}
+                    </td>
+                    <td className="border border-gray-300 px-3 py-2 text-center">
+                      {entry.description || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </main>
