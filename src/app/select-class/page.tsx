@@ -154,14 +154,58 @@ export default function SelectClassPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-3 p-4">
+    <main className="relative min-h-screen flex flex-col items-center justify-center gap-3 p-4">
+      {/* 管理 — branch-agnostic utility, tucked in its own corner instead of
+          competing with the branch-specific buttons below. */}
+      <Link
+        href="/dashboard/admin-menu"
+        className="absolute top-4 right-4 rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold text-center"
+      >
+        ⚙ 管理
+        <span className="block text-[9px] font-normal opacity-70">Management</span>
+      </Link>
+
+      {/* Date picker -- topmost, shared by both branches (used for the 出席
+          count badges below). "今日に戻る" is absolutely positioned below
+          the row instead of stacked inline, so it never affects the row's
+          own height (◀/date/▶ always align on one line) or width (never
+          shifts ◀/▶ sideways when it toggles) -- the row keeps a fixed
+          bottom margin so there's always room for it to appear without
+          overlapping what's below. */}
+      <div className="relative flex items-center gap-4 mb-5">
+        <button
+          onClick={() => setSelectedDate((d) => addDays(d, -1))}
+          className="rounded-full bg-gray-100 text-gray-600 w-8 h-8 flex items-center justify-center"
+          aria-label="前の日 / Previous day"
+        >
+          ◀
+        </button>
+        <p className="font-bold text-sm w-24 text-center">{selectedDate}</p>
+        <button
+          onClick={() => setSelectedDate((d) => addDays(d, 1))}
+          disabled={selectedDate >= today}
+          className="rounded-full bg-gray-100 text-gray-600 w-8 h-8 flex items-center justify-center disabled:opacity-30"
+          aria-label="次の日 / Next day"
+        >
+          ▶
+        </button>
+        <button
+          onClick={() => setSelectedDate(today)}
+          tabIndex={selectedDate === today ? -1 : 0}
+          className={`absolute left-1/2 -translate-x-1/2 top-full mt-1 text-xs text-blue-600 underline whitespace-nowrap ${
+            selectedDate === today ? "invisible" : ""
+          }`}
+        >
+          今日に戻る / Back to today
+        </button>
+      </div>
+
       {/* 送迎管理/入退出記録 — separate whole-branch entry points, not gated
           on a class. Split visibly left (プロンポン) / right (トンロー),
-          with the date picker (used by both, for the 出席 count badges
-          below) as the shared middle element, mirroring the プロンポン/
-          トンロー class-grid split further down the page. */}
-      <div className="w-full max-w-4xl flex flex-col md:flex-row items-center justify-center gap-4">
-        <div className="flex flex-wrap items-center justify-center gap-3 md:flex-1 md:justify-end">
+          mirroring the プロンポン/トンロー class-grid split further down
+          the page. */}
+      <div className="w-full max-w-3xl flex flex-col md:flex-row items-center justify-center md:justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/dashboard/pickup?branch=プロンポン"
             className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
@@ -182,41 +226,7 @@ export default function SelectClassPage() {
           </Link>
         </div>
 
-        {/* Date picker -- shared by both branches. "今日に戻る" is
-            absolutely positioned below the row instead of stacked inline,
-            so it never affects the row's own height (◀/date/▶ always
-            align on one line) or width (never shifts ◀/▶ sideways when it
-            toggles) -- the row keeps a fixed bottom margin so there's
-            always room for it to appear without overlapping what's below. */}
-        <div className="relative flex items-center gap-4 mb-5 md:mb-0 shrink-0">
-          <button
-            onClick={() => setSelectedDate((d) => addDays(d, -1))}
-            className="rounded-full bg-gray-100 text-gray-600 w-8 h-8 flex items-center justify-center"
-            aria-label="前の日 / Previous day"
-          >
-            ◀
-          </button>
-          <p className="font-bold text-sm w-24 text-center">{selectedDate}</p>
-          <button
-            onClick={() => setSelectedDate((d) => addDays(d, 1))}
-            disabled={selectedDate >= today}
-            className="rounded-full bg-gray-100 text-gray-600 w-8 h-8 flex items-center justify-center disabled:opacity-30"
-            aria-label="次の日 / Next day"
-          >
-            ▶
-          </button>
-          <button
-            onClick={() => setSelectedDate(today)}
-            tabIndex={selectedDate === today ? -1 : 0}
-            className={`absolute left-1/2 -translate-x-1/2 top-full mt-1 text-xs text-blue-600 underline whitespace-nowrap ${
-              selectedDate === today ? "invisible" : ""
-            }`}
-          >
-            今日に戻る / Back to today
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-3 md:flex-1 md:justify-start">
+        <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/dashboard/pickup?branch=トンロー"
             className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
@@ -237,15 +247,6 @@ export default function SelectClassPage() {
           </Link>
         </div>
       </div>
-
-      {/* 管理 — branch-agnostic, so it doesn't belong to either side above. */}
-      <Link
-        href="/dashboard/admin-menu"
-        className="rounded-full bg-gray-100 text-gray-600 px-4 py-2 text-sm font-semibold text-center"
-      >
-        ⚙ 管理
-        <span className="block text-[9px] font-normal opacity-70">Management</span>
-      </Link>
 
       {overdueOutings.length > 0 && (
         <div className="w-full max-w-2xl bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 flex flex-col gap-1">
