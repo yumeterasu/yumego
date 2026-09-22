@@ -208,6 +208,10 @@ function PickupPageInner() {
   const [checkinAbsent, setCheckinAbsent] = useState<Set<string>>(new Set());
   const [checkinSubmitting, setCheckinSubmitting] = useState(false);
   const [showCheckinConfirm, setShowCheckinConfirm] = useState(false);
+  // ⚡ 特例で追加 -- a same-day, bus->self-only shortcut for the checkin
+  // screens themselves (see applyCheckinException below), collapsed by
+  // default since it's an edge-case action, not part of the main flow.
+  const [showCheckinExceptionPicker, setShowCheckinExceptionPicker] = useState(false);
   const isCheckinToday = checkinDate === todayStr;
 
   // 特定の日を削除 — same permanent, no-backup "clear a whole day" pattern
@@ -566,6 +570,48 @@ function PickupPageInner() {
     }
   }
 
+  // ⚡ 特例で追加 (checkin screens) -- always flips ONE leg to "self" for
+  // checkinDate, preserving whatever the other leg's effective mode
+  // already is (the override API always requires both legs together).
+  // There's deliberately no path here that ever sets a leg to "bus" --
+  // a same-day exception can only relieve a bus seat, never claim one
+  // (bus riding needs advance booking), so this can't conflict with, or
+  // need to be reconciled against, バス・送迎設定's own ⚡ form, which
+  // writes the exact same StudentBusOverride record via the same API.
+  async function applyCheckinException(student: Student, field: "arrival" | "departure") {
+    const current = effectiveModeForDate(student.studentId, checkinDate);
+    const arrivalMode: BusLegMode = field === "arrival" ? "self" : current.arrivalMode;
+    const departureMode: BusLegMode = field === "departure" ? "self" : current.departureMode;
+    const key = `${student.studentId}|${checkinDate}`;
+    setOverrideSavingKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/students/bus-override", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: student.studentId,
+          date: checkinDate,
+          arrivalMode,
+          departureMode,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setBusOverridesByStudent((prev) => {
+        const next = { ...prev };
+        const list = (next[student.studentId] ?? []).filter((o) => o.date !== checkinDate);
+        list.push({ studentId: student.studentId, date: checkinDate, arrivalMode, departureMode });
+        list.sort((a, b) => a.date.localeCompare(b.date));
+        next[student.studentId] = list;
+        return next;
+      });
+    } catch {
+      setError("特例の保存に失敗しました / Failed to save the one-day exception");
+    } finally {
+      setOverrideSavingKey(null);
+    }
+  }
+
   function goPrevMonth() {
     if (month === 1) {
       setYear((y) => y - 1);
@@ -721,6 +767,7 @@ function PickupPageInner() {
     setCheckinField(field);
     setCheckinDate(todayStr);
     setCheckinAbsent(new Set()); // always starts everyone present
+    setShowCheckinExceptionPicker(false);
     setShowBusSettings(false);
     setShowCheckin(true);
   }
@@ -728,14 +775,17 @@ function PickupPageInner() {
   function goCheckinPrevDay() {
     setCheckinDate((d) => addDays(d, -1));
     setCheckinAbsent(new Set());
+    setShowCheckinExceptionPicker(false);
   }
   function goCheckinNextDay() {
     setCheckinDate((d) => (d < todayStr ? addDays(d, 1) : d));
     setCheckinAbsent(new Set());
+    setShowCheckinExceptionPicker(false);
   }
   function goCheckinToday() {
     setCheckinDate(todayStr);
     setCheckinAbsent(new Set());
+    setShowCheckinExceptionPicker(false);
   }
 
   useEffect(() => {
@@ -1535,6 +1585,90 @@ function PickupPageInner() {
                     </div>
                   </div>
                 ))}
+              </div>
+            );
+          })()}
+
+          {(() => {
+            const busStudentsForLeg = students.filter((s) => {
+              const mode = effectiveModeForDate(s.studentId, checkinDate);
+              return (checkinField === "arrival" ? mode.arrivalMode : mode.departureMode) === "bus";
+            });
+            if (busStudentsForLeg.length === 0) return null;
+
+            const appliedTodayForLeg = checkinRoster.filter((s) =>
+              (busOverridesByStudent[s.studentId] ?? []).some((o) => o.date === checkinDate)
+            );
+
+            return (
+              <div className="print:hidden">
+                <button
+                  onClick={() => setShowCheckinExceptionPicker((v) => !v)}
+                  className="text-xs text-purple-700 underline"
+                >
+                  ⚡ 特例で追加（バス利用の生徒） {showCheckinExceptionPicker ? "▲" : "▼"}
+                  <span className="block text-[10px] font-normal opacity-70">
+                    Add a bus-riding student as a one-day exception
+                  </span>
+                </button>
+                {showCheckinExceptionPicker && (
+                  <div className="mt-2 flex flex-col gap-3 border border-purple-200 bg-purple-50/40 rounded-xl p-3">
+                    <div>
+                      <p className="text-xs text-gray-500">
+                        普段はバス利用のため表示されない生徒です。今日だけ保護者が
+                        {checkinField === "arrival" ? "送ってくる" : "迎えに来る"}
+                        場合はここから追加してください
+                        <span className="block">
+                          Normally hidden because they take the bus for this leg — add here if a
+                          parent is {checkinField === "arrival" ? "dropping off" : "picking up"} in
+                          person just today
+                        </span>
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {busStudentsForLeg.map((s) => {
+                          const key = `${s.studentId}|${checkinDate}`;
+                          return (
+                            <button
+                              key={s.studentId}
+                              onClick={() => applyCheckinException(s, checkinField)}
+                              disabled={overrideSavingKey === key}
+                              className="rounded-full border border-purple-300 bg-white text-purple-800 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                            >
+                              ＋ {s.nameKanji}
+                              {s.nameEnglish && (
+                                <span className="block text-[9px] font-normal opacity-70">
+                                  {s.nameEnglish}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {appliedTodayForLeg.length > 0 && (
+                      <div className="border-t border-purple-200 pt-2">
+                        <p className="text-xs text-gray-500 mb-1">今日追加した特例 / Added today</p>
+                        <div className="flex flex-wrap gap-2">
+                          {appliedTodayForLeg.map((s) => (
+                            <span
+                              key={s.studentId}
+                              className="inline-flex items-center gap-1 rounded-full bg-white border border-purple-300 text-purple-800 pl-3 pr-1.5 py-1 text-xs"
+                            >
+                              {s.nameKanji}
+                              <button
+                                onClick={() => removeOverride(s.studentId, checkinDate)}
+                                aria-label={`${s.nameKanji}の特例を取り消す`}
+                                className="text-purple-400 hover:text-red-500 px-1"
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })()}
