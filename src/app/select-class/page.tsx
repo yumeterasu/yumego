@@ -298,10 +298,6 @@ export default function SelectClassPage() {
       {/* Desktop (wide screens): split into プロンポン (left) / トンロー (right) */}
       <div className="hidden md:grid md:grid-cols-2 md:gap-10 w-full max-w-2xl">
         <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold text-center text-gray-700">
-            プロンポン
-            <span className="block text-xs font-normal opacity-70">Phrom Phong</span>
-          </h2>
           {PROMPONG_REGULAR.map((name) => (
             <ClassButton key={name} name={name} />
           ))}
@@ -315,10 +311,6 @@ export default function SelectClassPage() {
           )}
         </div>
         <div className="flex flex-col gap-3">
-          <h2 className="text-lg font-bold text-center text-gray-700">
-            トンロー
-            <span className="block text-xs font-normal opacity-70">Thong Lo</span>
-          </h2>
           {THONGLOR_REGULAR.map((name) => (
             <ClassButton key={name} name={name} />
           ))}
