@@ -567,17 +567,44 @@ export default function DashboardPage() {
     setAttendanceReasonPickerFor(null);
   }
 
+  // A student whose enrollment window doesn't cover the day being taken
+  // shouldn't be tappable here at all -- mirrors the monthly table's own
+  // beforeStart/afterEnd rule (this grid just never had the equivalent
+  // check, since it was ported from the old standalone /attendance page).
+  const visibleAttendanceStudents = attendanceStudents.filter((s) => {
+    if (s.startDate && attendanceDate < s.startDate) return false;
+    if (s.endDate && attendanceDate > s.endDate) return false;
+    return true;
+  });
+
   async function handleAttendanceSubmit() {
     if (!selectedClass) return;
     setAttendanceSubmitting(true);
     setAttendanceError(null);
 
-    const attendanceRecords = attendanceStudents.map((s) => {
+    const attendanceRecords = visibleAttendanceStudents.map((s) => {
       const absence = attendanceAbsences.get(s.studentId);
       const status: AttendanceStatus = absence ? absence.status : "present";
       return { studentId: s.studentId, status, reason: absence?.reason ?? "" };
     });
     const payload = { date: attendanceDate, className: selectedClass, records: attendanceRecords };
+
+    // Optimistically merge into the monthly table's own `records` state
+    // right away, regardless of whether this date is today or a backfill
+    // -- same splice-and-append pattern applyEdit already uses for
+    // single-cell edits. This is what actually makes the table correct
+    // the instant you look at it: waiting on a fresh GET right after the
+    // write can occasionally still see the pre-write data for a moment,
+    // and a backfilled date never even triggers a refetch on its own.
+    const mergeIntoRecords = () => {
+      setRecords((prev) => {
+        const touchedIds = new Set(attendanceRecords.map((r) => r.studentId));
+        const others = prev.filter(
+          (r) => !(r.date === attendanceDate && touchedIds.has(r.studentId))
+        );
+        return [...others, ...attendanceRecords.map((r) => ({ date: attendanceDate, ...r }))];
+      });
+    };
 
     try {
       const res = await fetch("/api/attendance", {
@@ -586,6 +613,7 @@ export default function DashboardPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error("failed");
+      mergeIntoRecords();
       setAttendanceSubmitted(true);
       setAttendanceQueuedOffline(false);
       setAttendanceShowConfirmModal(false);
@@ -594,13 +622,14 @@ export default function DashboardPage() {
       // other missed days without re-opening this each time.
       if (attendanceDate === today) {
         setShowAttendance(false);
-        load(); // refresh the 出席簿 table with what was just recorded
+        load(); // background reconciliation -- the merge above already updated the table
       }
     } catch {
       // Network failure (offline) or the request never reached the server —
       // save it locally and retry automatically once the connection returns.
       enqueue(payload);
       refreshAttendancePendingCount();
+      mergeIntoRecords();
       setAttendanceSubmitted(true);
       setAttendanceQueuedOffline(true);
       setAttendanceShowConfirmModal(false);
@@ -1602,7 +1631,7 @@ export default function DashboardPage() {
                 />
               ))}
             </div>
-          ) : attendanceStudents.length === 0 ? (
+          ) : visibleAttendanceStudents.length === 0 ? (
             <div className="flex flex-col gap-3 items-start">
               <p className="text-gray-500 text-sm">
                 このクラスにはまだ生徒が登録されていません
@@ -1622,7 +1651,7 @@ export default function DashboardPage() {
               </p>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-                {attendanceStudents.map((s, i) => {
+                {visibleAttendanceStudents.map((s, i) => {
                   const label = s.nameEnglish || s.nameKanji;
                   const absence = attendanceAbsences.get(s.studentId);
                   const isSuspended = absence?.status === "suspended";
@@ -1665,17 +1694,17 @@ export default function DashboardPage() {
               </div>
 
               {(() => {
-                const lateStudents = attendanceStudents.filter(
+                const lateStudents = visibleAttendanceStudents.filter(
                   (s) => attendanceAbsences.get(s.studentId)?.status === "late"
                 );
-                const earlyLeaveStudents = attendanceStudents.filter(
+                const earlyLeaveStudents = visibleAttendanceStudents.filter(
                   (s) => attendanceAbsences.get(s.studentId)?.status === "early_leave"
                 );
-                const absentStudents = attendanceStudents.filter((s) => {
+                const absentStudents = visibleAttendanceStudents.filter((s) => {
                   const a = attendanceAbsences.get(s.studentId);
                   return a && a.status !== "late" && a.status !== "early_leave";
                 });
-                const presentCount = attendanceStudents.length - absentStudents.length;
+                const presentCount = visibleAttendanceStudents.length - absentStudents.length;
                 const absentCount = absentStudents.length;
                 const lateCount = lateStudents.length;
                 const earlyLeaveCount = earlyLeaveStudents.length;

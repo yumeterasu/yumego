@@ -1624,26 +1624,60 @@ function PickupPageInner() {
                           person just today
                         </span>
                       </p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {busStudentsForLeg.map((s) => {
-                          const key = `${s.studentId}|${checkinDate}`;
-                          return (
-                            <button
-                              key={s.studentId}
-                              onClick={() => applyCheckinException(s, checkinField)}
-                              disabled={overrideSavingKey === key}
-                              className="rounded-full border border-purple-300 bg-white text-purple-800 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
-                            >
-                              ＋ {s.nameKanji}
-                              {s.nameEnglish && (
-                                <span className="block text-[9px] font-normal opacity-70">
-                                  {s.nameEnglish}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {(() => {
+                        const GRADE_LABELS: { suffix: string; ja: string; en: string }[] = [
+                          { suffix: "年少", ja: "年少", en: "Younger Class" },
+                          { suffix: "年中", ja: "年中", en: "Middle Class" },
+                          { suffix: "年長", ja: "年長", en: "Older Class" },
+                        ];
+                        const gradeGroups = GRADE_LABELS.map((g) => ({
+                          ...g,
+                          list: busStudentsForLeg.filter((s) => s.className.endsWith(g.suffix)),
+                        }));
+                        const grouped = new Set(
+                          gradeGroups.flatMap((g) => g.list.map((s) => s.studentId))
+                        );
+                        const others = busStudentsForLeg.filter((s) => !grouped.has(s.studentId));
+                        const allGroups = [
+                          ...gradeGroups,
+                          ...(others.length > 0
+                            ? [{ suffix: "", ja: "その他", en: "Other", list: others }]
+                            : []),
+                        ].filter((g) => g.list.length > 0);
+
+                        return (
+                          <div className="flex flex-col gap-3 mt-2">
+                            {allGroups.map((g) => (
+                              <div key={g.ja}>
+                                <p className="text-xs font-semibold text-gray-500 mb-1">
+                                  {g.ja}{" "}
+                                  <span className="font-normal opacity-70">{g.en}</span>
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                  {g.list.map((s) => {
+                                    const key = `${s.studentId}|${checkinDate}`;
+                                    return (
+                                      <button
+                                        key={s.studentId}
+                                        onClick={() => applyCheckinException(s, checkinField)}
+                                        disabled={overrideSavingKey === key}
+                                        className="rounded-full border border-purple-300 bg-white text-purple-800 px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+                                      >
+                                        ＋ {s.nameKanji}
+                                        {s.nameEnglish && (
+                                          <span className="block text-[9px] font-normal opacity-70">
+                                            {s.nameEnglish}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {appliedTodayForLeg.length > 0 && (
                       <div className="border-t border-purple-200 pt-2">
