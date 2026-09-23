@@ -200,8 +200,11 @@ export default function SelectClassPage() {
       </div>
 
       {/* 送迎管理/入退出記録 — separate whole-branch entry points, not gated
-          on a class. Split visibly left (プロンポン) / right (トンロー). */}
-      <div className="w-full max-w-3xl flex flex-col md:flex-row items-center justify-center md:justify-between gap-4">
+          on a class. Split visibly left (プロンポン) / right (トンロー) --
+          same max-w-2xl/md:grid-cols-2/md:gap-10 as the class grid below,
+          so both columns line up edge-to-edge instead of the wider
+          max-w-3xl row drifting past the narrower grid's own columns. */}
+      <div className="w-full max-w-2xl flex flex-col md:grid md:grid-cols-2 md:gap-10 items-center gap-4">
         <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/dashboard/pickup?branch=プロンポン"
