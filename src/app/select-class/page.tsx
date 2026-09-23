@@ -13,7 +13,6 @@ import {
   CLASS_COLOR_DEFAULT_CARD_STYLE,
   isClassColorKey,
 } from "@/lib/classColors";
-import { Bi } from "@/components/Bilingual";
 import type { OutingLog } from "@/lib/sheets";
 
 // A departure not yet marked back after this long gets flagged on this
@@ -270,14 +269,6 @@ export default function SelectClassPage() {
           })}
         </div>
       )}
-
-      <h1 className="text-xl font-bold text-center">
-        <Bi
-          ja="この端末のクラスを選んでください"
-          en="Please choose this device's class"
-          enClassName="block text-sm font-normal text-gray-500 mt-1"
-        />
-      </h1>
 
       {/* Tablet / mobile: simple single grid, unchanged */}
       <div className="md:hidden grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-md">
