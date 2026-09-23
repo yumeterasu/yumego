@@ -203,29 +203,40 @@ export default function SelectClassPage() {
           on a class. Split visibly left (プロンポン) / right (トンロー),
           mirroring the プロンポン/トンロー class-grid split further down
           the page. */}
-      <div className="w-full max-w-3xl flex flex-col md:flex-row items-center justify-center md:justify-between gap-4">
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            href="/dashboard/pickup?branch=プロンポン"
-            className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
-          >
-            🚗 送迎管理　プロンポン
-            <span className="block text-[9px] font-normal opacity-70">
-              Pickup/Drop-off · Phrom Phong
-            </span>
-          </Link>
-          <Link
-            href="/dashboard/outings?branch=プロンポン"
-            className="rounded-full bg-purple-50 border border-purple-300 text-purple-700 px-4 py-2 text-sm font-semibold text-center"
-          >
-            🚪 入退出記録　プロンポン
-            <span className="block text-[9px] font-normal opacity-70">
-              Entry/Exit Log · Phrom Phong
-            </span>
-          </Link>
+      <div className="w-full max-w-3xl flex flex-col md:flex-row items-center justify-center md:items-start md:justify-between gap-4">
+        <div className="flex flex-col items-center gap-2">
+          <h2 className="text-sm font-bold text-gray-700">
+            プロンポン
+            <span className="block text-[10px] font-normal opacity-70">Phrom Phong</span>
+          </h2>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link
+              href="/dashboard/pickup?branch=プロンポン"
+              className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
+            >
+              🚗 送迎管理　プロンポン
+              <span className="block text-[9px] font-normal opacity-70">
+                Pickup/Drop-off · Phrom Phong
+              </span>
+            </Link>
+            <Link
+              href="/dashboard/outings?branch=プロンポン"
+              className="rounded-full bg-purple-50 border border-purple-300 text-purple-700 px-4 py-2 text-sm font-semibold text-center"
+            >
+              🚪 入退出記録　プロンポン
+              <span className="block text-[9px] font-normal opacity-70">
+                Entry/Exit Log · Phrom Phong
+              </span>
+            </Link>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-center gap-3">
+        <div className="flex flex-col items-center gap-2">
+          <h2 className="text-sm font-bold text-gray-700">
+            トンロー
+            <span className="block text-[10px] font-normal opacity-70">Thong Lo</span>
+          </h2>
+          <div className="flex flex-wrap items-center justify-center gap-3">
           <Link
             href="/dashboard/pickup?branch=トンロー"
             className="rounded-full bg-blue-50 border border-blue-300 text-blue-700 px-4 py-2 text-sm font-semibold text-center"
@@ -244,6 +255,7 @@ export default function SelectClassPage() {
               Entry/Exit Log · Thong Lo
             </span>
           </Link>
+          </div>
         </div>
       </div>
 
