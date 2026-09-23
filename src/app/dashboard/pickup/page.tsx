@@ -1625,10 +1625,34 @@ function PickupPageInner() {
                         </span>
                       </p>
                       {(() => {
-                        const GRADE_LABELS: { suffix: string; ja: string; en: string }[] = [
-                          { suffix: "年少", ja: "年少", en: "Younger Class" },
-                          { suffix: "年中", ja: "年中", en: "Middle Class" },
-                          { suffix: "年長", ja: "年長", en: "Older Class" },
+                        const GRADE_LABELS: {
+                          suffix: string;
+                          ja: string;
+                          en: string;
+                          box: string;
+                          header: string;
+                        }[] = [
+                          {
+                            suffix: "年少",
+                            ja: "年少",
+                            en: "Younger Class",
+                            box: "border-amber-300 bg-amber-50/40",
+                            header: "text-amber-800 border-amber-300",
+                          },
+                          {
+                            suffix: "年中",
+                            ja: "年中",
+                            en: "Middle Class",
+                            box: "border-sky-300 bg-sky-50/40",
+                            header: "text-sky-800 border-sky-300",
+                          },
+                          {
+                            suffix: "年長",
+                            ja: "年長",
+                            en: "Older Class",
+                            box: "border-emerald-300 bg-emerald-50/40",
+                            header: "text-emerald-800 border-emerald-300",
+                          },
                         ];
                         const gradeGroups = GRADE_LABELS.map((g) => ({
                           ...g,
@@ -1641,15 +1665,27 @@ function PickupPageInner() {
                         const allGroups = [
                           ...gradeGroups,
                           ...(others.length > 0
-                            ? [{ suffix: "", ja: "その他", en: "Other", list: others }]
+                            ? [
+                                {
+                                  suffix: "",
+                                  ja: "その他",
+                                  en: "Other",
+                                  box: "border-gray-300 bg-gray-50/40",
+                                  header: "text-gray-700 border-gray-300",
+                                  list: others,
+                                },
+                              ]
                             : []),
                         ].filter((g) => g.list.length > 0);
 
                         return (
-                          <div className="flex flex-col gap-3 mt-2">
+                          <div className="mt-2 flex flex-col gap-4 lg:grid lg:grid-cols-3 lg:items-start lg:gap-4">
                             {allGroups.map((g) => (
-                              <div key={g.ja}>
-                                <p className="text-xs font-semibold text-gray-500 mb-1">
+                              <div
+                                key={g.ja}
+                                className={`flex flex-col gap-2 rounded-2xl border-2 p-3 ${g.box}`}
+                              >
+                                <p className={`text-xs font-bold border-b pb-1 ${g.header}`}>
                                   {g.ja}{" "}
                                   <span className="font-normal opacity-70">{g.en}</span>
                                 </p>
