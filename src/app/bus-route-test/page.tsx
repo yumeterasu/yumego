@@ -233,6 +233,12 @@ export default function BusRouteTestPage() {
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const layerGroupRef = useRef<import("leaflet").LayerGroup | null>(null);
 
+  // The map <div> only exists once `result` is set (see the conditionally
+  // rendered result section below) -- depend on that transition so this
+  // effect actually retries once the ref has something to attach to,
+  // instead of running once at mount (when the ref is still null) and
+  // never again.
+  const hasResult = result !== null;
   useEffect(() => {
     let cancelled = false;
     import("leaflet").then((L) => {
@@ -250,7 +256,7 @@ export default function BusRouteTestPage() {
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [hasResult]);
 
   useEffect(() => {
     if (!mapRef.current || !layerGroupRef.current) return;
