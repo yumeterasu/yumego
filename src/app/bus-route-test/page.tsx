@@ -83,6 +83,15 @@ function fmtMin(seconds: number) {
   return `${Math.round(seconds / 60)} min`;
 }
 
+/** Free, no-API-key map preview embed (OpenStreetMap's official iframe
+ *  export) -- same technique already used for real student addresses in
+ *  students/page.tsx, so a resolved pin can be visually confirmed here too. */
+function osmEmbedUrl(lat: number, lng: number): string {
+  const delta = 0.004; // roughly a few hundred meters of context around the pin
+  const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lng}`;
+}
+
 export default function BusRouteTestPage() {
   const [branchInputs, setBranchInputs] = useState<Record<Branch, string>>({
     プロンポン: "",
@@ -334,10 +343,18 @@ export default function BusRouteTestPage() {
               </button>
             </div>
             {branchResolved[branch] && (
-              <p className="text-xs text-green-700">
-                ✓ {branchResolved[branch]!.displayName} ({branchResolved[branch]!.lat.toFixed(5)},{" "}
-                {branchResolved[branch]!.lng.toFixed(5)})
-              </p>
+              <>
+                <p className="text-xs text-green-700">
+                  ✓ {branchResolved[branch]!.displayName} ({branchResolved[branch]!.lat.toFixed(5)},{" "}
+                  {branchResolved[branch]!.lng.toFixed(5)})
+                </p>
+                <iframe
+                  key={`${branchResolved[branch]!.lat},${branchResolved[branch]!.lng}`}
+                  src={osmEmbedUrl(branchResolved[branch]!.lat, branchResolved[branch]!.lng)}
+                  className="w-full h-48 rounded-lg border"
+                  title={`${branch} map preview`}
+                />
+              </>
             )}
             {branchError[branch] && <p className="text-xs text-red-600">{branchError[branch]}</p>}
           </div>
@@ -355,20 +372,27 @@ export default function BusRouteTestPage() {
         {children.length > 0 && (
           <div className="flex flex-col gap-2">
             {children.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between gap-3 border rounded-lg px-3 py-2"
-              >
-                <div>
-                  <p className="text-sm font-semibold">{c.name}</p>
-                  <p className="text-xs text-gray-500">{c.resolved?.displayName}</p>
+              <div key={c.id} className="border rounded-lg px-3 py-2 flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">{c.name}</p>
+                    <p className="text-xs text-gray-500">{c.resolved?.displayName}</p>
+                  </div>
+                  <button
+                    onClick={() => removeChild(c.id)}
+                    className="text-xs text-red-600 border border-red-300 rounded-full px-3 py-1 shrink-0"
+                  >
+                    削除 / Remove
+                  </button>
                 </div>
-                <button
-                  onClick={() => removeChild(c.id)}
-                  className="text-xs text-red-600 border border-red-300 rounded-full px-3 py-1 shrink-0"
-                >
-                  削除 / Remove
-                </button>
+                {c.resolved && (
+                  <iframe
+                    key={`${c.resolved.lat},${c.resolved.lng}`}
+                    src={osmEmbedUrl(c.resolved.lat, c.resolved.lng)}
+                    className="w-full h-40 rounded-lg border"
+                    title={`${c.name} map preview`}
+                  />
+                )}
               </div>
             ))}
           </div>
