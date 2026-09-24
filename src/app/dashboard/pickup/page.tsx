@@ -956,7 +956,7 @@ function PickupPageInner() {
                 </>
               )}
               <Link
-                href="/select-class"
+                href="/"
                 className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
                 aria-label="トップページ / Home"
               >
@@ -992,7 +992,7 @@ function PickupPageInner() {
                 <span className="block text-[10px] font-normal opacity-70">Back to pickup management</span>
               </button>
               <Link
-                href="/select-class"
+                href="/"
                 className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
                 aria-label="トップページ / Home"
               >

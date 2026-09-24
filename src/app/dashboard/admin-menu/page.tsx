@@ -45,7 +45,7 @@ export default function AdminMenuPage() {
           <Bi ja="管理メニュー" en="Management Menu" enClassName="block text-sm font-normal text-gray-400" />
         </h1>
         <Link
-          href="/select-class"
+          href="/"
           className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0 ml-auto"
           aria-label="トップページ / Home"
         >

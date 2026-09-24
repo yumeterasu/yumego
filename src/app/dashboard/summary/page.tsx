@@ -117,7 +117,7 @@ export default function SummaryPage() {
   useEffect(() => {
     if (!loaded) return;
     if (!selectedClass) {
-      router.replace("/select-class");
+      router.replace("/");
       return;
     }
     load();
@@ -186,7 +186,7 @@ export default function SummaryPage() {
             </span>
           </Link>
           <Link
-            href="/select-class"
+            href="/"
             className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
             aria-label="トップページ / Home"
           >

@@ -82,7 +82,7 @@ function OutingsSummaryPageInner() {
             支店が選択されていません
             <span className="block text-xs">No branch selected</span>
           </p>
-          <Link href="/select-class" className="text-blue-600 underline text-sm">
+          <Link href="/" className="text-blue-600 underline text-sm">
             トップページに戻る / Back to top page
           </Link>
         </div>
@@ -119,7 +119,7 @@ function OutingsSummaryPageInner() {
             </span>
           </Link>
           <Link
-            href="/select-class"
+            href="/"
             className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
             aria-label="トップページ / Home"
           >
