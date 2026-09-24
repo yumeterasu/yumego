@@ -3452,3 +3452,56 @@ export async function setClassTeacher(className: string, teacherId: string | nul
     requestBody: { values: [[teacherId]] },
   });
 }
+
+// 送迎バス ルート最適化テスト (prototype only, see /bus-route-test) — the
+// whole page's mock state (branch addresses, mock children, route
+// settings) as one JSON blob, so the same link shows the same data on
+// every device instead of being stuck in one browser's localStorage.
+// Deliberately a single blob in its own sheet tab, not a normalized
+// multi-row table or a StudentLocations addition -- this is throwaway
+// prototype data, kept fully separate from the real student roster.
+const BUS_ROUTE_TEST_SHEET = "BusRouteTestMock";
+
+async function ensureBusRouteTestSheet(
+  sheets: ReturnType<typeof getSheetsClient>
+): Promise<void> {
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+    fields: "sheets.properties",
+  });
+  const exists = meta.data.sheets?.some(
+    (s) => s.properties?.title === BUS_ROUTE_TEST_SHEET
+  );
+  if (exists) return;
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: BUS_ROUTE_TEST_SHEET } } }],
+    },
+  });
+}
+
+export async function getBusRouteTestState(): Promise<string | null> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${BUS_ROUTE_TEST_SHEET}!A1`,
+    });
+    const value = res.data.values?.[0]?.[0];
+    return typeof value === "string" && value ? value : null;
+  } catch {
+    return null; // sheet tab doesn't exist yet -- nothing saved so far
+  }
+}
+
+export async function setBusRouteTestState(json: string): Promise<void> {
+  const sheets = getSheetsClient();
+  await ensureBusRouteTestSheet(sheets);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SHEET_ID,
+    range: `${BUS_ROUTE_TEST_SHEET}!A1`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[json]] },
+  });
+}

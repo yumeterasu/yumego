@@ -6,12 +6,14 @@ import "leaflet/dist/leaflet.css";
 // Standalone prototype for school-bus route optimization. Deliberately NOT
 // linked from any menu -- reachable only by typing the URL, but still
 // behind the app's normal login (proxy.ts protects every route by default).
-// Everything here is mock data in localStorage; nothing is ever written to
-// the real StudentLocations/Students sheets -- the address lookup below
-// only ever calls the existing /api/students/location endpoint in
-// mode:"lookup" (resolve-only, no write, doesn't require a real studentId).
-
-const STORAGE_KEY = "yumego.busRouteTest";
+// Everything here is mock data -- nothing is ever written to the real
+// StudentLocations/Students sheets, the address lookup below only ever
+// calls the existing /api/students/location endpoint in mode:"lookup"
+// (resolve-only, no write, doesn't require a real studentId). The mock
+// state itself (branches/children/route settings) is saved server-side via
+// /api/bus-route-test/state (its own dedicated, isolated sheet tab) instead
+// of localStorage, so the same link shows the same data on every device --
+// localStorage would only ever be visible on the one browser that set it.
 
 type Branch = "プロンポン" | "トンロー";
 
@@ -48,20 +50,27 @@ type PersistedState = {
   stopAtOtherBranch: boolean;
 };
 
-function loadPersisted(): PersistedState | null {
+async function loadPersisted(): Promise<PersistedState | null> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const res = await fetch("/api/bus-route-test/state");
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.state ?? null;
   } catch {
     return null;
   }
 }
 
-function savePersisted(state: PersistedState) {
+async function savePersisted(state: PersistedState) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    await fetch("/api/bus-route-test/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state),
+    });
   } catch {
-    // non-fatal -- just means the test setup won't survive a reload
+    // non-fatal -- just means this particular save didn't make it; the
+    // next change will try again
   }
 }
 
@@ -123,26 +132,52 @@ export default function BusRouteTestPage() {
   const [calcError, setCalcError] = useState<string | null>(null);
 
   const [hydrated, setHydrated] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load persisted mock setup once on mount.
+  // Load the shared mock setup once on mount -- from the server (a
+  // dedicated sheet tab), not localStorage, so every device opening this
+  // same link sees the same test data.
   useEffect(() => {
-    const persisted = loadPersisted();
-    if (persisted) {
-      setBranchInputs(persisted.branchInputs);
-      setBranchResolved(persisted.branchResolved);
-      setChildren(persisted.children);
-      setStartBranch(persisted.startBranch);
-      setEndBranch(persisted.endBranch);
-      setStopAtOtherBranch(persisted.stopAtOtherBranch);
-    }
-    setHydrated(true);
+    let cancelled = false;
+    loadPersisted().then((persisted) => {
+      if (cancelled) return;
+      if (persisted) {
+        setBranchInputs(persisted.branchInputs);
+        setBranchResolved(persisted.branchResolved);
+        setChildren(persisted.children);
+        setStartBranch(persisted.startBranch);
+        setEndBranch(persisted.endBranch);
+        setStopAtOtherBranch(persisted.stopAtOtherBranch);
+      }
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Persist on every change (after initial hydration, so we don't
-  // immediately overwrite a just-loaded save with the pre-load defaults).
+  // Save shortly after any change (after initial hydration, so we don't
+  // immediately overwrite a just-loaded save with the pre-load defaults,
+  // and debounced so typing in an address input doesn't fire a Sheets
+  // write on every keystroke).
   useEffect(() => {
     if (!hydrated) return;
-    savePersisted({ branchInputs, branchResolved, children, startBranch, endBranch, stopAtOtherBranch });
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSyncing(true);
+    saveTimerRef.current = setTimeout(() => {
+      savePersisted({
+        branchInputs,
+        branchResolved,
+        children,
+        startBranch,
+        endBranch,
+        stopAtOtherBranch,
+      }).finally(() => setSyncing(false));
+    }, 800);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
   }, [hydrated, branchInputs, branchResolved, children, startBranch, endBranch, stopAtOtherBranch]);
 
   async function handleLookupBranch(branch: Branch) {
@@ -310,6 +345,13 @@ export default function BusRouteTestPage() {
         <p className="text-xs text-gray-400">
           Bus route optimization prototype — mock data only, nothing here is saved to the real
           student roster
+        </p>
+        <p className="text-xs text-gray-400">
+          {!hydrated
+            ? "読み込み中... / Loading..."
+            : syncing
+              ? "同期中... / Syncing..."
+              : "✓ 同期済み（全端末で共通）/ Synced (shared across every device)"}
         </p>
       </div>
 
