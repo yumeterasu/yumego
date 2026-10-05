@@ -276,6 +276,9 @@ export default function BusRouteTestPage() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<import("leaflet").Map | null>(null);
   const layerGroupRef = useRef<import("leaflet").LayerGroup | null>(null);
+  // Refs don't trigger re-renders, so the marker/route effect below needs
+  // this state flip to know the (async-created) map is actually ready.
+  const [mapReady, setMapReady] = useState(false);
 
   // The map <div> only exists once `result` is set (see the conditionally
   // rendered result section below) -- depend on that transition so this
@@ -294,9 +297,11 @@ export default function BusRouteTestPage() {
       }).addTo(map);
       mapRef.current = map;
       layerGroupRef.current = L.layerGroup().addTo(map);
+      setMapReady(true);
     });
     return () => {
       cancelled = true;
+      setMapReady(false);
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -336,7 +341,7 @@ export default function BusRouteTestPage() {
         map.fitBounds(bounds, { padding: [30, 30] });
       }
     });
-  }, [orderedStops, result]);
+  }, [orderedStops, result, mapReady]);
 
   return (
     <main className="min-h-screen p-4 sm:p-6 max-w-4xl mx-auto flex flex-col gap-6">
