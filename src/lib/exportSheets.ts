@@ -200,7 +200,7 @@ export function addMonthlySheet(
   sheet.columns = [
     { width: 4 },
     { width: 20 },
-    ...dayNumbers.map(() => ({ width: 5 })),
+    ...dayNumbers.map(() => ({ width: 7 })), // wide enough for "31(土)" etc. without wrapping
     { width: 5 },
     { width: 5 },
     { width: 20 },
