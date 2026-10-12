@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
     sheet.columns = [
       { width: 16 },
       { width: 6 },
-      ...dayNumbers.map(() => ({ width: 6 })),
+      ...dayNumbers.map(() => ({ width: 7 })), // wide enough for "31(土)" etc. without wrapping
       { width: 8 },
       { width: 9 },
       { width: 10 },

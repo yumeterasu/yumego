@@ -297,7 +297,7 @@ export function addAnnualSheet(
 
   sheet.columns = [
     { width: 20 },
-    ...FISCAL_MONTHS.map(() => ({ width: 9 })),
+    ...FISCAL_MONTHS.map(() => ({ width: 10 })), // margin for "12月(Dec)" etc. without wrapping
     { width: 10 },
     { width: 24 },
   ];
