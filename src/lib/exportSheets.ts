@@ -36,8 +36,12 @@ const STATUS_COLOR: Record<AttendanceStatus, string> = {
   suspended: "FF7E22CE",
 };
 
+// Matches the operator's own reference Google Sheet (名前(NAME)/Kosugi,
+// size 10) as closely as ExcelJS allows -- see addMonthlySheet.
+const BASE_FONT = { name: "Kosugi", size: 10 };
+
 function headerRowStyle(row: ExcelJS.Row) {
-  row.font = { bold: true };
+  row.font = { ...BASE_FONT, bold: true };
   row.eachCell((cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } };
     cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
@@ -106,7 +110,7 @@ export function addMonthlySheet(
   }
 
   const sheet = workbook.addWorksheet(sheetName, {
-    views: [{ state: "frozen", xSplit: 2, ySplit: 1 }],
+    views: [{ state: "frozen", xSplit: 2, ySplit: 2 }],
   });
 
   const checkHeaders = [
@@ -115,30 +119,59 @@ export function addMonthlySheet(
     checkLabels.check3Label || "チェック3",
   ];
 
-  const headerRowValues = [
+  // Two-row date header (day number over weekday), matching the reference
+  // Google Sheet -- narrow date columns only read cleanly split this way;
+  // the non-date columns (#, 名前, 出, 欠, ...) are vertically merged across
+  // both rows below so their labels still read as a single header cell.
+  const totalCols = numDays + 9;
+  const headerRow1Values = [
     "#",
     "名前",
-    ...dayNumbers.map((d) => `${d}(${WEEKDAY_LABELS[new Date(year, month - 1, d).getDay()]})`),
+    ...dayNumbers.map((d) => String(d).padStart(2, "0")),
     "出",
     "欠",
     "欠席理由",
     ...checkHeaders,
     "備考",
   ];
-  const headerRow = sheet.addRow(headerRowValues);
-  headerRowStyle(headerRow);
-  headerRow.eachCell((cell, colNumber) => {
-    // day columns start at index 3 (1-based colNumber 3..3+numDays-1)
-    const dayIdx = colNumber - 3;
-    if (dayIdx >= 0 && dayIdx < dayNumbers.length) {
-      const day = dayNumbers[dayIdx];
-      const dow = new Date(year, month - 1, day).getDay();
-      if (dow === 0 || dow === 6) {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF0DC" } };
-        cell.font = { bold: true, color: { argb: "FFC2410C" } };
+  const headerRow2Values = [
+    "",
+    "",
+    ...dayNumbers.map((d) => WEEKDAY_LABELS[new Date(year, month - 1, d).getDay()]),
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ];
+  const headerRow1 = sheet.addRow(headerRow1Values);
+  const headerRow2 = sheet.addRow(headerRow2Values);
+  headerRowStyle(headerRow1);
+  headerRowStyle(headerRow2);
+
+  [headerRow1, headerRow2].forEach((hRow) => {
+    hRow.eachCell((cell, colNumber) => {
+      // day columns start at index 3 (1-based colNumber 3..3+numDays-1)
+      const dayIdx = colNumber - 3;
+      if (dayIdx >= 0 && dayIdx < dayNumbers.length) {
+        const day = dayNumbers[dayIdx];
+        const dow = new Date(year, month - 1, day).getDay();
+        if (dow === 0 || dow === 6) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF0DC" } };
+          cell.font = { ...BASE_FONT, bold: true, color: { argb: "FFC2410C" } };
+        }
       }
-    }
+    });
   });
+
+  // #, 名前, 出, 欠, 欠席理由, チェック1-3, 備考 -- every non-date column --
+  // span both header rows as one merged cell.
+  const nonDateCols = [1, 2, 3 + numDays, 4 + numDays, 5 + numDays, 6 + numDays, 7 + numDays, 8 + numDays, 9 + numDays];
+  for (const col of nonDateCols) {
+    sheet.mergeCells(headerRow1.number, col, headerRow2.number, col);
+  }
 
   const countsAsPresent = (status: AttendanceStatus) =>
     status === "present" || status === "late" || status === "early_leave";
@@ -181,26 +214,33 @@ export function addMonthlySheet(
       s.remark ?? "",
     ];
     const row = sheet.addRow(rowValues);
+    row.font = BASE_FONT;
     row.getCell(2).alignment = { wrapText: true, vertical: "middle" };
 
     dayNumbers.forEach((day, idx) => {
       const status = dayMap.get(day);
       const cell = row.getCell(3 + idx);
       cell.alignment = { horizontal: "center", vertical: "middle" };
-      if (status) {
-        cell.font = { bold: true, color: { argb: STATUS_COLOR[status] } };
-      }
       const dow = new Date(year, month - 1, day).getDay();
-      if ((dow === 0 || dow === 6) && !status) {
+      // Weekend columns are tinted top-to-bottom regardless of whether a
+      // status was entered -- matches the reference sheet's continuous
+      // column shading, not just a blank-cell highlight.
+      if (dow === 0 || dow === 6) {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF7ED" } };
       }
+      cell.font = status
+        ? { ...BASE_FONT, bold: true, color: { argb: STATUS_COLOR[status] } }
+        : BASE_FONT;
     });
   });
 
   sheet.columns = [
     { width: 4 },
     { width: 20 },
-    ...dayNumbers.map(() => ({ width: 7 })), // wide enough for "31(土)" etc. without wrapping
+    // Narrow, matching the reference sheet's compact date columns -- safe
+    // now that the day number and weekday are on their own header rows
+    // instead of sharing one cell (see the "31(土)" wrapping fix history).
+    ...dayNumbers.map(() => ({ width: 3.5 })),
     { width: 5 },
     { width: 5 },
     { width: 20 },
@@ -210,7 +250,7 @@ export function addMonthlySheet(
     { width: 24 },
   ];
 
-  applyGridBorders(sheet, headerRowValues.length);
+  applyGridBorders(sheet, totalCols);
 
   return sheet;
 }
