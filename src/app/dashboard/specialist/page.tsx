@@ -15,6 +15,12 @@ import type { AttendanceStatus, SpecialistCategory } from "@/lib/sheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const GRADES: GradeShort[] = ["長", "中", "少"];
+// 最 is a 4th, always-manual row shown alongside the 3 real grades — not
+// tied to any class/roster/attendance, so it's deliberately kept out of
+// GRADES itself (which drives the real-attendance fetch and auto-fill
+// queue below) and only added into ROWS for rendering/totals.
+type Row = GradeShort | "最";
+const ROWS: Row[] = [...GRADES, "最"];
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
@@ -360,7 +366,7 @@ export default function SpecialistCoachPage() {
 
   async function commitCount(
     categoryId: string,
-    grade: GradeShort,
+    grade: Row,
     date: string,
     rawValue: string,
     total: number
@@ -486,7 +492,7 @@ export default function SpecialistCoachPage() {
     // from 年中/年少 of the same branch, not just this screen.
     if (
       !window.confirm(
-        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少すべてから消えます（他の学年の画面からも見えなくなります）。過去の記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少 (other grades will no longer see it either). Past records stay in the sheet but will be hidden.`
+        `「${name}」を削除しますか？\n\n${branch}の年長・年中・年少・最すべてから消えます（他の学年の画面からも見えなくなります）。過去の記録はシート上に残りますが、非表示になります。\n\nDelete "${name}"? This removes it from all of ${branch}'s 長/中/少/最 (other grades will no longer see it either). Past records stay in the sheet but will be hidden.`
       )
     ) {
       return;
@@ -516,10 +522,10 @@ export default function SpecialistCoachPage() {
           <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
           <p className="text-xs text-gray-400">{branch} Specialist Coach</p>
           <p className="text-sm text-gray-500 print:hidden">
-            編集できるのは{branch}の全学年です。チェックした日だけ人数を入力できます
+            編集できるのは{branch}の全学年です。チェックした日だけ人数を入力できます。「最」の行はチェック不要で、どの日でも自由に入力できます
             <span className="block text-xs">
               All {branch} grades are editable. The count can only be entered on days that
-              are checked
+              are checked — except &quot;最&quot;, which can be entered freely on any day
             </span>
           </p>
         </div>
@@ -673,8 +679,8 @@ export default function SpecialistCoachPage() {
                   // now live-editable, so draftCounts (populated for all
                   // three at load, kept current as any row is edited) is
                   // always the right source -- no grade is a special case.
-                  const gradeCountTotals: Record<GradeShort, number> = { 長: 0, 中: 0, 少: 0 };
-                  for (const g of GRADES) {
+                  const gradeCountTotals: Record<Row, number> = { 長: 0, 中: 0, 少: 0, 最: 0 };
+                  for (const g of ROWS) {
                     for (const day of dayNumbers) {
                       const date = `${year}-${pad2(month)}-${pad2(day)}`;
                       const key = cellKey(c.categoryId, g, date);
@@ -682,18 +688,27 @@ export default function SpecialistCoachPage() {
                       if (draft !== "") gradeCountTotals[g] += Number(draft) || 0;
                     }
                   }
-                  const categoryCountTotal = GRADES.reduce(
+                  const categoryCountTotal = ROWS.reduce(
                     (sum, g) => sum + gradeCountTotals[g],
                     0
                   );
 
                   return (
                     <Fragment key={c.categoryId}>
-                      {GRADES.map((g, gi) => {
+                      {ROWS.map((g, gi) => {
                         const isMine = g === myGrade;
                         const key = cellKey(c.categoryId, g);
                         const dates = checkedDates[key] ?? new Set<string>();
-                        const daysCount = dates.size;
+                        // 最 has no "checked" concept -- count days with a
+                        // manually-entered number instead, so 回数 still
+                        // means something for this row.
+                        const daysCount =
+                          g === "最"
+                            ? dayNumbers.filter((day) => {
+                                const date = `${year}-${pad2(month)}-${pad2(day)}`;
+                                return (draftCounts[cellKey(c.categoryId, g, date)] ?? "") !== "";
+                              }).length
+                            : dates.size;
                         const countTotal = gradeCountTotals[g];
                         return (
                           <tr
@@ -702,7 +717,7 @@ export default function SpecialistCoachPage() {
                           >
                             {gi === 0 && (
                               <td
-                                rowSpan={GRADES.length}
+                                rowSpan={ROWS.length}
                                 className={`sticky left-0 border border-gray-300 px-2 py-1 whitespace-nowrap align-top ${
                                   zebra ? "bg-gray-50" : "bg-white"
                                 }`}
@@ -745,12 +760,47 @@ export default function SpecialistCoachPage() {
                               const date = `${year}-${pad2(month)}-${pad2(day)}`;
                               const dow = new Date(year, month - 1, day).getDay();
                               const isWeekend = dow === 0 || dow === 6;
-                              const isChecked = dates.has(date);
-                              const total = presentTotals[g]?.[date] ?? 0;
                               const countKey = cellKey(c.categoryId, g, date);
                               const isBusy = busyCellKey === countKey;
-
                               const draft = draftCounts[countKey] ?? "";
+
+                              // 最 has no roster/attendance behind it, so it
+                              // skips the checkbox entirely — always a free,
+                              // uncapped number entry, any date.
+                              if (g === "最") {
+                                return (
+                                  <td
+                                    key={day}
+                                    className={`text-center border border-gray-300 py-1 ${
+                                      isWeekend ? "bg-orange-50/60" : ""
+                                    }`}
+                                  >
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={draft}
+                                      disabled={isBusy}
+                                      placeholder="-"
+                                      onChange={(e) =>
+                                        setDraftCounts((prev) => ({
+                                          ...prev,
+                                          [countKey]: e.target.value,
+                                        }))
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") e.currentTarget.blur();
+                                      }}
+                                      onBlur={(e) =>
+                                        commitCount(c.categoryId, g, date, e.target.value, Infinity)
+                                      }
+                                      className="w-6 bg-transparent text-center text-xs font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    />
+                                  </td>
+                                );
+                              }
+
+                              const isChecked = dates.has(date);
+                              const total = presentTotals[g]?.[date] ?? 0;
                               // Deliberately also disabled when total===0 (no
                               // 出席 recorded for this class/date yet) — the
                               // headcount is "participants out of kids
@@ -821,7 +871,7 @@ export default function SpecialistCoachPage() {
                             </td>
                             {gi === 0 && (
                               <td
-                                rowSpan={GRADES.length}
+                                rowSpan={ROWS.length}
                                 className="text-center border border-gray-300 font-bold text-emerald-800 bg-emerald-50 align-middle"
                               >
                                 {categoryCountTotal > 0 ? categoryCountTotal : ""}

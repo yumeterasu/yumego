@@ -44,17 +44,26 @@ export async function GET(req: NextRequest) {
   const branchGrade = classNameToBranchGrade(className);
 
   try {
-    const [activeStudents, allAttendance, categories, schedule, headcount] = await Promise.all([
-      getStudentsByClass(className),
-      getAllAttendanceForClass(className),
-      branchGrade ? getSpecialistCategories(branchGrade.branch) : Promise.resolve([]),
-      branchGrade
-        ? getAllSpecialistAttendanceForGrade(branchGrade.branch, branchGrade.grade)
-        : Promise.resolve([]),
-      branchGrade
-        ? getAllSpecialistParticipationForGrade(branchGrade.branch, branchGrade.grade)
-        : Promise.resolve([]),
-    ]);
+    const [activeStudents, allAttendance, categories, schedule, headcount, extraHeadcount] =
+      await Promise.all([
+        getStudentsByClass(className),
+        getAllAttendanceForClass(className),
+        branchGrade ? getSpecialistCategories(branchGrade.branch) : Promise.resolve([]),
+        branchGrade
+          ? getAllSpecialistAttendanceForGrade(branchGrade.branch, branchGrade.grade)
+          : Promise.resolve([]),
+        branchGrade
+          ? getAllSpecialistParticipationForGrade(branchGrade.branch, branchGrade.grade)
+          : Promise.resolve([]),
+        // 最 is a 4th, branch-wide (not grade-specific) row on the
+        // specialist page -- include it in every grade's backup so it's
+        // never missed, but it's never auto-deleted by Reset (see
+        // students/reset/route.ts): the other grades in this branch may
+        // still be actively using it.
+        branchGrade
+          ? getAllSpecialistParticipationForGrade(branchGrade.branch, "最")
+          : Promise.resolve([]),
+      ]);
 
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
 
@@ -135,6 +144,20 @@ export async function GET(req: NextRequest) {
         headcountSheet.addRow([r.date, categoryNameById.get(r.categoryId) ?? r.categoryId, r.count]);
       });
       headcountSheet.columns = [{ width: 12 }, { width: 20 }, { width: 8 }];
+
+      // 最 is shared across all 3 grades of this branch, not owned by this
+      // class alone -- snapshot it here too so it's never missing from a
+      // backup, even though Reset itself leaves it untouched.
+      const extraHeadcountSheet = workbook.addWorksheet("コーチ人数（最）");
+      headerRowStyle(extraHeadcountSheet.addRow(["日付", "種目", "人数"]));
+      extraHeadcount.forEach((r) => {
+        extraHeadcountSheet.addRow([
+          r.date,
+          categoryNameById.get(r.categoryId) ?? r.categoryId,
+          r.count,
+        ]);
+      });
+      extraHeadcountSheet.columns = [{ width: 12 }, { width: 20 }, { width: 8 }];
     }
 
     const buffer = await workbook.xlsx.writeBuffer();

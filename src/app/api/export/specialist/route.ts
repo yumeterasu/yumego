@@ -8,7 +8,7 @@ import {
 import { applyGridBorders } from "@/lib/exportSheets";
 
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
-const GRADES = ["長", "中", "少"] as const;
+const GRADES = ["長", "中", "少", "最"] as const;
 
 function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
     categories.forEach((cat) => {
       const categoryStartRow = rowNum + 1;
 
-      const gradeCountTotals: Record<string, number> = { 長: 0, 中: 0, 少: 0 };
+      const gradeCountTotals: Record<string, number> = { 長: 0, 中: 0, 少: 0, 最: 0 };
 
       GRADES.forEach((grade) => {
         const key = `${cat.categoryId}|${grade}`;
