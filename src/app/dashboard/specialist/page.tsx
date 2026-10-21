@@ -171,22 +171,24 @@ export default function SpecialistCoachPage() {
       // awaited so it never delays the loading spinner; paced (not all at
       // once) to stay under quota, same as 期間で登録's bulk writes
       // elsewhere; each cell updates in place as its own request resolves.
-      const myGradeTotals = totals[myGrade] ?? {};
-      const toFill: { categoryId: string; date: string; total: number }[] = [];
-      for (const c of loadedCategories) {
-        const dates = next[cellKey(c.categoryId, myGrade)];
-        if (!dates) continue;
-        for (const date of dates) {
-          const total = myGradeTotals[date] ?? 0;
-          if (total <= 0) continue;
-          const key = cellKey(c.categoryId, myGrade, date);
-          if (saved[key] !== undefined) continue;
-          toFill.push({ categoryId: c.categoryId, date, total });
+      const toFill: { categoryId: string; grade: GradeShort; date: string; total: number }[] = [];
+      for (const grade of GRADES) {
+        const gradeTotals = totals[grade] ?? {};
+        for (const c of loadedCategories) {
+          const dates = next[cellKey(c.categoryId, grade)];
+          if (!dates) continue;
+          for (const date of dates) {
+            const total = gradeTotals[date] ?? 0;
+            if (total <= 0) continue;
+            const key = cellKey(c.categoryId, grade, date);
+            if (saved[key] !== undefined) continue;
+            toFill.push({ categoryId: c.categoryId, grade, date, total });
+          }
         }
       }
       (async () => {
-        for (const { categoryId, date, total } of toFill) {
-          await autoFillDefaultCount(categoryId, date, total);
+        for (const { categoryId, grade, date, total } of toFill) {
+          await autoFillDefaultCount(categoryId, grade, date, total);
           await sleep(250); // pace requests to stay under quota
         }
       })();
@@ -234,14 +236,19 @@ export default function SpecialistCoachPage() {
   // dialog and no visible error on failure (best-effort; a still-missing
   // count just gets picked up again on the next load). Never overwrites an
   // already-saved count -- callers only invoke this when one doesn't exist.
-  async function autoFillDefaultCount(categoryId: string, date: string, total: number) {
-    const key = cellKey(categoryId, myGrade, date);
+  async function autoFillDefaultCount(
+    categoryId: string,
+    grade: GradeShort,
+    date: string,
+    total: number
+  ) {
+    const key = cellKey(categoryId, grade, date);
     setDraftCounts((prev) => ({ ...prev, [key]: String(total) }));
     try {
       const res = await fetch("/api/specialist/participation", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch, categoryId, grade: myGrade, date, count: total }),
+        body: JSON.stringify({ branch, categoryId, grade, date, count: total }),
       });
       if (!res.ok) throw new Error("failed");
       savedCountsRef.current[key] = total;
@@ -250,9 +257,9 @@ export default function SpecialistCoachPage() {
     }
   }
 
-  async function toggleChecked(categoryId: string, date: string) {
-    const key = cellKey(categoryId, myGrade);
-    const countKey = cellKey(categoryId, myGrade, date);
+  async function toggleChecked(categoryId: string, grade: GradeShort, date: string) {
+    const key = cellKey(categoryId, grade);
+    const countKey = cellKey(categoryId, grade, date);
     const isChecked = checkedDates[key]?.has(date) ?? false;
     const next = !isChecked;
     const existingCount = savedCountsRef.current[countKey];
@@ -300,7 +307,7 @@ export default function SpecialistCoachPage() {
       const attendanceRes = await fetch("/api/specialist/attendance", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch, categoryId, grade: myGrade, date, checked: next }),
+        body: JSON.stringify({ branch, categoryId, grade, date, checked: next }),
       });
       if (!attendanceRes.ok) throw new Error("failed");
     } catch {
@@ -331,7 +338,7 @@ export default function SpecialistCoachPage() {
         const participationRes = await fetch("/api/specialist/participation", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ branch, categoryId, grade: myGrade, date, count: null }),
+          body: JSON.stringify({ branch, categoryId, grade, date, count: null }),
         });
         if (!participationRes.ok) throw new Error("failed");
         delete savedCountsRef.current[countKey];
@@ -345,14 +352,20 @@ export default function SpecialistCoachPage() {
     // straight to "everyone" (see autoFillDefaultCount) instead of leaving
     // it blank for the teacher to type in every time.
     if (next && existingCount === undefined) {
-      const total = presentTotals[myGrade]?.[date] ?? 0;
-      if (total > 0) await autoFillDefaultCount(categoryId, date, total);
+      const total = presentTotals[grade]?.[date] ?? 0;
+      if (total > 0) await autoFillDefaultCount(categoryId, grade, date, total);
     }
     setBusyCellKey(null);
   }
 
-  async function commitCount(categoryId: string, date: string, rawValue: string, total: number) {
-    const key = cellKey(categoryId, myGrade, date);
+  async function commitCount(
+    categoryId: string,
+    grade: GradeShort,
+    date: string,
+    rawValue: string,
+    total: number
+  ) {
+    const key = cellKey(categoryId, grade, date);
     const original = savedCountsRef.current[key];
 
     const trimmed = rawValue.trim();
@@ -397,7 +410,7 @@ export default function SpecialistCoachPage() {
       const res = await fetch("/api/specialist/participation", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch, categoryId, grade: myGrade, date, count: parsed }),
+        body: JSON.stringify({ branch, categoryId, grade, date, count: parsed }),
       });
       if (!res.ok) throw new Error("failed");
       if (parsed === null) {
@@ -503,10 +516,10 @@ export default function SpecialistCoachPage() {
           <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
           <p className="text-xs text-gray-400">{branch} Specialist Coach</p>
           <p className="text-sm text-gray-500 print:hidden">
-            編集できるのは{myGrade}の行だけです（{selectedClass}）。チェックした日だけ人数を入力できます
+            編集できるのは{branch}の全学年です。チェックした日だけ人数を入力できます
             <span className="block text-xs">
-              Only the {myGrade} row is editable ({selectedClass}). The count can only be
-              entered on days that are checked
+              All {branch} grades are editable. The count can only be entered on days that
+              are checked
             </span>
           </p>
         </div>
@@ -655,20 +668,18 @@ export default function SpecialistCoachPage() {
                   const zebra = ci % 2 === 1;
 
                   // Precompute each grade's monthly participant total up
-                  // front (not just "my" grade) so they can be summed into
-                  // a single combined 長+中+少 total for this category alone.
+                  // front so they can be summed into a single combined
+                  // 長+中+少 total for this category alone. Every grade is
+                  // now live-editable, so draftCounts (populated for all
+                  // three at load, kept current as any row is edited) is
+                  // always the right source -- no grade is a special case.
                   const gradeCountTotals: Record<GradeShort, number> = { 長: 0, 中: 0, 少: 0 };
                   for (const g of GRADES) {
                     for (const day of dayNumbers) {
                       const date = `${year}-${pad2(month)}-${pad2(day)}`;
                       const key = cellKey(c.categoryId, g, date);
-                      if (g === myGrade) {
-                        const draft = draftCounts[key] ?? "";
-                        if (draft !== "") gradeCountTotals[g] += Number(draft) || 0;
-                      } else {
-                        const saved = savedCountsRef.current[key];
-                        if (saved !== undefined) gradeCountTotals[g] += saved;
-                      }
+                      const draft = draftCounts[key] ?? "";
+                      if (draft !== "") gradeCountTotals[g] += Number(draft) || 0;
                     }
                   }
                   const categoryCountTotal = GRADES.reduce(
@@ -739,32 +750,6 @@ export default function SpecialistCoachPage() {
                               const countKey = cellKey(c.categoryId, g, date);
                               const isBusy = busyCellKey === countKey;
 
-                              if (!isMine) {
-                                const saved = savedCountsRef.current[countKey];
-                                return (
-                                  <td
-                                    key={day}
-                                    className={`text-center border border-gray-300 py-1 ${
-                                      isWeekend ? "bg-orange-50/40" : ""
-                                    }`}
-                                  >
-                                    <div className="flex flex-col items-center gap-0.5 opacity-70">
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        disabled
-                                        className="w-3.5 h-3.5 accent-gray-300 cursor-not-allowed"
-                                      />
-                                      {isChecked && (
-                                        <span className="text-xs text-gray-400">
-                                          {saved !== undefined ? saved : ""}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                );
-                              }
-
                               const draft = draftCounts[countKey] ?? "";
                               // Deliberately also disabled when total===0 (no
                               // 出席 recorded for this class/date yet) — the
@@ -785,7 +770,7 @@ export default function SpecialistCoachPage() {
                                       type="checkbox"
                                       checked={isChecked}
                                       disabled={isBusy}
-                                      onChange={() => toggleChecked(c.categoryId, date)}
+                                      onChange={() => toggleChecked(c.categoryId, g, date)}
                                       className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
                                     />
                                     {isChecked && (
@@ -807,7 +792,7 @@ export default function SpecialistCoachPage() {
                                             if (e.key === "Enter") e.currentTarget.blur();
                                           }}
                                           onBlur={(e) =>
-                                            commitCount(c.categoryId, date, e.target.value, total)
+                                            commitCount(c.categoryId, g, date, e.target.value, total)
                                           }
                                           className="w-6 bg-transparent text-right text-xs font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         />
