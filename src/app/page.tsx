@@ -14,6 +14,7 @@ import {
   isClassColorKey,
 } from "@/lib/classColors";
 import type { OutingLog } from "@/lib/sheets";
+import { pm25Level } from "@/lib/pm25";
 
 // A departure not yet marked back after this long gets flagged on this
 // page -- staff land here first, so a forgotten check-in surfaces here
@@ -83,6 +84,19 @@ export default function Home() {
   useEffect(() => {
     loadSummary(selectedDate);
   }, [selectedDate, loadSummary]);
+
+  const [airQuality, setAirQuality] = useState<{ pm25: number } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/air-quality")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.pm25 === "number") setAirQuality({ pm25: data.pm25 });
+      })
+      .catch(() => {
+        // non-fatal -- the indicator just doesn't render if this fails
+      });
+  }, []);
 
   const [overdueOutings, setOverdueOutings] = useState<OutingLog[]>([]);
 
@@ -166,6 +180,29 @@ export default function Home() {
         ⚙ 管理
         <span className="block text-[9px] font-normal opacity-70">Management</span>
       </Link>
+
+      {/* PM2.5 -- a single Bangkok-wide reading (プロンポン/トンロー are only
+          a few km apart), color-coded by severity so it reads at a glance
+          without needing to parse the number. Silently absent if the fetch
+          hasn't resolved/failed -- not core functionality. */}
+      {airQuality && (
+        <div
+          className={`w-full max-w-md rounded-2xl border px-5 py-3 text-center ${pm25Level(airQuality.pm25).bgClass} ${pm25Level(airQuality.pm25).borderClass}`}
+        >
+          <div className="flex items-center justify-center gap-2">
+            <span className={`w-3.5 h-3.5 rounded-full ${pm25Level(airQuality.pm25).dotClass}`} />
+            <span className="text-sm font-bold">
+              PM2.5 {airQuality.pm25} µg/m³
+            </span>
+            <span className={`text-xs font-bold rounded-full px-3 py-0.5 ${pm25Level(airQuality.pm25).bgClass} ${pm25Level(airQuality.pm25).textClass}`}>
+              {pm25Level(airQuality.pm25).labelJa} / {pm25Level(airQuality.pm25).labelEn}
+            </span>
+          </div>
+          <p className="text-[10px] text-gray-400 mt-0.5">
+            この日の大気質（バンコク基準） · Air quality (Bangkok PCD scale)
+          </p>
+        </div>
+      )}
 
       {/* Date picker -- topmost, shared by both branches (used for the 出席
           count badges below). "今日に戻る" is absolutely positioned below
