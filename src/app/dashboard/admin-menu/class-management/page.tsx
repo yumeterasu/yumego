@@ -16,7 +16,14 @@ import { SkeletonBlock } from "@/components/Skeleton";
 const UNSET_TEACHER = "__unset__";
 
 type Branch = "プロンポン" | "トンロー";
-type Editing = { id: string | null; branch: Branch; suffix: string; nameEn: string };
+type ClassKind = "roster" | "headcount";
+type Editing = {
+  id: string | null;
+  branch: Branch;
+  suffix: string;
+  nameEn: string;
+  kind: ClassKind;
+};
 
 export default function ClassManagementPage() {
   const { enNames: extraClassEnNames } = useExtraClasses();
@@ -181,10 +188,10 @@ export default function ClassManagementPage() {
   }
 
   function openAdd() {
-    setEditing({ id: null, branch: "プロンポン", suffix: "", nameEn: "" });
+    setEditing({ id: null, branch: "プロンポン", suffix: "", nameEn: "", kind: "roster" });
   }
   function openEdit(c: ExtraClass) {
-    setEditing({ id: c.id, branch: c.branch, suffix: c.suffix, nameEn: c.nameEn });
+    setEditing({ id: c.id, branch: c.branch, suffix: c.suffix, nameEn: c.nameEn, kind: c.kind });
   }
 
   async function saveEditing() {
@@ -200,6 +207,7 @@ export default function ClassManagementPage() {
             branch: editing.branch,
             suffix: editing.suffix.trim(),
             nameEn: editing.nameEn.trim(),
+            kind: editing.kind,
           }),
         });
         if (!res.ok) throw new Error("failed");
@@ -212,6 +220,7 @@ export default function ClassManagementPage() {
             suffix: editing.suffix.trim(),
             nameEn: editing.nameEn.trim(),
             active: true,
+            kind: editing.kind,
           },
         ]);
       } else {
@@ -393,6 +402,11 @@ export default function ClassManagementPage() {
                         >
                           {c.active ? "有効 / Active" : "無効（非表示） / Inactive"}
                         </span>
+                        {c.kind === "headcount" && (
+                          <span className="inline-block mt-1 ml-1 text-[10px] px-2 py-0.5 rounded-full border bg-purple-50 text-purple-700 border-purple-300">
+                            人数のみ / Headcount only
+                          </span>
+                        )}
                       </div>
                       {confirmDeactivateId === c.id ? (
                         <div className="flex flex-col gap-1 items-end shrink-0">
@@ -525,6 +539,43 @@ export default function ClassManagementPage() {
                   校舎は作成後に変更できません / Branch can't be changed after creation
                 </p>
               )}
+            </div>
+            <div className="flex flex-col gap-1 text-sm">
+              記録方法
+              <span className="text-xs font-normal text-gray-500">Record type</span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={editing.id !== null}
+                  onClick={() => setEditing({ ...editing, kind: "roster" })}
+                  className={`rounded-full border py-2 text-sm font-semibold disabled:opacity-50 ${
+                    editing.kind === "roster"
+                      ? "bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-500"
+                      : "bg-white border-gray-300 text-gray-500"
+                  }`}
+                >
+                  ロスターあり
+                  <span className="block text-[10px] font-normal">Roster</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={editing.id !== null}
+                  onClick={() => setEditing({ ...editing, kind: "headcount" })}
+                  className={`rounded-full border py-2 text-sm font-semibold disabled:opacity-50 ${
+                    editing.kind === "headcount"
+                      ? "bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-500"
+                      : "bg-white border-gray-300 text-gray-500"
+                  }`}
+                >
+                  人数のみ
+                  <span className="block text-[10px] font-normal">Headcount only</span>
+                </button>
+              </div>
+              <p className="text-[10px] text-gray-400">
+                {editing.id !== null
+                  ? "記録方法は作成後に変更できません / Record type can't be changed after creation"
+                  : "「人数のみ」は生徒登録なしで、日ごとの合計/出席/欠席の人数だけを記録します / \"Headcount only\" skips student registration — just daily total/present/absent numbers"}
+              </p>
             </div>
             <label className="flex flex-col gap-1 text-sm">
               クラス名（日本語）

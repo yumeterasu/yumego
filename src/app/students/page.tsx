@@ -904,6 +904,53 @@ export default function StudentsPage() {
 
   if (!loaded || !selectedClass) return null;
 
+  // ExtraClass.kind === "headcount" classes have no student roster at all —
+  // this whole page exists to manage one, so show a short explanation and
+  // bounce back instead of an empty-roster add-student form.
+  const isHeadcountClass =
+    activeClasses.find((c) => `${c.branch}　${c.suffix}` === selectedClass)?.kind ===
+    "headcount";
+  if (isHeadcountClass) {
+    return (
+      <main className="min-h-screen p-6 max-w-5xl mx-auto flex flex-col gap-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-xl font-bold">{selectedClass}｜生徒管理</h1>
+            <p className="text-xs text-gray-500">
+              {classNameToEnglish(selectedClass, extraClassEnNames)} · Student Management
+            </p>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <Link
+              href="/dashboard"
+              className="rounded-full bg-gray-100 text-gray-600 px-4 py-2.5 text-sm font-semibold"
+            >
+              ← 出席簿に戻る
+              <span className="block text-[10px] font-normal opacity-70">
+                Back to attendance
+              </span>
+            </Link>
+            <Link
+              href="/"
+              className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center shrink-0"
+              aria-label="トップページ / Home"
+            >
+              🏠
+            </Link>
+          </div>
+        </div>
+        <div className="border rounded-xl p-4">
+          <p className="text-gray-600 text-sm">
+            このクラスは人数のみの記録のため、生徒登録は不要です。
+            <span className="block text-xs text-gray-400 mt-1">
+              This class records headcounts only — no student roster is needed.
+            </span>
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   // Reset deletes Coach Schedule/Headcount by branch+grade, which only
   // exists for 長/中/少 classes — 小学生 has no grade row there, so hide
   // the button rather than let it fail on a class it can't ever resolve.

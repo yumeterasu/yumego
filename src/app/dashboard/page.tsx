@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useSelectedClass } from "@/hooks/useSelectedClass";
 import { useExtraClasses } from "@/hooks/useExtraClasses";
 import { classNameToBranchGrade, classNameToEnglish } from "@/lib/classes";
+import HeadcountDashboard from "./HeadcountDashboard";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import type { Student, AttendanceStatus, AbsenceReason } from "@/lib/sheets";
 import type { AbsenceBucket } from "@/lib/absenceReasons";
@@ -190,7 +191,15 @@ function sleep(ms: number) {
 export default function DashboardPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
-  const { enNames: extraClassEnNames } = useExtraClasses();
+  const { classes: extraClassList, enNames: extraClassEnNames } = useExtraClasses();
+
+  // ExtraClass.kind === "headcount" classes have no student roster at all —
+  // the whole grid/check-in UI below doesn't apply to them, so this page
+  // branches to a much simpler 3-number entry form instead (see the
+  // `isHeadcountClass` early return further down).
+  const isHeadcountClass =
+    extraClassList.find((c) => `${c.branch}　${c.suffix}` === selectedClass)?.kind ===
+    "headcount";
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -334,7 +343,7 @@ export default function DashboardPage() {
   const yearMonth = `${year}-${pad2(month)}`;
 
   const load = useCallback(async () => {
-    if (!selectedClass) return;
+    if (!selectedClass || isHeadcountClass) return;
     setLoading(true);
     setError(null);
     try {
@@ -415,7 +424,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedClass, yearMonth]);
+  }, [selectedClass, yearMonth, isHeadcountClass]);
 
   const refreshAttendancePendingCount = useCallback(() => {
     setAttendancePendingCount(getQueue().length);
@@ -1018,6 +1027,10 @@ export default function DashboardPage() {
   }
 
   if (!loaded || !selectedClass) return null;
+
+  if (isHeadcountClass) {
+    return <HeadcountDashboard className={selectedClass} extraClassEnNames={extraClassEnNames} />;
+  }
 
   // Eligible day count for the 期間で登録 confirmation screen -- recomputed
   // from current state each render, same as everything else below.

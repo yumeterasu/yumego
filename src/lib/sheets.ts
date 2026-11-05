@@ -11,7 +11,7 @@ const SHEET_ID = process.env.GOOGLE_SHEET_ID!;
 // call after that on the same warm instance skips it.
 let cachedSheetsClient: ReturnType<typeof google.sheets> | null = null;
 
-function getSheetsClient() {
+export function getSheetsClient() {
   if (cachedSheetsClient) return cachedSheetsClient;
 
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -760,9 +760,11 @@ export async function getAttendanceSummaryForDate(
   date: string // "2026-08-06"
 ): Promise<Record<string, number>> {
   const sheets = getSheetsClient();
-  const [attendanceRes, studentsRes] = await Promise.all([
+  const [attendanceRes, studentsRes, extraClassesRes, headcountRes] = await Promise.all([
     safeValuesGet(sheets,{ spreadsheetId: SHEET_ID, range: "Attendance!A2:F" }),
     safeValuesGet(sheets,{ spreadsheetId: SHEET_ID, range: "Students!A2:E" }),
+    safeValuesGet(sheets, { spreadsheetId: SHEET_ID, range: "ExtraClasses!A2:F" }),
+    safeValuesGet(sheets, { spreadsheetId: SHEET_ID, range: "HeadcountAttendance!A2:E" }),
   ]);
 
   // Only count rows for students still on the active roster — otherwise a
@@ -788,6 +790,26 @@ export async function getAttendanceSummaryForDate(
     const status = parseStatus((row[3] ?? "").toString());
     if (!(className in summary)) summary[className] = 0;
     if (countsAsPresent(status)) summary[className]++;
+  }
+
+  // Headcount-only classes (ExtraClass.kind === "headcount") have no
+  // Students/Attendance rows at all, so without this they'd permanently
+  // show as "not checked in" on the top page. Merge in that day's entered
+  // `present` value instead, same "missing = not checked in yet" contract
+  // as above (a class with no HeadcountAttendance row for this date is
+  // simply left out of `summary`).
+  const headcountClassNames = new Set(
+    (extraClassesRes.data.values ?? [])
+      .filter((row) => (row[5] ?? "").toString() === "headcount")
+      .map((row) => `${(row[1] ?? "").toString()}　${(row[2] ?? "").toString()}`)
+  );
+  for (const row of headcountRes.data.values ?? []) {
+    const rowDate = (row[0] ?? "").toString();
+    if (rowDate !== date) continue;
+    const className = (row[1] ?? "").toString();
+    if (!headcountClassNames.has(className)) continue;
+    const present = parseHeadcountCell(row[3]);
+    if (present !== null) summary[className] = present;
   }
 
   return summary;
@@ -2477,13 +2499,20 @@ export type ExtraClass = {
   suffix: string;
   nameEn: string;
   active: boolean;
+  // "roster" (default, column empty = roster) = normal per-student
+  // registration/attendance, same as every class until this field existed.
+  // "headcount" = no student roster at all; the class's own daily
+  // attendance is just three free-entry numbers (total/present/absent),
+  // see getHeadcountEntry/setHeadcountEntry below. Set at creation and
+  // treated as immutable by the UI (same as branch).
+  kind: "roster" | "headcount";
 };
 
 export async function getExtraClasses(): Promise<ExtraClass[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "ExtraClasses!A2:E",
+    range: "ExtraClasses!A2:F",
   });
   const rows = res.data.values ?? [];
   return rows
@@ -2495,6 +2524,9 @@ export async function getExtraClasses(): Promise<ExtraClass[]> {
       suffix: (row[2] ?? "").toString(),
       nameEn: (row[3] ?? "").toString(),
       active: (row[4] ?? "").toString().toUpperCase() !== "FALSE",
+      kind: ((row[5] ?? "").toString() === "headcount" ? "headcount" : "roster") as
+        | "roster"
+        | "headcount",
     }))
     .filter((c) => c.id && c.suffix);
 }
@@ -2503,10 +2535,12 @@ export async function addExtraClass(id: string, data: Omit<ExtraClass, "id">): P
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "ExtraClasses!A:E",
+    range: "ExtraClasses!A:F",
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[id, data.branch, data.suffix, data.nameEn, data.active ? "TRUE" : "FALSE"]],
+      values: [
+        [id, data.branch, data.suffix, data.nameEn, data.active ? "TRUE" : "FALSE", data.kind],
+      ],
     },
   });
 }
@@ -2518,7 +2552,7 @@ export async function updateExtraClass(
   const sheets = getSheetsClient();
   const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "ExtraClasses!A2:E",
+    range: "ExtraClasses!A2:F",
   });
   const rows = existing.data.values ?? [];
   const rowOffset = rows.findIndex((row) => (row[0] ?? "") === id);
@@ -2533,10 +2567,11 @@ export async function updateExtraClass(
     updates.suffix ?? (current[2] ?? ""),
     updates.nameEn ?? (current[3] ?? ""),
     nextActive ? "TRUE" : "FALSE",
+    updates.kind ?? (current[5] ?? "roster"),
   ];
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `ExtraClasses!A${rowNum}:E${rowNum}`,
+    range: `ExtraClasses!A${rowNum}:F${rowNum}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [merged] },
   });
@@ -2577,6 +2612,121 @@ export async function deleteExtraClass(id: string): Promise<void> {
           },
         },
       ],
+    },
+  });
+}
+
+// 人数のみ記録クラス (ExtraClass.kind === "headcount") の日次集計 — 生徒
+// 名簿を持たないクラス向け。1クラス・1日につき最大1行、
+// total/present/absent はそれぞれ独立入力・未入力可（null = 空セル）。
+// HeadcountAttendance!A:E — date, className, total, present, absent.
+export type HeadcountEntry = {
+  total: number | null;
+  present: number | null;
+  absent: number | null;
+};
+
+function parseHeadcountCell(v: unknown): number | null {
+  const s = (v ?? "").toString().trim();
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+export async function getHeadcountEntry(
+  className: string,
+  date: string
+): Promise<HeadcountEntry | null> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "HeadcountAttendance!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  const row = rows.find((r) => (r[0] ?? "") === date && (r[1] ?? "") === className);
+  if (!row) return null;
+  return {
+    total: parseHeadcountCell(row[2]),
+    present: parseHeadcountCell(row[3]),
+    absent: parseHeadcountCell(row[4]),
+  };
+}
+
+/**
+ * Update-or-append-or-delete-if-empty, same shape as
+ * setSpecialistParticipationCount. A row with all three fields null is
+ * removed entirely rather than kept as an empty row.
+ */
+export async function setHeadcountEntry(
+  className: string,
+  date: string,
+  entry: HeadcountEntry
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "HeadcountAttendance!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+  const matchingRowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[0] ?? "") === date && (row[1] ?? "") === className)
+    .map(({ rowNum }) => rowNum);
+
+  const isEmpty = entry.total === null && entry.present === null && entry.absent === null;
+
+  if (!isEmpty) {
+    const values = [
+      date,
+      className,
+      entry.total ?? "",
+      entry.present ?? "",
+      entry.absent ?? "",
+    ];
+    if (matchingRowNums.length > 0) {
+      const [keep, ...extra] = matchingRowNums;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `HeadcountAttendance!A${keep}:E${keep}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [values] },
+      });
+      if (extra.length > 0) {
+        const sheetId = await getSheetIdByTitle(sheets, "HeadcountAttendance");
+        extra.sort((a, b) => b - a);
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          requestBody: {
+            requests: extra.map((rowNum) => ({
+              deleteDimension: {
+                range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+              },
+            })),
+          },
+        });
+      }
+      return;
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "HeadcountAttendance!A:E",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [values] },
+    });
+    return;
+  }
+
+  if (matchingRowNums.length === 0) return;
+  const sheetId = await getSheetIdByTitle(sheets, "HeadcountAttendance");
+  matchingRowNums.sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: matchingRowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
     },
   });
 }

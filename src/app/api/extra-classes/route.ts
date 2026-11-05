@@ -16,23 +16,33 @@ export async function GET() {
   }
 }
 
-// POST /api/extra-classes  { branch, suffix, nameEn }
+// POST /api/extra-classes  { branch, suffix, nameEn, kind? }
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { branch, suffix, nameEn } = body ?? {};
+  const { branch, suffix, nameEn, kind } = body ?? {};
 
   if (
     (branch !== "プロンポン" && branch !== "トンロー") ||
     typeof suffix !== "string" ||
     !suffix.trim() ||
-    typeof nameEn !== "string"
+    typeof nameEn !== "string" ||
+    (kind !== undefined && kind !== "roster" && kind !== "headcount")
   ) {
-    return NextResponse.json({ error: "Missing or invalid branch/suffix/nameEn" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Missing or invalid branch/suffix/nameEn/kind" },
+      { status: 400 }
+    );
   }
 
   try {
     const id = randomUUID();
-    await addExtraClass(id, { branch, suffix: suffix.trim(), nameEn: nameEn.trim(), active: true });
+    await addExtraClass(id, {
+      branch,
+      suffix: suffix.trim(),
+      nameEn: nameEn.trim(),
+      active: true,
+      kind: kind === "headcount" ? "headcount" : "roster",
+    });
     return NextResponse.json({ id });
   } catch (err) {
     console.error(err);
@@ -41,6 +51,8 @@ export async function POST(req: NextRequest) {
 }
 
 // PATCH /api/extra-classes  { id, suffix?, nameEn?, active? }
+// `kind` is deliberately not accepted here — the UI treats it as immutable
+// after creation, same as `branch`.
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const { id, suffix, nameEn, active } = body ?? {};
