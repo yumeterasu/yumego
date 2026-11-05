@@ -57,6 +57,32 @@ async function safeValuesGet(
   }
 }
 
+/**
+ * Like safeValuesGet, but also tolerates the target TAB not existing at
+ * all (treated as empty) rather than throwing. Used only for
+ * HeadcountAttendance, a new tab that has to be created manually in the
+ * spreadsheet before the headcount-only class feature works — until then,
+ * reads should degrade to "no entries" instead of breaking unrelated
+ * features that merge this in for every date (e.g. the top-page daily
+ * badge). Writes (append/update/batchUpdate) are NOT wrapped with this —
+ * if the tab is genuinely missing, a save attempt should fail loudly
+ * since there's nowhere to actually write the data.
+ */
+async function safeValuesGetOptionalSheet(
+  sheets: ReturnType<typeof getSheetsClient>,
+  params: { spreadsheetId: string; range: string }
+): Promise<{ data: { values?: string[][] | null } }> {
+  try {
+    return await safeValuesGet(sheets, params);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/unable to parse range/i.test(message)) {
+      return { data: { values: [] } };
+    }
+    throw err;
+  }
+}
+
 async function getSheetIdByTitle(
   sheets: ReturnType<typeof getSheetsClient>,
   title: string
@@ -764,7 +790,7 @@ export async function getAttendanceSummaryForDate(
     safeValuesGet(sheets,{ spreadsheetId: SHEET_ID, range: "Attendance!A2:F" }),
     safeValuesGet(sheets,{ spreadsheetId: SHEET_ID, range: "Students!A2:E" }),
     safeValuesGet(sheets, { spreadsheetId: SHEET_ID, range: "ExtraClasses!A2:F" }),
-    safeValuesGet(sheets, { spreadsheetId: SHEET_ID, range: "HeadcountAttendance!A2:E" }),
+    safeValuesGetOptionalSheet(sheets, { spreadsheetId: SHEET_ID, range: "HeadcountAttendance!A2:E" }),
   ]);
 
   // Only count rows for students still on the active roster — otherwise a
@@ -2638,7 +2664,7 @@ export async function getHeadcountEntry(
   date: string
 ): Promise<HeadcountEntry | null> {
   const sheets = getSheetsClient();
-  const res = await safeValuesGet(sheets, {
+  const res = await safeValuesGetOptionalSheet(sheets, {
     spreadsheetId: SHEET_ID,
     range: "HeadcountAttendance!A2:E",
   });
@@ -2663,7 +2689,7 @@ export async function setHeadcountEntry(
   entry: HeadcountEntry
 ): Promise<void> {
   const sheets = getSheetsClient();
-  const existing = await safeValuesGet(sheets, {
+  const existing = await safeValuesGetOptionalSheet(sheets, {
     spreadsheetId: SHEET_ID,
     range: "HeadcountAttendance!A2:E",
   });
