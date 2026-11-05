@@ -2679,6 +2679,32 @@ export async function getHeadcountEntry(
 }
 
 /**
+ * Every day's `present` value for a class within a given month, keyed by
+ * full date -- only dates with a non-null present value are included (same
+ * "missing = not entered" contract as everywhere else in this file). Used
+ * to fill a whole month's grid in one read instead of one request per day.
+ */
+export async function getHeadcountForMonth(
+  className: string,
+  yearMonth: string // "2026-11"
+): Promise<Record<string, number>> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGetOptionalSheet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "HeadcountAttendance!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    const date = (row[0] ?? "").toString();
+    if ((row[1] ?? "").toString() !== className || !date.startsWith(yearMonth)) continue;
+    const present = parseHeadcountCell(row[3]);
+    if (present !== null) result[date] = present;
+  }
+  return result;
+}
+
+/**
  * Update-or-append-or-delete-if-empty, same shape as
  * setSpecialistParticipationCount. A row with all three fields null is
  * removed entirely rather than kept as an empty row.

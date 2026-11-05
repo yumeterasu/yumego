@@ -1,50 +1,40 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { classNameToEnglish } from "@/lib/classes";
 import { apiFetch, SessionExpiredError } from "@/lib/apiFetch";
 import { SkeletonBlock } from "@/components/Skeleton";
 
-type Field = "total" | "present" | "absent";
-
-const FIELD_LABELS: Record<Field, { ja: string; en: string }> = {
-  total: { ja: "全体人数", en: "Total" },
-  present: { ja: "出席", en: "Present" },
-  absent: { ja: "欠席", en: "Absent" },
-};
-
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
-function formatDate(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-}
-function todayDateString() {
-  return formatDate(new Date());
-}
-function addDays(dateStr: string, delta: number) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + delta);
-  return formatDate(dt);
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate(); // month is 1-based
 }
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
-function formatDateLabel(dateStr: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dow = new Date(y, m - 1, d).getDay();
-  return `${y}年${m}月${d}日(${WEEKDAY_LABELS[dow]})`;
+// Same weekend color convention as the normal grid (src/app/dashboard/page.tsx).
+function weekendHeaderClasses(dow: number): string {
+  if (dow === 0) return "bg-red-200 text-red-800";
+  if (dow === 6) return "bg-blue-200 text-blue-800";
+  return "bg-gray-50";
+}
+function weekendCellClasses(dow: number): string {
+  if (dow === 0) return "bg-red-100";
+  if (dow === 6) return "bg-blue-100";
+  return "";
 }
 
-type Entry = { total: number | null; present: number | null; absent: number | null };
-const EMPTY_ENTRY: Entry = { total: null, present: null, absent: null };
-
 /**
- * Daily attendance entry for an ExtraClass with kind === "headcount" — no
- * student roster exists for these classes, so instead of the usual
- * per-student grid/check-in overlay, the teacher just types three
- * independent numbers for the day. Mirrors the save flow (floor/validate,
- * confirm-on-change, revert-on-failure) already used for 専門コーチ's "最"
- * row free numeric entry (src/app/dashboard/specialist/page.tsx).
+ * Monthly attendance grid for an ExtraClass with kind === "headcount" — no
+ * student roster exists for these classes, so instead of per-student rows
+ * this renders a single "出席人数 / Present" row with one free numeric
+ * entry per day (any date, no locking), laid out exactly like the normal
+ * class's monthly grid (same day-column header/weekend colors). The
+ * rightmost column is a client-side sum of the month, not a separate
+ * input. Save flow (floor/validate, confirm-on-change, revert-on-failure)
+ * mirrors 専門コーチ's "最" row free numeric entry
+ * (src/app/dashboard/specialist/page.tsx).
  */
 export default function HeadcountDashboard({
   className,
@@ -53,31 +43,37 @@ export default function HeadcountDashboard({
   className: string;
   extraClassEnNames: Record<string, string>;
 }) {
-  const today = todayDateString();
-  const [date, setDate] = useState(today);
-  const savedRef = useRef<Entry>(EMPTY_ENTRY);
-  const [draft, setDraft] = useState<Record<Field, string>>({ total: "", present: "", absent: "" });
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1); // 1-based
+
+  // date ("YYYY-MM-DD") -> saved present count, only for days with a value.
+  const [entries, setEntries] = useState<Record<string, number>>({});
+  // day-of-month -> draft input string, always present for every day 1..N.
+  const [draft, setDraft] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [savingField, setSavingField] = useState<Field | null>(null);
+  const [savingDay, setSavingDay] = useState<number | null>(null);
+
+  const yearMonth = `${year}-${pad2(month)}`;
+  const numDays = daysInMonth(year, month);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    apiFetch(
-      `/api/attendance-headcount?class=${encodeURIComponent(className)}&date=${date}`
-    )
+    apiFetch(`/api/attendance-headcount?class=${encodeURIComponent(className)}&month=${yearMonth}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error("failed"))))
-      .then((data: { entry: Entry | null }) => {
+      .then((data: { entries: Record<string, number> }) => {
         if (cancelled) return;
-        const next = data.entry ?? EMPTY_ENTRY;
-        savedRef.current = next;
-        setDraft({
-          total: next.total === null ? "" : String(next.total),
-          present: next.present === null ? "" : String(next.present),
-          absent: next.absent === null ? "" : String(next.absent),
-        });
+        const next = data.entries ?? {};
+        setEntries(next);
+        const nextDraft: Record<number, string> = {};
+        for (let day = 1; day <= daysInMonth(year, month); day++) {
+          const date = `${yearMonth}-${pad2(day)}`;
+          nextDraft[day] = next[date] === undefined ? "" : String(next[date]);
+        }
+        setDraft(nextDraft);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -93,59 +89,86 @@ export default function HeadcountDashboard({
     return () => {
       cancelled = true;
     };
-  }, [className, date]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [className, yearMonth]);
 
-  async function commitField(field: Field, rawValue: string) {
-    const original = savedRef.current[field];
+  function goPrevMonth() {
+    if (month === 1) {
+      setYear((y) => y - 1);
+      setMonth(12);
+    } else {
+      setMonth((m) => m - 1);
+    }
+  }
+  function goNextMonth() {
+    if (month === 12) {
+      setYear((y) => y + 1);
+      setMonth(1);
+    } else {
+      setMonth((m) => m + 1);
+    }
+  }
+
+  async function commitDay(day: number, rawValue: string) {
+    const date = `${yearMonth}-${pad2(day)}`;
+    const original = entries[date] ?? null;
     const trimmed = rawValue.trim();
     let parsed: number | null = trimmed === "" ? null : Number(trimmed);
 
     if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
-      setDraft((prev) => ({ ...prev, [field]: original === null ? "" : String(original) }));
+      setDraft((prev) => ({ ...prev, [day]: original === null ? "" : String(original) }));
       return;
     }
     if (parsed !== null) parsed = Math.floor(parsed);
 
     if (parsed === original) {
-      setDraft((prev) => ({ ...prev, [field]: parsed === null ? "" : String(parsed) }));
+      setDraft((prev) => ({ ...prev, [day]: parsed === null ? "" : String(parsed) }));
       return;
     }
 
     // Number inputs misfire easily (scroll wheel, stray taps on the
     // up/down arrows) — confirm before actually writing a real change.
-    const label = FIELD_LABELS[field];
     const fromLabel = original === null ? "未入力" : String(original);
     const toLabel = parsed === null ? "未入力" : String(parsed);
     if (
       !window.confirm(
-        `${formatDateLabel(date)} の${label.ja}を ${fromLabel} → ${toLabel} に変更しますか？\nChange ${label.en} for ${formatDateLabel(
-          date
-        )} from ${fromLabel} to ${toLabel}?`
+        `${year}年${month}月${day}日 の出席人数を ${fromLabel} → ${toLabel} に変更しますか？\nChange the present count for ${year}-${pad2(
+          month
+        )}-${pad2(day)} from ${fromLabel} to ${toLabel}?`
       )
     ) {
-      setDraft((prev) => ({ ...prev, [field]: original === null ? "" : String(original) }));
+      setDraft((prev) => ({ ...prev, [day]: original === null ? "" : String(original) }));
       return;
     }
 
-    const nextEntry: Entry = { ...savedRef.current, [field]: parsed };
-    setSavingField(field);
+    setSavingDay(day);
     setError(null);
     try {
       const res = await fetch("/api/attendance-headcount", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ className, date, ...nextEntry }),
+        body: JSON.stringify({ className, date, total: null, present: parsed, absent: null }),
       });
       if (!res.ok) throw new Error("failed");
-      savedRef.current = nextEntry;
-      setDraft((prev) => ({ ...prev, [field]: parsed === null ? "" : String(parsed) }));
+      setEntries((prev) => {
+        const next = { ...prev };
+        if (parsed === null) delete next[date];
+        else next[date] = parsed;
+        return next;
+      });
+      setDraft((prev) => ({ ...prev, [day]: parsed === null ? "" : String(parsed) }));
     } catch {
       setError("保存に失敗しました / Failed to save");
-      setDraft((prev) => ({ ...prev, [field]: original === null ? "" : String(original) }));
+      setDraft((prev) => ({ ...prev, [day]: original === null ? "" : String(original) }));
     } finally {
-      setSavingField(null);
+      setSavingDay(null);
     }
   }
+
+  const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
+  const total = Object.entries(entries)
+    .filter(([date]) => date.startsWith(yearMonth))
+    .reduce((sum, [, count]) => sum + count, 0);
 
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
@@ -190,56 +213,87 @@ export default function HeadcountDashboard({
 
       <div className="flex items-center justify-center gap-4">
         <button
-          onClick={() => setDate((d) => addDays(d, -1))}
+          onClick={goPrevMonth}
           className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-          aria-label="前日 / Previous day"
+          aria-label="前の月 / Previous month"
         >
           ◀
         </button>
-        <div className="flex flex-col items-center">
-          <p className="text-lg font-bold w-48 text-center">{formatDateLabel(date)}</p>
-          <button
-            onClick={() => setDate(today)}
-            tabIndex={date === today ? -1 : 0}
-            className={`text-xs text-blue-600 underline ${date === today ? "invisible" : ""}`}
-          >
-            今日に戻る / Back to today
-          </button>
-        </div>
+        <p className="text-lg font-bold w-32 text-center">
+          {year}年{month}月
+        </p>
         <button
-          onClick={() => setDate((d) => addDays(d, 1))}
+          onClick={goNextMonth}
           className="rounded-full bg-gray-100 text-gray-600 w-9 h-9 flex items-center justify-center"
-          aria-label="翌日 / Next day"
+          aria-label="次の月 / Next month"
         >
           ▶
         </button>
       </div>
 
-      <div className="max-w-sm mx-auto w-full">
-        {loading ? (
-          <SkeletonBlock />
-        ) : (
-          <div className="border rounded-xl p-4 flex flex-col gap-4">
-            {(["total", "present", "absent"] as Field[]).map((field) => (
-              <label key={field} className="flex flex-col gap-1 text-sm">
-                {FIELD_LABELS[field].ja}
-                <span className="text-xs font-normal text-gray-500">{FIELD_LABELS[field].en}</span>
-                <input
-                  type="number"
-                  min={0}
-                  inputMode="numeric"
-                  value={draft[field]}
-                  disabled={savingField !== null}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, [field]: e.target.value }))}
-                  onBlur={(e) => commitField(field, e.target.value)}
-                  placeholder="未入力 / Not entered"
-                  className="border border-gray-300 rounded-lg px-3 py-2.5 text-lg font-semibold disabled:opacity-50"
-                />
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <SkeletonBlock />
+      ) : (
+        <div className="overflow-x-auto border border-gray-300 rounded-xl">
+          <table className="text-sm border-collapse min-w-max">
+            <thead>
+              <tr>
+                <th className="sticky left-0 bg-gray-100 border border-gray-300 px-3 py-1 text-left whitespace-nowrap z-10">
+                  出席人数
+                  <span className="block text-[9px] font-normal text-gray-400">Present</span>
+                </th>
+                {dayNumbers.map((day) => {
+                  const dow = new Date(year, month - 1, day).getDay();
+                  return (
+                    <th
+                      key={day}
+                      className={`border border-gray-300 px-2 py-1 text-center w-9 ${weekendHeaderClasses(dow)}`}
+                    >
+                      <div>{day}</div>
+                      <div className="text-[10px] font-normal">{WEEKDAY_LABELS[dow]}</div>
+                    </th>
+                  );
+                })}
+                <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-14">
+                  合計
+                  <span className="block text-[9px] font-normal">Total</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="sticky left-0 bg-white border border-gray-300 px-3 py-1 whitespace-nowrap">
+                  出席人数
+                  <span className="block text-[10px] text-gray-400">Present</span>
+                </td>
+                {dayNumbers.map((day) => {
+                  const dow = new Date(year, month - 1, day).getDay();
+                  return (
+                    <td
+                      key={day}
+                      className={`text-center border border-gray-300 p-0 ${weekendCellClasses(dow)}`}
+                    >
+                      <input
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        value={draft[day] ?? ""}
+                        disabled={savingDay !== null}
+                        onChange={(e) => setDraft((prev) => ({ ...prev, [day]: e.target.value }))}
+                        onBlur={(e) => commitDay(day, e.target.value)}
+                        className="w-9 h-9 text-center bg-transparent font-semibold disabled:opacity-50"
+                      />
+                    </td>
+                  );
+                })}
+                <td className="text-center border border-gray-300 font-semibold text-green-700">
+                  {total}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </main>
   );
 }

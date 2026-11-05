@@ -1,26 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getHeadcountEntry, setHeadcountEntry } from "@/lib/sheets";
+import { getHeadcountEntry, getHeadcountForMonth, setHeadcountEntry } from "@/lib/sheets";
 
+// GET /api/attendance-headcount?class=...&month=YYYY-MM
+// Returns { entries: Record<"YYYY-MM-DD", number> } -- every day in that
+// month with a present value, for the grid in HeadcountDashboard.tsx.
+//
 // GET /api/attendance-headcount?class=...&date=YYYY-MM-DD
-// Returns { entry: { total, present, absent } | null } for a
-// headcount-only class (ExtraClass.kind === "headcount").
+// Returns { entry: { total, present, absent } | null } for a single day
+// (kept for any other caller; the grid itself only uses ?month=).
 export async function GET(req: NextRequest) {
   const className = req.nextUrl.searchParams.get("class");
+  const month = req.nextUrl.searchParams.get("month");
   const date = req.nextUrl.searchParams.get("date");
 
-  if (!className || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return NextResponse.json(
-      { error: "Missing or invalid 'class'/'date' query param" },
-      { status: 400 }
-    );
+  if (!className) {
+    return NextResponse.json({ error: "Missing 'class' query param" }, { status: 400 });
   }
 
   try {
-    const entry = await getHeadcountEntry(className, date);
-    return NextResponse.json({ entry });
+    if (month) {
+      if (!/^\d{4}-\d{2}$/.test(month)) {
+        return NextResponse.json({ error: "Invalid 'month' query param" }, { status: 400 });
+      }
+      const entries = await getHeadcountForMonth(className, month);
+      return NextResponse.json({ entries });
+    }
+    if (date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return NextResponse.json({ error: "Invalid 'date' query param" }, { status: 400 });
+      }
+      const entry = await getHeadcountEntry(className, date);
+      return NextResponse.json({ entry });
+    }
+    return NextResponse.json({ error: "Missing 'month' or 'date' query param" }, { status: 400 });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: "Failed to fetch headcount entry" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch headcount data" }, { status: 500 });
   }
 }
 
