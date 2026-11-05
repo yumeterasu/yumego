@@ -386,11 +386,11 @@ export default function ClassManagementPage() {
                   <div
                     key={c.id}
                     className={`border rounded-xl p-4 flex flex-col gap-3 ${
-                      c.active ? "border-gray-300" : "border-gray-200 bg-gray-50 opacity-60"
+                      c.active ? "border-gray-300" : "border-gray-200 bg-gray-50"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div>
+                      <div className={c.active ? "" : "opacity-60"}>
                         <p className="font-semibold">{fullName}</p>
                         <p className="text-xs text-gray-400">{c.nameEn}</p>
                         <span
@@ -444,7 +444,7 @@ export default function ClassManagementPage() {
                           {c.active ? (
                             <button
                               onClick={() => setConfirmDeactivateId(c.id)}
-                              className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
+                              className="rounded-full bg-red-50 text-red-600 border border-red-300 w-9 h-9 flex items-center justify-center"
                               aria-label="無効にする / Deactivate"
                             >
                               🚫
@@ -454,14 +454,14 @@ export default function ClassManagementPage() {
                               <button
                                 onClick={() => toggleActive(c)}
                                 disabled={toggling}
-                                className="rounded-full bg-green-50 text-green-700 w-9 h-9 flex items-center justify-center disabled:opacity-40"
+                                className="rounded-full bg-green-50 text-green-700 border border-green-300 w-9 h-9 flex items-center justify-center disabled:opacity-40"
                                 aria-label="有効にする / Activate"
                               >
                                 ✅
                               </button>
                               <button
                                 onClick={() => openDeleteModal(c)}
-                                className="rounded-full bg-red-50 text-red-600 w-9 h-9 flex items-center justify-center"
+                                className="rounded-full bg-red-50 text-red-600 border border-red-300 w-9 h-9 flex items-center justify-center"
                                 aria-label="完全に削除 / Delete permanently"
                               >
                                 🗑
@@ -471,8 +471,10 @@ export default function ClassManagementPage() {
                         </div>
                       )}
                     </div>
-                    <ColorSwatches className={fullName} />
-                    <TeacherPicker className={fullName} />
+                    <div className={`flex flex-col gap-3 ${c.active ? "" : "opacity-60"}`}>
+                      <ColorSwatches className={fullName} />
+                      <TeacherPicker className={fullName} />
+                    </div>
                   </div>
                 );
               })}
