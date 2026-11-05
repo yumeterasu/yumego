@@ -234,7 +234,7 @@ export default function HeadcountDashboard({
       {loading ? (
         <SkeletonBlock />
       ) : (
-        <div className="self-start max-w-full overflow-x-auto border border-gray-300 rounded-xl">
+        <div className="self-center max-w-full overflow-x-auto border border-gray-300 rounded-xl">
           <table className="text-sm border-collapse min-w-max">
             <thead>
               <tr>
