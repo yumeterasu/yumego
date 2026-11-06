@@ -166,9 +166,6 @@ export default function HeadcountDashboard({
   }
 
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
-  const total = Object.entries(entries)
-    .filter(([date]) => date.startsWith(yearMonth))
-    .reduce((sum, [, count]) => sum + count, 0);
 
   return (
     <main className="min-h-screen p-4 sm:p-6 flex flex-col gap-4">
@@ -254,10 +251,6 @@ export default function HeadcountDashboard({
                     </th>
                   );
                 })}
-                <th className="border border-gray-300 px-2 py-2 bg-green-50 text-green-800 w-14">
-                  合計
-                  <span className="block text-[9px] font-normal">Total</span>
-                </th>
               </tr>
             </thead>
             <tbody>
@@ -286,9 +279,6 @@ export default function HeadcountDashboard({
                     </td>
                   );
                 })}
-                <td className="text-center border border-gray-300 font-semibold text-green-700">
-                  {total}
-                </td>
               </tr>
             </tbody>
           </table>
