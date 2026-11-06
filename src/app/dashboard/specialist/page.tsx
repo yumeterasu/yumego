@@ -72,6 +72,11 @@ export default function SpecialistCoachPage() {
   const savedCountsRef = useRef<Record<string, number>>({});
   // Same shape, but the live input text (may be mid-edit, unsaved).
   const [draftCounts, setDraftCounts] = useState<Record<string, string>>({});
+  // "最" has no roster/attendance behind it, so its "checked" state isn't
+  // persisted anywhere -- it's purely a local UI gate (checkbox reveals the
+  // number input, matching 長/中/少's check-then-type flow) seeded from
+  // whichever cells already have a saved count on load.
+  const [saiChecked, setSaiChecked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // A cell being toggled (checkbox) or committed (count) — either one
@@ -168,6 +173,7 @@ export default function SpecialistCoachPage() {
       }
       savedCountsRef.current = saved;
       setDraftCounts(Object.fromEntries(Object.entries(saved).map(([k, v]) => [k, String(v)])));
+      setSaiChecked(new Set(Object.keys(saved).filter((k) => k.split("|")[1] === "最")));
 
       // Fire-and-forget: every kid present normally joins 専門コーチ too, so
       // a checked day that has no count yet -- either just checked before
@@ -364,6 +370,31 @@ export default function SpecialistCoachPage() {
     setBusyCellKey(null);
   }
 
+  // 最's equivalent of toggleChecked — but since there's no roster/
+  // attendance to persist a "checked" flag against, checking just reveals
+  // the number input (nothing to save yet) and unchecking clears any saved
+  // count via commitCount's own confirm dialog, same wording as the other
+  // rows get from their count-change confirm.
+  async function toggleSaiChecked(categoryId: string, date: string, countKey: string) {
+    const isChecked = saiChecked.has(countKey);
+    if (isChecked) {
+      const existing = savedCountsRef.current[countKey];
+      if (existing !== undefined) {
+        await commitCount(categoryId, "最", date, "", Infinity);
+        // still has a saved value -> the confirm dialog was cancelled, so
+        // leave the checkbox/input exactly as they were.
+        if (savedCountsRef.current[countKey] !== undefined) return;
+      }
+      setSaiChecked((prev) => {
+        const copy = new Set(prev);
+        copy.delete(countKey);
+        return copy;
+      });
+    } else {
+      setSaiChecked((prev) => new Set(prev).add(countKey));
+    }
+  }
+
   async function commitCount(
     categoryId: string,
     grade: Row,
@@ -522,10 +553,10 @@ export default function SpecialistCoachPage() {
           <h1 className="text-xl font-bold">{branch} 専門コーチ</h1>
           <p className="text-xs text-gray-400">{branch} Specialist Coach</p>
           <p className="text-sm text-gray-500 print:hidden">
-            編集できるのは{branch}の全学年です。チェックした日だけ人数を入力できます。「最」の行はチェック不要で、どの日でも自由に入力できます
+            編集できるのは{branch}の全学年です。チェックした日だけ人数を入力できます
             <span className="block text-xs">
               All {branch} grades are editable. The count can only be entered on days that
-              are checked — except &quot;最&quot;, which can be entered freely on any day
+              are checked
             </span>
           </p>
         </div>
@@ -764,10 +795,13 @@ export default function SpecialistCoachPage() {
                               const isBusy = busyCellKey === countKey;
                               const draft = draftCounts[countKey] ?? "";
 
-                              // 最 has no roster/attendance behind it, so it
-                              // skips the checkbox entirely — always a free,
-                              // uncapped number entry, any date.
+                              // 最 has no roster/attendance behind it, so its
+                              // "checked" state is local-only (saiChecked) —
+                              // but the checkbox-then-number flow otherwise
+                              // matches 長/中/少 below, uncapped since there's
+                              // no roster total to cap against.
                               if (g === "最") {
+                                const isSaiChecked = saiChecked.has(countKey);
                                 return (
                                   <td
                                     key={day}
@@ -775,26 +809,36 @@ export default function SpecialistCoachPage() {
                                       isWeekend ? "bg-orange-50/60" : ""
                                     }`}
                                   >
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      value={draft}
-                                      disabled={isBusy}
-                                      placeholder="-"
-                                      onChange={(e) =>
-                                        setDraftCounts((prev) => ({
-                                          ...prev,
-                                          [countKey]: e.target.value,
-                                        }))
-                                      }
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") e.currentTarget.blur();
-                                      }}
-                                      onBlur={(e) =>
-                                        commitCount(c.categoryId, g, date, e.target.value, Infinity)
-                                      }
-                                      className="w-6 bg-transparent text-center text-xs font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                    />
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <input
+                                        type="checkbox"
+                                        checked={isSaiChecked}
+                                        disabled={isBusy}
+                                        onChange={() => toggleSaiChecked(c.categoryId, date, countKey)}
+                                        className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
+                                      />
+                                      {isSaiChecked && (
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={draft}
+                                          disabled={isBusy}
+                                          onChange={(e) =>
+                                            setDraftCounts((prev) => ({
+                                              ...prev,
+                                              [countKey]: e.target.value,
+                                            }))
+                                          }
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") e.currentTarget.blur();
+                                          }}
+                                          onBlur={(e) =>
+                                            commitCount(c.categoryId, g, date, e.target.value, Infinity)
+                                          }
+                                          className="w-6 bg-transparent text-center text-xs font-semibold outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                        />
+                                      )}
+                                    </div>
                                   </td>
                                 );
                               }
