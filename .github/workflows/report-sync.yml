@@ -1,0 +1,15 @@
+name: Sync report sheet
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger report sync
+        run: |
+          curl -sf -X POST https://yumego.vercel.app/api/cron/report-sync \
+            -H "Authorization: Bearer ${{ secrets.REPORT_SYNC_SECRET }}"

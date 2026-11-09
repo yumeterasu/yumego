@@ -7,6 +7,10 @@ const PUBLIC_PATHS = [
   "/manifest.json",
   "/sw.js",
   "/robots.txt",
+  // Called by a scheduled GitHub Actions workflow with no browser
+  // session/cookie -- protected instead by its own bearer-secret check
+  // (see src/app/api/cron/report-sync/route.ts), not the cookie gate.
+  "/api/cron/report-sync",
 ];
 
 export async function proxy(req: NextRequest) {
