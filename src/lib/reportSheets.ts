@@ -354,7 +354,15 @@ async function syncClassTab(
   const sheetId = await recreateSheet(
     sheets,
     className,
-    { frozenRowCount: 2, frozenColumnCount: 2, rowCount: totalRows, columnCount: totalCols },
+    {
+      frozenRowCount: 2,
+      frozenColumnCount: 2,
+      // Sheets rejects freezing every visible row -- classes with no
+      // roster (e.g. headcount-only ExtraClasses) have just the 2 header
+      // rows, so pad with a spare row to stay above the frozen count.
+      rowCount: Math.max(totalRows, 3),
+      columnCount: totalCols,
+    },
     existingSheetId
   );
 
