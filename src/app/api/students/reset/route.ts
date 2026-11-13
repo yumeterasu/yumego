@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deactivateAllStudents, deleteSpecialistAttendanceForGrade, deleteSpecialistParticipationForGrade } from "@/lib/sheets";
+import {
+  deactivateAllStudents,
+  deleteSpecialistAttendanceForGrade,
+  deleteSpecialistParticipationForGrade,
+  deleteSpecialistUnitCountForGrade,
+} from "@/lib/sheets";
 import { classNameToBranchGrade } from "@/lib/classes";
 
 // POST /api/students/reset
@@ -7,8 +12,9 @@ import { classNameToBranchGrade } from "@/lib/classes";
 // The end-of-term Reset: soft-deletes every active student in the class
 // (recoverable individually via "削除した生徒を表示") AND, for classes on
 // the 長/中/少 continuum, permanently deletes this grade's Coach Schedule +
-// Coach Headcount history too (NOT recoverable — categories themselves are
-// branch-wide and untouched, other grades keep their data).
+// Coach Headcount + Coach unit-quantity (時間/回/etc.) history too (NOT
+// recoverable — categories themselves are branch-wide and untouched, other
+// grades keep their data).
 //
 // 小学生-suffix "extra" classes have no branch/grade and thus no coach data
 // to begin with (classNameToBranchGrade() returns null for them) -- Reset
@@ -43,12 +49,16 @@ export async function POST(req: NextRequest) {
     const headcountDeleted = branchGrade
       ? await deleteSpecialistParticipationForGrade(branchGrade.branch, branchGrade.grade)
       : 0;
+    const unitCountDeleted = branchGrade
+      ? await deleteSpecialistUnitCountForGrade(branchGrade.branch, branchGrade.grade)
+      : 0;
 
     return NextResponse.json({
       ok: true,
       studentsRemoved: deactivated.length,
       scheduleRowsDeleted: scheduleDeleted,
       headcountRowsDeleted: headcountDeleted,
+      unitCountRowsDeleted: unitCountDeleted,
     });
   } catch (err) {
     console.error(err);

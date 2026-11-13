@@ -1278,6 +1278,15 @@ export type SpecialistCategory = {
   categoryId: string;
   branch: string;
   name: string;
+  // "" = no custom unit -- the daily cell shows just the existing checkbox
+  // + participant-headcount line, unchanged. A non-empty unit (e.g. "回",
+  // "時間") adds a 3rd line to the daily cell for a separate per-grade
+  // quantity, backed by SpecialistUnitCount below -- entirely independent
+  // of the headcount line, which keeps meaning what it always has.
+  unit: string;
+  defaultLong: number | null; // 年長 default for that 3rd line, when unit !== ""
+  defaultChu: number | null; // 年中
+  defaultSho: number | null; // 年少
 };
 
 export type SpecialistCheckedCell = {
@@ -1286,13 +1295,19 @@ export type SpecialistCheckedCell = {
   date: string; // "YYYY-MM-DD"
 };
 
+function parseNullableNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export async function getSpecialistCategories(
   branch: string
 ): Promise<SpecialistCategory[]> {
   const sheets = getSheetsClient();
   const res = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "SpecialistCategories!A2:C",
+    range: "SpecialistCategories!A2:G",
   });
   const rows = res.data.values ?? [];
   return rows
@@ -1300,6 +1315,10 @@ export async function getSpecialistCategories(
       categoryId: (row[0] ?? "").toString(),
       branch: (row[1] ?? "").toString(),
       name: (row[2] ?? "").toString(),
+      unit: (row[3] ?? "").toString(),
+      defaultLong: parseNullableNumber(row[4]),
+      defaultChu: parseNullableNumber(row[5]),
+      defaultSho: parseNullableNumber(row[6]),
     }))
     .filter((c) => c.categoryId && c.branch === branch);
 }
@@ -1310,30 +1329,67 @@ export async function addSpecialistCategory(
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "SpecialistCategories!A:C",
+    range: "SpecialistCategories!A:G",
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[input.categoryId, input.branch, input.name]] },
+    requestBody: {
+      values: [
+        [
+          input.categoryId,
+          input.branch,
+          input.name,
+          input.unit,
+          input.defaultLong ?? "",
+          input.defaultChu ?? "",
+          input.defaultSho ?? "",
+        ],
+      ],
+    },
   });
 }
 
-export async function renameSpecialistCategory(
+/**
+ * Updates whichever of name/unit/defaultLong/defaultChu/defaultSho are
+ * passed (undefined = leave unchanged), in one values.update call --
+ * supersedes the old renameSpecialistCategory now that unit/defaults are
+ * edited from the same control as the name.
+ */
+export async function updateSpecialistCategory(
   categoryId: string,
-  name: string
+  patch: {
+    name?: string;
+    unit?: string;
+    defaultLong?: number | null;
+    defaultChu?: number | null;
+    defaultSho?: number | null;
+  }
 ): Promise<void> {
   const sheets = getSheetsClient();
   const existing = await safeValuesGet(sheets,{
     spreadsheetId: SHEET_ID,
-    range: "SpecialistCategories!A2:A",
+    range: "SpecialistCategories!A2:G",
   });
   const rows = existing.data.values ?? [];
   const rowOffset = rows.findIndex((row) => (row[0] ?? "") === categoryId);
   if (rowOffset === -1) return;
+  const row = rows[rowOffset];
+  const rowNum = rowOffset + 2;
+
+  const name = patch.name ?? (row[2] ?? "").toString();
+  const unit = patch.unit ?? (row[3] ?? "").toString();
+  const defaultLong =
+    patch.defaultLong !== undefined ? patch.defaultLong : parseNullableNumber(row[4]);
+  const defaultChu =
+    patch.defaultChu !== undefined ? patch.defaultChu : parseNullableNumber(row[5]);
+  const defaultSho =
+    patch.defaultSho !== undefined ? patch.defaultSho : parseNullableNumber(row[6]);
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: `SpecialistCategories!C${rowOffset + 2}`,
+    range: `SpecialistCategories!C${rowNum}:G${rowNum}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[name]] },
+    requestBody: {
+      values: [[name, unit, defaultLong ?? "", defaultChu ?? "", defaultSho ?? ""]],
+    },
   });
 }
 
@@ -1687,6 +1743,183 @@ export async function deleteSpecialistParticipationForGrade(
   if (rowNums.length === 0) return 0;
 
   const sheetId = await getSheetIdByTitle(sheets, "SpecialistParticipation");
+  rowNums.sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: rowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+  return rowNums.length;
+}
+
+// 専門コーチ数量 — the 3rd line's per-day data (see SpecialistCategory.unit
+// above), entirely separate from SpecialistParticipation (headcount).
+// Never used for grade "最" -- that row has no unit/default concept and
+// stays manual-only. Same sheet layout and CRUD shape as
+// SpecialistParticipation, just its own tab.
+export type SpecialistUnitCount = {
+  categoryId: string;
+  grade: string; // "長" | "中" | "少"
+  date: string; // "YYYY-MM-DD"
+  count: number;
+};
+
+export async function getSpecialistUnitCounts(
+  branch: string,
+  yearMonth: string // "2026-08"
+): Promise<SpecialistUnitCount[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets,{
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistUnitQuantity!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      categoryId: (row[2] ?? "").toString(),
+      grade: (row[3] ?? "").toString(),
+      count: Number(row[4] ?? 0),
+    }))
+    .filter(
+      (r) =>
+        r.branch === branch &&
+        r.date.startsWith(yearMonth) &&
+        r.categoryId &&
+        Number.isFinite(r.count)
+    )
+    .map((r) => ({
+      categoryId: r.categoryId,
+      grade: r.grade,
+      date: r.date,
+      count: r.count,
+    }));
+}
+
+/** Set (or clear, with count === null) a day's unit quantity for one category+grade. */
+export async function setSpecialistUnitCount(
+  branch: string,
+  categoryId: string,
+  grade: string,
+  date: string,
+  count: number | null
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const existing = await safeValuesGet(sheets,{
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistUnitQuantity!A2:E",
+  });
+  const rows = existing.data.values ?? [];
+  const matchingRowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(
+      ({ row }) =>
+        (row[0] ?? "") === date &&
+        (row[1] ?? "") === branch &&
+        (row[2] ?? "") === categoryId &&
+        (row[3] ?? "") === grade
+    )
+    .map(({ rowNum }) => rowNum);
+
+  if (count !== null) {
+    if (matchingRowNums.length > 0) {
+      const [keep, ...extra] = matchingRowNums;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `SpecialistUnitQuantity!E${keep}`,
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [[count]] },
+      });
+      if (extra.length > 0) {
+        const sheetId = await getSheetIdByTitle(sheets, "SpecialistUnitQuantity");
+        extra.sort((a, b) => b - a);
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          requestBody: {
+            requests: extra.map((rowNum) => ({
+              deleteDimension: {
+                range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+              },
+            })),
+          },
+        });
+      }
+      return;
+    }
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: "SpecialistUnitQuantity!A:E",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [[date, branch, categoryId, grade, count]] },
+    });
+    return;
+  }
+
+  if (matchingRowNums.length === 0) return;
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistUnitQuantity");
+  matchingRowNums.sort((a, b) => b - a);
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: matchingRowNums.map((rowNum) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: rowNum - 1, endIndex: rowNum },
+        },
+      })),
+    },
+  });
+}
+
+/** Same shape as getAllSpecialistParticipationForGrade, for the unit-quantity sheet. */
+export async function getAllSpecialistUnitCountsForGrade(
+  branch: string,
+  grade: string
+): Promise<SpecialistUnitCount[]> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets,{
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistUnitQuantity!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  return rows
+    .map((row) => ({
+      date: (row[0] ?? "").toString(),
+      branch: (row[1] ?? "").toString(),
+      categoryId: (row[2] ?? "").toString(),
+      grade: (row[3] ?? "").toString(),
+      count: Number(row[4] ?? 0),
+    }))
+    .filter(
+      (r) => r.branch === branch && r.grade === grade && r.categoryId && Number.isFinite(r.count)
+    )
+    .map((r) => ({ categoryId: r.categoryId, grade: r.grade, date: r.date, count: r.count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Same shape/reasoning as deleteSpecialistParticipationForGrade, for the unit-quantity sheet. */
+export async function deleteSpecialistUnitCountForGrade(
+  branch: string,
+  grade: string
+): Promise<number> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets,{
+    spreadsheetId: SHEET_ID,
+    range: "SpecialistUnitQuantity!A2:E",
+  });
+  const rows = res.data.values ?? [];
+  const rowNums = rows
+    .map((row, i) => ({ row, rowNum: i + 2 }))
+    .filter(({ row }) => (row[1] ?? "") === branch && (row[3] ?? "") === grade)
+    .map(({ rowNum }) => rowNum);
+  if (rowNums.length === 0) return 0;
+
+  const sheetId = await getSheetIdByTitle(sheets, "SpecialistUnitQuantity");
   rowNums.sort((a, b) => b - a);
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SHEET_ID,

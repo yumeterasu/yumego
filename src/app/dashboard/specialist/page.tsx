@@ -72,6 +72,11 @@ export default function SpecialistCoachPage() {
   const savedCountsRef = useRef<Record<string, number>>({});
   // Same shape, but the live input text (may be mid-edit, unsaved).
   const [draftCounts, setDraftCounts] = useState<Record<string, string>>({});
+  // Same two-ref/state shape as the pair above, but for the separate
+  // unit-quantity 3rd line (only rendered for categories with a unit set)
+  // -- entirely independent data, never derived from draftCounts/savedCountsRef.
+  const savedUnitCountsRef = useRef<Record<string, number>>({});
+  const [draftUnitCounts, setDraftUnitCounts] = useState<Record<string, string>>({});
   // "最" has no roster/attendance behind it, so its "checked" state isn't
   // persisted anywhere -- it's purely a local UI gate (checkbox reveals the
   // number input, matching 長/中/少's check-then-type flow) seeded from
@@ -91,7 +96,24 @@ export default function SpecialistCoachPage() {
   const [savingNameId, setSavingNameId] = useState<string | null>(null);
 
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryUnit, setNewCategoryUnit] = useState("");
+  // 年長/年中/年少 default quantities for the new item's 3rd line -- only
+  // meaningful (and only required) once newCategoryUnit has text in it.
+  const [newCategoryDefaults, setNewCategoryDefaults] = useState({
+    long: "",
+    chu: "",
+    sho: "",
+  });
   const [addingCategory, setAddingCategory] = useState(false);
+
+  // Inline per-category unit edit (mirrors nameDrafts/savingNameId, but for
+  // unit+defaults together) -- undefined means "not currently being edited
+  // here," so an untouched legacy category's fields never render as blank
+  // inputs implying 0.
+  const [unitEditDrafts, setUnitEditDrafts] = useState<
+    Record<string, { unit: string; long: string; chu: string; sho: string }>
+  >({});
+  const [savingUnitId, setSavingUnitId] = useState<string | null>(null);
 
   const yearMonth = `${year}-${pad2(month)}`;
   const branch = branchGrade?.branch ?? "";
@@ -102,27 +124,36 @@ export default function SpecialistCoachPage() {
     setLoading(true);
     setError(null);
     try {
-      const [categoriesRes, attendanceRes, participationRes, ...classAttendanceResList] =
-        await Promise.all([
-          apiFetch(`/api/specialist/categories?branch=${encodeURIComponent(branch)}`),
+      const [
+        categoriesRes,
+        attendanceRes,
+        participationRes,
+        unitCountRes,
+        ...classAttendanceResList
+      ] = await Promise.all([
+        apiFetch(`/api/specialist/categories?branch=${encodeURIComponent(branch)}`),
+        apiFetch(
+          `/api/specialist/attendance?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
+        ),
+        apiFetch(
+          `/api/specialist/participation?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
+        ),
+        apiFetch(
+          `/api/specialist/unit-count?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
+        ),
+        ...GRADES.map((g) =>
           apiFetch(
-            `/api/specialist/attendance?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
-          ),
-          apiFetch(
-            `/api/specialist/participation?branch=${encodeURIComponent(branch)}&month=${yearMonth}`
-          ),
-          ...GRADES.map((g) =>
-            apiFetch(
-              `/api/attendance?class=${encodeURIComponent(
-                branchGradeToClassName(branch as "プロンポン" | "トンロー", g)
-              )}&month=${yearMonth}`
-            )
-          ),
-        ]);
+            `/api/attendance?class=${encodeURIComponent(
+              branchGradeToClassName(branch as "プロンポン" | "トンロー", g)
+            )}&month=${yearMonth}`
+          )
+        ),
+      ]);
       if (
         !categoriesRes.ok ||
         !attendanceRes.ok ||
         !participationRes.ok ||
+        !unitCountRes.ok ||
         classAttendanceResList.some((r) => !r.ok)
       ) {
         throw new Error("failed");
@@ -130,6 +161,7 @@ export default function SpecialistCoachPage() {
       const categoriesData = await categoriesRes.json();
       const attendanceData = await attendanceRes.json();
       const participationData = await participationRes.json();
+      const unitCountData = await unitCountRes.json();
       const loadedCategories: SpecialistCategory[] = categoriesData.categories ?? [];
       setCategories(loadedCategories);
       setNameDrafts(
@@ -175,6 +207,21 @@ export default function SpecialistCoachPage() {
       setDraftCounts(Object.fromEntries(Object.entries(saved).map(([k, v]) => [k, String(v)])));
       setSaiChecked(new Set(Object.keys(saved).filter((k) => k.split("|")[1] === "最")));
 
+      const unitCountCells: {
+        categoryId: string;
+        grade: string;
+        date: string;
+        count: number;
+      }[] = unitCountData.cells ?? [];
+      const savedUnit: Record<string, number> = {};
+      for (const cell of unitCountCells) {
+        savedUnit[cellKey(cell.categoryId, cell.grade, cell.date)] = cell.count;
+      }
+      savedUnitCountsRef.current = savedUnit;
+      setDraftUnitCounts(
+        Object.fromEntries(Object.entries(savedUnit).map(([k, v]) => [k, String(v)]))
+      );
+
       // Fire-and-forget: every kid present normally joins 専門コーチ too, so
       // a checked day that has no count yet -- either just checked before
       // today's attendance existed, or attendance only just got taken --
@@ -184,6 +231,10 @@ export default function SpecialistCoachPage() {
       // once) to stay under quota, same as 期間で登録's bulk writes
       // elsewhere; each cell updates in place as its own request resolves.
       const toFill: { categoryId: string; grade: GradeShort; date: string; total: number }[] = [];
+      // Same idea, but for the unit-quantity 3rd line: a checked day with
+      // no unit count yet defaults to that grade's preset -- not gated on
+      // attendance at all, since it has nothing to do with headcount.
+      const toFillUnit: { categoryId: string; grade: GradeShort; date: string; defaultValue: number }[] = [];
       for (const grade of GRADES) {
         const gradeTotals = totals[grade] ?? {};
         for (const c of loadedCategories) {
@@ -191,16 +242,29 @@ export default function SpecialistCoachPage() {
           if (!dates) continue;
           for (const date of dates) {
             const total = gradeTotals[date] ?? 0;
-            if (total <= 0) continue;
             const key = cellKey(c.categoryId, grade, date);
-            if (saved[key] !== undefined) continue;
-            toFill.push({ categoryId: c.categoryId, grade, date, total });
+            if (total > 0 && saved[key] === undefined) {
+              toFill.push({ categoryId: c.categoryId, grade, date, total });
+            }
+            if (c.unit && savedUnit[key] === undefined) {
+              const defaultValue =
+                grade === "長" ? c.defaultLong : grade === "中" ? c.defaultChu : c.defaultSho;
+              if (defaultValue !== null && defaultValue !== undefined) {
+                toFillUnit.push({ categoryId: c.categoryId, grade, date, defaultValue });
+              }
+            }
           }
         }
       }
       (async () => {
         for (const { categoryId, grade, date, total } of toFill) {
           await autoFillDefaultCount(categoryId, grade, date, total);
+          await sleep(250); // pace requests to stay under quota
+        }
+      })();
+      (async () => {
+        for (const { categoryId, grade, date, defaultValue } of toFillUnit) {
+          await autoFillUnitDefault(categoryId, grade, date, defaultValue);
           await sleep(250); // pace requests to stay under quota
         }
       })();
@@ -269,22 +333,51 @@ export default function SpecialistCoachPage() {
     }
   }
 
+  // Same best-effort shape as autoFillDefaultCount, for the separate
+  // unit-quantity 3rd line -- fills from this category's per-grade preset
+  // default instead of today's attendance headcount, and is never gated on
+  // attendance existing (it has nothing to do with headcount).
+  async function autoFillUnitDefault(
+    categoryId: string,
+    grade: GradeShort,
+    date: string,
+    defaultValue: number
+  ) {
+    const key = cellKey(categoryId, grade, date);
+    setDraftUnitCounts((prev) => ({ ...prev, [key]: String(defaultValue) }));
+    try {
+      const res = await fetch("/api/specialist/unit-count", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch, categoryId, grade, date, count: defaultValue }),
+      });
+      if (!res.ok) throw new Error("failed");
+      savedUnitCountsRef.current[key] = defaultValue;
+    } catch {
+      // best-effort -- leave the optimistic draft showing, retry next load
+    }
+  }
+
   async function toggleChecked(categoryId: string, grade: GradeShort, date: string) {
     const key = cellKey(categoryId, grade);
     const countKey = cellKey(categoryId, grade, date);
     const isChecked = checkedDates[key]?.has(date) ?? false;
     const next = !isChecked;
     const existingCount = savedCountsRef.current[countKey];
+    const category = categories.find((c) => c.categoryId === categoryId);
+    const existingUnitCount = savedUnitCountsRef.current[countKey];
 
     // Unchecking is confirmed every single time, whether or not a count was
     // ever entered — it's easy to tap by accident, this page is usually
     // only opened a few times a month, and unchecking also silently clears
     // any participant count already saved for that day.
     if (isChecked) {
-      const categoryName = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
+      const categoryName = category?.name ?? "";
+      const alsoUnitLine = category?.unit ? "・数量" : "";
+      const alsoUnitLineEn = category?.unit ? " and quantity" : "";
       if (
         !window.confirm(
-          `「${categoryName}」${date} のチェックを外しますか？\n入力していた参加人数があれば、それも削除されます。\n\nRemove the checkmark for "${categoryName}" on ${date}? Any participant count entered for that day will be deleted too.`
+          `「${categoryName}」${date} のチェックを外しますか？\n入力していた参加人数${alsoUnitLine}があれば、それも削除されます。\n\nRemove the checkmark for "${categoryName}" on ${date}? Any participant count${alsoUnitLineEn} entered for that day will be deleted too.`
         )
       ) {
         return;
@@ -300,9 +393,10 @@ export default function SpecialistCoachPage() {
       copy[key] = set;
       return copy;
     });
-    // optimistic update — clear the count too when unchecking
+    // optimistic update — clear both counts when unchecking
     if (!next) {
       setDraftCounts((prev) => ({ ...prev, [countKey]: "" }));
+      setDraftUnitCounts((prev) => ({ ...prev, [countKey]: "" }));
     }
     setBusyCellKey(countKey);
     setError(null);
@@ -338,6 +432,10 @@ export default function SpecialistCoachPage() {
         ...prev,
         [countKey]: existingCount !== undefined ? String(existingCount) : "",
       }));
+      setDraftUnitCounts((prev) => ({
+        ...prev,
+        [countKey]: existingUnitCount !== undefined ? String(existingUnitCount) : "",
+      }));
       setBusyCellKey(null);
       return;
     }
@@ -360,12 +458,38 @@ export default function SpecialistCoachPage() {
         );
       }
     }
+    // Same follow-up clear for the unit-quantity 3rd line, independent of
+    // the headcount clear above.
+    if (!next && existingUnitCount !== undefined) {
+      try {
+        const unitCountRes = await fetch("/api/specialist/unit-count", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch, categoryId, grade, date, count: null }),
+        });
+        if (!unitCountRes.ok) throw new Error("failed");
+        delete savedUnitCountsRef.current[countKey];
+      } catch {
+        setError(
+          "チェックは外しましたが、数量の削除に失敗しました。もう一度チェックを付けて外すか、再読み込みしてください / Unchecked, but couldn't clear the saved quantity — check it and uncheck it again, or reload"
+        );
+      }
+    }
     // Just checked, and that day's attendance is already taken -- default
     // straight to "everyone" (see autoFillDefaultCount) instead of leaving
     // it blank for the teacher to type in every time.
     if (next && existingCount === undefined) {
       const total = presentTotals[grade]?.[date] ?? 0;
       if (total > 0) await autoFillDefaultCount(categoryId, grade, date, total);
+    }
+    // Same for the unit-quantity 3rd line, filled from this category's
+    // per-grade preset -- independent of attendance/headcount.
+    if (next && existingUnitCount === undefined && category?.unit) {
+      const defaultValue =
+        grade === "長" ? category.defaultLong : grade === "中" ? category.defaultChu : category.defaultSho;
+      if (defaultValue !== null && defaultValue !== undefined) {
+        await autoFillUnitDefault(categoryId, grade, date, defaultValue);
+      }
     }
     setBusyCellKey(null);
   }
@@ -467,6 +591,75 @@ export default function SpecialistCoachPage() {
     }
   }
 
+  // Same shape as commitCount, for the unit-quantity 3rd line -- always
+  // uncapped (there's no "total" to clamp against, same as the 最 row).
+  async function commitUnitCount(
+    categoryId: string,
+    grade: GradeShort,
+    date: string,
+    rawValue: string
+  ) {
+    const key = cellKey(categoryId, grade, date);
+    const original = savedUnitCountsRef.current[key];
+
+    const trimmed = rawValue.trim();
+    let parsed: number | null = trimmed === "" ? null : Number(trimmed);
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
+      setDraftUnitCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+      return;
+    }
+
+    if (parsed === (original ?? null)) {
+      setDraftUnitCounts((prev) => ({ ...prev, [key]: parsed === null ? "" : String(parsed) }));
+      return;
+    }
+
+    const category = categories.find((c) => c.categoryId === categoryId);
+    const categoryName = category?.name ?? "";
+    const unit = category?.unit ?? "";
+    const fromLabel = original === undefined ? "未入力" : `${original}${unit}`;
+    const toLabel = parsed === null ? "未入力" : `${parsed}${unit}`;
+    if (
+      !window.confirm(
+        `「${categoryName}」${date} の数量を ${fromLabel} → ${toLabel} に変更しますか？\nChange the quantity for "${categoryName}" on ${date} from ${fromLabel} to ${toLabel}?`
+      )
+    ) {
+      setDraftUnitCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+      return;
+    }
+
+    setBusyCellKey(key);
+    setError(null);
+    try {
+      const res = await fetch("/api/specialist/unit-count", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ branch, categoryId, grade, date, count: parsed }),
+      });
+      if (!res.ok) throw new Error("failed");
+      if (parsed === null) {
+        delete savedUnitCountsRef.current[key];
+      } else {
+        savedUnitCountsRef.current[key] = parsed;
+      }
+      setDraftUnitCounts((prev) => ({ ...prev, [key]: parsed === null ? "" : String(parsed) }));
+    } catch {
+      setError("保存に失敗しました / Failed to save");
+      setDraftUnitCounts((prev) => ({
+        ...prev,
+        [key]: original !== undefined ? String(original) : "",
+      }));
+    } finally {
+      setBusyCellKey(null);
+    }
+  }
+
   async function saveNameEdit(categoryId: string, value: string) {
     const original = categories.find((c) => c.categoryId === categoryId)?.name ?? "";
     if (value === original || !value.trim()) {
@@ -493,22 +686,113 @@ export default function SpecialistCoachPage() {
     }
   }
 
+  // Opens the inline unit/defaults editor for one category, seeded from
+  // its current values (blank strings for a legacy category with no unit
+  // yet) -- a no-op if it's already open.
+  function openUnitEdit(c: SpecialistCategory) {
+    setUnitEditDrafts((prev) =>
+      prev[c.categoryId]
+        ? prev
+        : {
+            ...prev,
+            [c.categoryId]: {
+              unit: c.unit,
+              long: c.defaultLong !== null ? String(c.defaultLong) : "",
+              chu: c.defaultChu !== null ? String(c.defaultChu) : "",
+              sho: c.defaultSho !== null ? String(c.defaultSho) : "",
+            },
+          }
+    );
+  }
+
+  function closeUnitEdit(categoryId: string) {
+    setUnitEditDrafts((prev) => {
+      const copy = { ...prev };
+      delete copy[categoryId];
+      return copy;
+    });
+  }
+
+  async function saveUnitEdit(categoryId: string) {
+    const draft = unitEditDrafts[categoryId];
+    if (!draft) return;
+    const unit = draft.unit.trim();
+    const defaultLong = unit ? Number(draft.long) : null;
+    const defaultChu = unit ? Number(draft.chu) : null;
+    const defaultSho = unit ? Number(draft.sho) : null;
+    if (
+      unit &&
+      (draft.long === "" ||
+        draft.chu === "" ||
+        draft.sho === "" ||
+        !Number.isFinite(defaultLong) ||
+        !Number.isFinite(defaultChu) ||
+        !Number.isFinite(defaultSho))
+    ) {
+      return;
+    }
+
+    setSavingUnitId(categoryId);
+    setError(null);
+    try {
+      const res = await fetch("/api/specialist/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId, unit, defaultLong, defaultChu, defaultSho }),
+      });
+      if (!res.ok) throw new Error("failed");
+      setCategories((prev) =>
+        prev.map((c) =>
+          c.categoryId === categoryId ? { ...c, unit, defaultLong, defaultChu, defaultSho } : c
+        )
+      );
+      closeUnitEdit(categoryId);
+    } catch {
+      setError("単位の保存に失敗しました / Failed to save the unit");
+    } finally {
+      setSavingUnitId(null);
+    }
+  }
+
   async function addCategory() {
     const name = newCategoryName.trim();
+    const unit = newCategoryUnit.trim();
     if (!name || !branch) return;
+    // Mirrors the Add button's own disabled condition -- all 3 defaults
+    // required once a unit is set, none sent otherwise.
+    const defaultLong = unit ? Number(newCategoryDefaults.long) : null;
+    const defaultChu = unit ? Number(newCategoryDefaults.chu) : null;
+    const defaultSho = unit ? Number(newCategoryDefaults.sho) : null;
+    if (
+      unit &&
+      (newCategoryDefaults.long === "" ||
+        newCategoryDefaults.chu === "" ||
+        newCategoryDefaults.sho === "" ||
+        !Number.isFinite(defaultLong) ||
+        !Number.isFinite(defaultChu) ||
+        !Number.isFinite(defaultSho))
+    ) {
+      return;
+    }
+
     setAddingCategory(true);
     setError(null);
     try {
       const res = await fetch("/api/specialist/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ branch, name }),
+        body: JSON.stringify({ branch, name, unit, defaultLong, defaultChu, defaultSho }),
       });
       if (!res.ok) throw new Error("failed");
       const { categoryId } = await res.json();
-      setCategories((prev) => [...prev, { categoryId, branch, name }]);
+      setCategories((prev) => [
+        ...prev,
+        { categoryId, branch, name, unit, defaultLong, defaultChu, defaultSho },
+      ]);
       setNameDrafts((prev) => ({ ...prev, [categoryId]: name }));
       setNewCategoryName("");
+      setNewCategoryUnit("");
+      setNewCategoryDefaults({ long: "", chu: "", sho: "" });
     } catch {
       setError("項目の追加に失敗しました / Failed to add item");
     } finally {
@@ -778,6 +1062,67 @@ export default function SpecialistCoachPage() {
                                     ✕
                                   </button>
                                 </div>
+
+                                {unitEditDrafts[c.categoryId] ? (
+                                  <div className="flex flex-col gap-1 mt-1 bg-emerald-50/60 border border-emerald-100 rounded-lg px-2 py-1.5 print:hidden">
+                                    <input
+                                      type="text"
+                                      value={unitEditDrafts[c.categoryId].unit}
+                                      placeholder="単位（例：回）/ Unit"
+                                      onChange={(e) =>
+                                        setUnitEditDrafts((prev) => ({
+                                          ...prev,
+                                          [c.categoryId]: { ...prev[c.categoryId], unit: e.target.value },
+                                        }))
+                                      }
+                                      className="w-24 rounded border border-gray-300 px-1.5 py-0.5 text-xs outline-none focus:border-emerald-500"
+                                    />
+                                    {unitEditDrafts[c.categoryId].unit.trim() && (
+                                      <div className="flex flex-col gap-0.5 text-[10px] text-gray-600">
+                                        {(["long", "chu", "sho"] as const).map((k, i) => (
+                                          <label key={k} className="flex items-center gap-1">
+                                            {["年長", "年中", "年少"][i]}
+                                            <input
+                                              type="number"
+                                              min={0}
+                                              value={unitEditDrafts[c.categoryId][k]}
+                                              onChange={(e) =>
+                                                setUnitEditDrafts((prev) => ({
+                                                  ...prev,
+                                                  [c.categoryId]: { ...prev[c.categoryId], [k]: e.target.value },
+                                                }))
+                                              }
+                                              className="w-10 rounded border border-gray-300 px-1 py-0.5 text-xs text-center outline-none focus:border-emerald-500"
+                                            />
+                                          </label>
+                                        ))}
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => saveUnitEdit(c.categoryId)}
+                                        disabled={savingUnitId === c.categoryId}
+                                        className="text-[10px] font-semibold text-emerald-700 disabled:opacity-40"
+                                      >
+                                        保存 / Save
+                                      </button>
+                                      <button
+                                        onClick={() => closeUnitEdit(c.categoryId)}
+                                        disabled={savingUnitId === c.categoryId}
+                                        className="text-[10px] text-gray-400"
+                                      >
+                                        キャンセル / Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => openUnitEdit(c)}
+                                    className="text-[10px] text-gray-400 hover:text-emerald-700 print:hidden mt-0.5"
+                                  >
+                                    {c.unit ? `単位：${c.unit}（編集）` : "＋単位を設定 / Set unit"}
+                                  </button>
+                                )}
                               </td>
                             )}
                             <td
@@ -895,6 +1240,35 @@ export default function SpecialistCoachPage() {
                                         )}
                                       </div>
                                     )}
+                                    {/* 3rd line -- only for categories with a unit set, entirely
+                                        separate from the headcount line above: its own saved
+                                        value, its own default, no cap (same free-entry spirit as
+                                        the 最 row). */}
+                                    {isChecked && c.unit && (
+                                      <div className="flex items-center justify-center gap-px whitespace-nowrap bg-emerald-50 rounded px-0.5">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          value={draftUnitCounts[countKey] ?? ""}
+                                          disabled={isBusy}
+                                          placeholder="0"
+                                          onChange={(e) =>
+                                            setDraftUnitCounts((prev) => ({
+                                              ...prev,
+                                              [countKey]: e.target.value,
+                                            }))
+                                          }
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter") e.currentTarget.blur();
+                                          }}
+                                          onBlur={(e) => commitUnitCount(c.categoryId, g, date, e.target.value)}
+                                          className="w-6 bg-transparent text-right text-xs font-bold text-emerald-700 outline-none focus:bg-white/60 rounded disabled:text-gray-300 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                        />
+                                        <span className="text-emerald-600 text-[10px] font-semibold">
+                                          {c.unit}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 </td>
                               );
@@ -933,25 +1307,67 @@ export default function SpecialistCoachPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 self-center print:hidden">
-        <input
-          type="text"
-          value={newCategoryName}
-          onChange={(e) => setNewCategoryName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") addCategory();
-          }}
-          placeholder="新しい項目名（例：体操）/ New item name (e.g. Gymnastics)"
-          disabled={addingCategory}
-          className="rounded-full border border-gray-300 px-4 py-2 text-sm w-56"
-        />
-        <button
-          onClick={addCategory}
-          disabled={addingCategory || !newCategoryName.trim()}
-          className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
-        >
-          ＋ 追加 / Add
-        </button>
+      <div className="flex flex-col items-center gap-2 print:hidden">
+        <div className="flex items-center gap-2 flex-wrap justify-center">
+          <input
+            type="text"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addCategory();
+            }}
+            placeholder="新しい項目名（例：体操）/ New item name (e.g. Gymnastics)"
+            disabled={addingCategory}
+            className="rounded-full border border-gray-300 px-4 py-2 text-sm w-56"
+          />
+          <input
+            type="text"
+            value={newCategoryUnit}
+            onChange={(e) => setNewCategoryUnit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") addCategory();
+            }}
+            placeholder="単位（任意・例：時間、回）/ Unit (optional, e.g. 時間, 回)"
+            disabled={addingCategory}
+            className="rounded-full border border-gray-300 px-4 py-2 text-sm w-64"
+          />
+          <button
+            onClick={addCategory}
+            disabled={
+              addingCategory ||
+              !newCategoryName.trim() ||
+              (!!newCategoryUnit.trim() &&
+                (newCategoryDefaults.long === "" ||
+                  newCategoryDefaults.chu === "" ||
+                  newCategoryDefaults.sho === ""))
+            }
+            className="rounded-full bg-green-600 text-white px-4 py-2 text-sm font-semibold disabled:opacity-40"
+          >
+            ＋ 追加 / Add
+          </button>
+        </div>
+        {newCategoryUnit.trim() && (
+          <div className="flex items-center gap-4 flex-wrap justify-center bg-emerald-50/60 border border-emerald-100 rounded-xl px-4 py-2">
+            <p className="text-xs text-emerald-800 font-semibold">
+              チェックした日の初期値 / Default when checked:
+            </p>
+            {(["long", "chu", "sho"] as const).map((k, i) => (
+              <label key={k} className="flex items-center gap-1.5 text-xs text-gray-600">
+                {["年長", "年中", "年少"][i]}
+                <input
+                  type="number"
+                  min={0}
+                  value={newCategoryDefaults[k]}
+                  onChange={(e) =>
+                    setNewCategoryDefaults((prev) => ({ ...prev, [k]: e.target.value }))
+                  }
+                  className="w-14 rounded-md border border-gray-300 px-2 py-1 text-sm text-center outline-none focus:border-green-500"
+                />
+                <span className="text-gray-400">{newCategoryUnit.trim()}</span>
+              </label>
+            ))}
+          </div>
+        )}
       </div>
     </main>
   );

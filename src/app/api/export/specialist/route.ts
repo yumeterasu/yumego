@@ -4,6 +4,7 @@ import {
   getSpecialistCategories,
   getSpecialistAttendance,
   getSpecialistParticipation,
+  getSpecialistUnitCounts,
 } from "@/lib/sheets";
 import { applyGridBorders } from "@/lib/exportSheets";
 
@@ -38,11 +39,13 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [categories, schedule, headcount] = await Promise.all([
+    const [categories, schedule, headcount, unitCounts] = await Promise.all([
       getSpecialistCategories(branch),
       getSpecialistAttendance(branch, yearMonth),
       getSpecialistParticipation(branch, yearMonth),
+      getSpecialistUnitCounts(branch, yearMonth),
     ]);
+    const unitByCategoryId = new Map(categories.map((c) => [c.categoryId, c.unit]));
 
     const [year, month] = yearMonth.split("-").map(Number);
     const numDays = daysInMonth(year, month);
@@ -60,6 +63,12 @@ export async function GET(req: NextRequest) {
     for (const c of headcount) {
       countByKey.set(`${c.categoryId}|${c.grade}|${c.date}`, c.count);
     }
+    // "categoryId|grade" -> this month's unit-quantity total (時間/回/etc.)
+    const unitCountTotalByKey = new Map<string, number>();
+    for (const c of unitCounts) {
+      const key = `${c.categoryId}|${c.grade}`;
+      unitCountTotalByKey.set(key, (unitCountTotalByKey.get(key) ?? 0) + c.count);
+    }
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Yumego";
@@ -74,6 +83,7 @@ export async function GET(req: NextRequest) {
       ...dayNumbers.map((d) => `${d}(${WEEKDAY_LABELS[new Date(year, month - 1, d).getDay()]})`),
       "回数",
       "人数計",
+      "数量計",
       "全学年合計",
     ]);
     headerRowStyle(headerRow);
@@ -102,12 +112,22 @@ export async function GET(req: NextRequest) {
         });
         gradeCountTotals[grade] = countTotal;
 
+        // Unit-quantity total only applies to categories with a unit set
+        // (and never to 最, which has no unit/default concept) -- blank
+        // otherwise, same as the on-screen table only showing the 3rd line
+        // for those categories.
+        const unitCountTotal =
+          cat.unit && grade !== "最"
+            ? unitCountTotalByKey.get(`${cat.categoryId}|${grade}`) ?? 0
+            : null;
+
         const row = sheet.addRow([
           cat.name,
           grade,
           ...dayValues,
           daysChecked || "",
           countTotal || "",
+          unitCountTotal !== null ? unitCountTotal || "" : "",
           "", // filled in after all 3 grades via merge below
         ]);
         row.getCell(1).alignment = { vertical: "middle" };
@@ -126,11 +146,11 @@ export async function GET(req: NextRequest) {
       sheet.mergeCells(categoryStartRow, 1, categoryEndRow, 1);
       sheet.mergeCells(
         categoryStartRow,
-        3 + dayNumbers.length + 2,
+        3 + dayNumbers.length + 3,
         categoryEndRow,
-        3 + dayNumbers.length + 2
+        3 + dayNumbers.length + 3
       );
-      const totalCell = sheet.getRow(categoryStartRow).getCell(3 + dayNumbers.length + 2);
+      const totalCell = sheet.getRow(categoryStartRow).getCell(3 + dayNumbers.length + 3);
       totalCell.value = categoryTotal || "";
       totalCell.alignment = { horizontal: "center", vertical: "middle" };
       totalCell.font = { bold: true, color: { argb: "FF047857" } };
@@ -142,10 +162,11 @@ export async function GET(req: NextRequest) {
       ...dayNumbers.map(() => ({ width: 7 })), // wide enough for "31(土)" etc. without wrapping
       { width: 8 },
       { width: 9 },
+      { width: 8 },
       { width: 10 },
     ];
 
-    applyGridBorders(sheet, 5 + dayNumbers.length);
+    applyGridBorders(sheet, 6 + dayNumbers.length);
 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `${branch}_専門コーチ_${yearMonth}.xlsx`;

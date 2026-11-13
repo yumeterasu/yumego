@@ -8,6 +8,7 @@ import {
   getSpecialistCategories,
   getAllSpecialistAttendanceForGrade,
   getAllSpecialistParticipationForGrade,
+  getAllSpecialistUnitCountsForGrade,
 } from "@/lib/sheets";
 import { classNameToBranchGrade } from "@/lib/classes";
 import { addMonthlySheet, addAnnualSheet, yearMonthToFiscalYearStart } from "@/lib/exportSheets";
@@ -44,26 +45,39 @@ export async function GET(req: NextRequest) {
   const branchGrade = classNameToBranchGrade(className);
 
   try {
-    const [activeStudents, allAttendance, categories, schedule, headcount, extraHeadcount] =
-      await Promise.all([
-        getStudentsByClass(className),
-        getAllAttendanceForClass(className),
-        branchGrade ? getSpecialistCategories(branchGrade.branch) : Promise.resolve([]),
-        branchGrade
-          ? getAllSpecialistAttendanceForGrade(branchGrade.branch, branchGrade.grade)
-          : Promise.resolve([]),
-        branchGrade
-          ? getAllSpecialistParticipationForGrade(branchGrade.branch, branchGrade.grade)
-          : Promise.resolve([]),
-        // 最 is a 4th, branch-wide (not grade-specific) row on the
-        // specialist page -- include it in every grade's backup so it's
-        // never missed, but it's never auto-deleted by Reset (see
-        // students/reset/route.ts): the other grades in this branch may
-        // still be actively using it.
-        branchGrade
-          ? getAllSpecialistParticipationForGrade(branchGrade.branch, "最")
-          : Promise.resolve([]),
-      ]);
+    const [
+      activeStudents,
+      allAttendance,
+      categories,
+      schedule,
+      headcount,
+      extraHeadcount,
+      unitCounts,
+    ] = await Promise.all([
+      getStudentsByClass(className),
+      getAllAttendanceForClass(className),
+      branchGrade ? getSpecialistCategories(branchGrade.branch) : Promise.resolve([]),
+      branchGrade
+        ? getAllSpecialistAttendanceForGrade(branchGrade.branch, branchGrade.grade)
+        : Promise.resolve([]),
+      branchGrade
+        ? getAllSpecialistParticipationForGrade(branchGrade.branch, branchGrade.grade)
+        : Promise.resolve([]),
+      // 最 is a 4th, branch-wide (not grade-specific) row on the
+      // specialist page -- include it in every grade's backup so it's
+      // never missed, but it's never auto-deleted by Reset (see
+      // students/reset/route.ts): the other grades in this branch may
+      // still be actively using it.
+      branchGrade
+        ? getAllSpecialistParticipationForGrade(branchGrade.branch, "最")
+        : Promise.resolve([]),
+      // Unit-quantity (時間/回/etc.) history, same grade scope as
+      // headcount -- "最" never has this, there's no default/unit concept
+      // for that row.
+      branchGrade
+        ? getAllSpecialistUnitCountsForGrade(branchGrade.branch, branchGrade.grade)
+        : Promise.resolve([]),
+    ]);
 
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
 
@@ -158,6 +172,21 @@ export async function GET(req: NextRequest) {
         ]);
       });
       extraHeadcountSheet.columns = [{ width: 12 }, { width: 20 }, { width: 8 }];
+
+      if (unitCounts.length > 0) {
+        const unitCountSheet = workbook.addWorksheet("コーチ数量");
+        headerRowStyle(unitCountSheet.addRow(["日付", "種目", "単位", "数量"]));
+        const unitById = new Map(categories.map((c) => [c.categoryId, c.unit]));
+        unitCounts.forEach((r) => {
+          unitCountSheet.addRow([
+            r.date,
+            categoryNameById.get(r.categoryId) ?? r.categoryId,
+            unitById.get(r.categoryId) ?? "",
+            r.count,
+          ]);
+        });
+        unitCountSheet.columns = [{ width: 12 }, { width: 20 }, { width: 8 }, { width: 8 }];
+      }
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
