@@ -3,18 +3,22 @@ import { addStudentsBulk } from "@/lib/sheets";
 import { randomUUID } from "crypto";
 
 const BIRTH_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const START_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // POST /api/students/bulk
-// body: { className, students: [{ nameKanji, nameEnglish?, birthDate? }, ...] }
+// body: { className, startDate?, students: [{ nameKanji, nameEnglish?, birthDate? }, ...] }
 // Adds many students in one request (one Sheets append call), for
 // registering a whole new intake at once instead of one at a time.
 // birthDate, if given, must be "YYYY-MM-DD" -- a malformed one is dropped
 // (that student is still added, just without a birth date) rather than
 // failing the whole batch, since the client-side preview is meant to
-// catch this before submitting at all.
+// catch this before submitting at all. startDate, if given, must also be
+// "YYYY-MM-DD" and is applied to every student in the batch -- the common
+// case is a whole intake starting the same day; anyone starting later gets
+// their own startDate edited individually afterward via the edit screen.
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { className, students } = body ?? {};
+  const { className, startDate, students } = body ?? {};
 
   if (!className || !Array.isArray(students) || students.length === 0) {
     return NextResponse.json(
@@ -22,6 +26,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  if (startDate && !START_DATE_RE.test(startDate)) {
+    return NextResponse.json(
+      { error: "startDate must be YYYY-MM-DD" },
+      { status: 400 }
+    );
+  }
+  const sharedStartDate = typeof startDate === "string" ? startDate : "";
 
   const rows: { nameKanji: unknown; nameEnglish?: unknown; birthDate?: unknown }[] = students;
   const cleaned: {
@@ -30,10 +41,6 @@ export async function POST(req: NextRequest) {
     nameEnglish: string;
     className: string;
     birthDate: string;
-    // Bulk import doesn't collect a start/end date -- "" means no
-    // restriction (see Student.startDate/endDate), same as every student
-    // added before these existed. Set them afterward per-student via the
-    // edit screen if needed.
     startDate: string;
     endDate: string;
   }[] = [];
@@ -46,7 +53,7 @@ export async function POST(req: NextRequest) {
       nameEnglish: typeof r.nameEnglish === "string" ? r.nameEnglish.trim() : "",
       className,
       birthDate: BIRTH_DATE_RE.test(rawBirthDate) ? rawBirthDate : "",
-      startDate: "",
+      startDate: sharedStartDate,
       endDate: "",
     });
   }

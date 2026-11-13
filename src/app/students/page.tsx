@@ -395,6 +395,7 @@ export default function StudentsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           className: selectedClass,
+          startDate,
           students: bulkParsed.map(({ nameKanji, nameEnglish, birthDate }) => ({
             nameKanji,
             nameEnglish,
@@ -405,6 +406,7 @@ export default function StudentsPage() {
       if (!res.ok) throw new Error("failed");
       setBulkText("");
       setBulkBirthDatesText("");
+      setStartDate(todayDateString());
       await loadStudents(selectedClass);
     } catch {
       setError("一括追加に失敗しました / Failed to bulk-add students");
@@ -1106,6 +1108,20 @@ export default function StudentsPage() {
                 rows={4}
                 placeholder={"2020/04/08\n2020/4/14\n2020/4/28"}
                 className="border rounded px-3 py-2 font-mono text-sm"
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 text-sm">
+              入園日（任意・この一括追加分は全員同じ日付になります）
+              <span className="text-xs font-normal text-gray-500">
+                Start date (optional) — applies to everyone in this batch; edit a student
+                individually afterward if they actually start later
+              </span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="border rounded px-3 py-2"
               />
             </label>
             {birthDateCountMismatch && (
