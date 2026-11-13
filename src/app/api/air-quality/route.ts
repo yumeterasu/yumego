@@ -1,32 +1,41 @@
 import { NextResponse } from "next/server";
 
-// Roughly central Bangkok (Watthana district) -- プロンポン and トンロー are
-// only a few km apart, so one shared reading for both branches is close
-// enough rather than querying two near-identical points separately.
-const BANGKOK_LAT = 13.7563;
-const BANGKOK_LON = 100.5018;
+// Pollution Control Department's Air4Thai network -- free, no API key, and
+// (unlike the Open-Meteo model-based estimate this replaced) a real ground
+// station. "bkp70t" (Soi Sukhumwit 63, Wattana) is the closest station to
+// プロンポン/トンロー -- both branches are only ~1-2km from it, so one shared
+// reading is close enough rather than querying per-branch.
+const STATION_ID = "bkp70t";
 
-// Open-Meteo's Air Quality API -- free, no API key/signup required (CC-BY
-// 4.0 licensed data), confirmed live at
-// https://air-quality-api.open-meteo.com/v1/air-quality.
 export const revalidate = 1800; // 30 min -- PM2.5 readings don't change fast
 // enough to justify hitting the external API on every single page load;
 // Next's fetch cache (below) does the actual caching, this just documents it.
+// (Air4Thai itself only refreshes readings hourly, so this is conservative.)
 
 export async function GET() {
   try {
-    const res = await fetch(
-      `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${BANGKOK_LAT}&longitude=${BANGKOK_LON}&current=pm2_5&timezone=Asia%2FBangkok`,
-      { next: { revalidate: 1800 } }
-    );
-    if (!res.ok) throw new Error(`Open-Meteo responded ${res.status}`);
+    const res = await fetch("https://air4thai.pcd.go.th/services/getNewAQI_JSON.php", {
+      next: { revalidate: 1800 },
+    });
+    if (!res.ok) throw new Error(`Air4Thai responded ${res.status}`);
     const data = await res.json();
-    const pm25 = data.current?.pm2_5;
-    if (typeof pm25 !== "number") throw new Error("Missing pm2_5 in response");
+    const station = (data.stations as Array<Record<string, unknown>>)?.find(
+      (s) => s.stationID === STATION_ID
+    );
+    const pm25 = (station?.AQILast as Record<string, unknown>)?.PM25 as
+      | { aqi?: string; value?: string; color_id?: string }
+      | undefined;
+    const aqi = pm25?.aqi !== undefined ? Number(pm25.aqi) : NaN;
+    if (!station || Number.isNaN(aqi) || aqi < 0) throw new Error("Missing PM2.5 AQI in response");
 
+    const aqiLast = station.AQILast as { date?: string; time?: string };
     return NextResponse.json({
-      pm25: Math.round(pm25),
-      updatedAt: data.current?.time ?? null,
+      aqi,
+      colorId: pm25?.color_id !== undefined ? Number(pm25.color_id) : null,
+      pm25: pm25?.value !== undefined ? Number(pm25.value) : null,
+      area: station.areaEN ?? null,
+      updatedAt:
+        aqiLast.date && aqiLast.time ? `${aqiLast.date}T${aqiLast.time}:00+07:00` : null,
     });
   } catch (err) {
     console.error(err);

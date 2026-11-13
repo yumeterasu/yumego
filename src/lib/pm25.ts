@@ -1,8 +1,8 @@
-// Thailand PCD-style PM2.5 severity scale (µg/m3) shared by the Top page's
-// indicator and its API route — breakpoints are illustrative/approximate,
-// not an authoritative copy of the PCD's own published thresholds.
+// Thailand PCD's own 5-band AQI severity scale -- indexed by the
+// "color_id" (1-5) that Air4Thai's API already assigns to each reading, so
+// this mirrors the PCD's official categorization exactly rather than
+// re-deriving breakpoints from the raw PM2.5 concentration ourselves.
 export type Pm25Level = {
-  max: number;
   labelJa: string;
   labelEn: string;
   textClass: string;
@@ -11,9 +11,8 @@ export type Pm25Level = {
   dotClass: string;
 };
 
-export const PM25_LEVELS: Pm25Level[] = [
-  {
-    max: 25,
+export const AQI_LEVELS_BY_COLOR_ID: Record<number, Pm25Level> = {
+  1: {
     labelJa: "非常に良い",
     labelEn: "Very Good",
     textClass: "text-blue-700",
@@ -21,8 +20,7 @@ export const PM25_LEVELS: Pm25Level[] = [
     borderClass: "border-blue-200",
     dotClass: "bg-blue-500",
   },
-  {
-    max: 37,
+  2: {
     labelJa: "良い",
     labelEn: "Good",
     textClass: "text-green-700",
@@ -30,8 +28,7 @@ export const PM25_LEVELS: Pm25Level[] = [
     borderClass: "border-green-200",
     dotClass: "bg-green-500",
   },
-  {
-    max: 50,
+  3: {
     labelJa: "普通",
     labelEn: "Moderate",
     textClass: "text-yellow-700",
@@ -39,8 +36,7 @@ export const PM25_LEVELS: Pm25Level[] = [
     borderClass: "border-yellow-200",
     dotClass: "bg-yellow-500",
   },
-  {
-    max: 90,
+  4: {
     labelJa: "要注意",
     labelEn: "Unhealthy (Sensitive)",
     textClass: "text-orange-700",
@@ -48,8 +44,7 @@ export const PM25_LEVELS: Pm25Level[] = [
     borderClass: "border-orange-200",
     dotClass: "bg-orange-500",
   },
-  {
-    max: Infinity,
+  5: {
     labelJa: "健康に影響",
     labelEn: "Unhealthy",
     textClass: "text-red-700",
@@ -57,8 +52,10 @@ export const PM25_LEVELS: Pm25Level[] = [
     borderClass: "border-red-200",
     dotClass: "bg-red-500",
   },
-];
+};
 
-export function pm25Level(pm25: number): Pm25Level {
-  return PM25_LEVELS.find((l) => pm25 <= l.max) ?? PM25_LEVELS[PM25_LEVELS.length - 1];
+const FALLBACK_LEVEL = AQI_LEVELS_BY_COLOR_ID[5];
+
+export function aqiLevel(colorId: number): Pm25Level {
+  return AQI_LEVELS_BY_COLOR_ID[colorId] ?? FALLBACK_LEVEL;
 }

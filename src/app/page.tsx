@@ -14,7 +14,7 @@ import {
   isClassColorKey,
 } from "@/lib/classColors";
 import type { OutingLog } from "@/lib/sheets";
-import { pm25Level } from "@/lib/pm25";
+import { aqiLevel } from "@/lib/pm25";
 
 // A departure not yet marked back after this long gets flagged on this
 // page -- staff land here first, so a forgotten check-in surfaces here
@@ -85,13 +85,17 @@ export default function Home() {
     loadSummary(selectedDate);
   }, [selectedDate, loadSummary]);
 
-  const [airQuality, setAirQuality] = useState<{ pm25: number } | null>(null);
+  const [airQuality, setAirQuality] = useState<{ aqi: number; colorId: number; area: string | null } | null>(
+    null
+  );
 
   useEffect(() => {
     fetch("/api/air-quality")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data && typeof data.pm25 === "number") setAirQuality({ pm25: data.pm25 });
+        if (data && typeof data.aqi === "number") {
+          setAirQuality({ aqi: data.aqi, colorId: data.colorId ?? 5, area: data.area ?? null });
+        }
       })
       .catch(() => {
         // non-fatal -- the indicator just doesn't render if this fails
@@ -181,25 +185,24 @@ export default function Home() {
         <span className="block text-[9px] font-normal opacity-70">Management</span>
       </Link>
 
-      {/* PM2.5 -- a single Bangkok-wide reading (プロンポン/トンロー are only
-          a few km apart), color-coded by severity so it reads at a glance
-          without needing to parse the number. Silently absent if the fetch
-          hasn't resolved/failed -- not core functionality. */}
+      {/* AQI (PM2.5) -- a single ground-station reading from Air4Thai (PCD)
+          nearest to プロンポン/トンロー (both only ~1-2km from it), color-coded
+          by severity so it reads at a glance without needing to parse the
+          number. Silently absent if the fetch hasn't resolved/failed -- not
+          core functionality. */}
       {airQuality && (
         <div
-          className={`w-full max-w-md rounded-2xl border px-5 py-3 text-center ${pm25Level(airQuality.pm25).bgClass} ${pm25Level(airQuality.pm25).borderClass}`}
+          className={`w-full max-w-md rounded-2xl border px-5 py-3 text-center ${aqiLevel(airQuality.colorId).bgClass} ${aqiLevel(airQuality.colorId).borderClass}`}
         >
           <div className="flex items-center justify-center gap-2">
-            <span className={`w-3.5 h-3.5 rounded-full ${pm25Level(airQuality.pm25).dotClass}`} />
-            <span className="text-sm font-bold">
-              PM2.5 {airQuality.pm25} µg/m³
-            </span>
-            <span className={`text-xs font-bold rounded-full px-3 py-0.5 ${pm25Level(airQuality.pm25).bgClass} ${pm25Level(airQuality.pm25).textClass}`}>
-              {pm25Level(airQuality.pm25).labelJa} / {pm25Level(airQuality.pm25).labelEn}
+            <span className={`w-3.5 h-3.5 rounded-full ${aqiLevel(airQuality.colorId).dotClass}`} />
+            <span className="text-sm font-bold">AQI {airQuality.aqi}</span>
+            <span className={`text-xs font-bold rounded-full px-3 py-0.5 ${aqiLevel(airQuality.colorId).bgClass} ${aqiLevel(airQuality.colorId).textClass}`}>
+              {aqiLevel(airQuality.colorId).labelJa} / {aqiLevel(airQuality.colorId).labelEn}
             </span>
           </div>
           <p className="text-[10px] text-gray-400 mt-0.5">
-            この日の大気質（バンコク基準） · Air quality (Bangkok PCD scale)
+            {airQuality.area ?? "ワッタナー区"} の大気質（PM2.5・Air4Thai／PCD） · Air quality (PM2.5, Air4Thai/PCD)
           </p>
         </div>
       )}
