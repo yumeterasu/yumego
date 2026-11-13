@@ -184,6 +184,15 @@ function eligibleWeekdayRange(
   return dates;
 }
 
+/** Inclusive count of calendar days between start and end ("YYYY-MM-DD"),
+ *  every day counted regardless of weekday -- unlike weekdayRange/
+ *  eligibleWeekdayRange above, which exclude weekends. Used for 登園日数. */
+function calendarDayCount(start: string, end: string): number {
+  const startMs = new Date(start + "T00:00:00").getTime();
+  const endMs = new Date(end + "T00:00:00").getTime();
+  return Math.round((endMs - startMs) / 86400000) + 1;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1313,7 +1322,7 @@ export default function DashboardPage() {
                     {count > 0 ? count : ""}
                   </th>
                 ))}
-                <th colSpan={7} className="border border-gray-300 bg-gray-50" />
+                <th colSpan={8} className="border border-gray-300 bg-gray-50" />
               </tr>
               <tr>
                 <th className="sticky left-0 bg-gray-100 border border-gray-300 px-2 py-1 text-center whitespace-nowrap z-10 w-8">
@@ -1346,6 +1355,10 @@ export default function DashboardPage() {
                 <th className="border border-gray-300 px-2 py-2 bg-red-50/40 text-red-700 whitespace-nowrap">
                   欠席理由
                   <span className="block text-[9px] font-normal">Absence Reason</span>
+                </th>
+                <th className="border border-gray-300 px-2 py-2 bg-blue-50 text-blue-800 w-14 whitespace-nowrap">
+                  登園日数
+                  <span className="block text-[9px] font-normal">Days enrolled</span>
                 </th>
                 <th className="border border-gray-300 px-1 py-1 bg-cyan-100 text-cyan-800 w-14">
                   <input
@@ -1411,6 +1424,25 @@ export default function DashboardPage() {
                       .map(([reason, count]) => `${reason} ${count}`)
                       .join(", ")
                   : "";
+
+                // 登園日数 -- see calendarDayCount. Falls back to the
+                // earliest recorded day this month when startDate isn't set
+                // yet (see calendarDayCount's comment for why weekends
+                // aren't excluded).
+                let effectiveStart = s.startDate;
+                if (!effectiveStart && dayMap.size > 0) {
+                  const earliestDay = Math.min(...dayMap.keys());
+                  effectiveStart = `${year}-${pad2(month)}-${pad2(earliestDay)}`;
+                }
+                let enrolledDays: number | null = null;
+                if (effectiveStart) {
+                  const monthStart = `${year}-${pad2(month)}-01`;
+                  const monthEnd = `${year}-${pad2(month)}-${pad2(numDays)}`;
+                  const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
+                  let rangeEnd = today < monthEnd ? today : monthEnd;
+                  if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
+                  enrolledDays = rangeStart <= rangeEnd ? calendarDayCount(rangeStart, rangeEnd) : 0;
+                }
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
@@ -1521,6 +1553,9 @@ export default function DashboardPage() {
                     </td>
                     <td className="border border-gray-300 px-2 py-1 text-xs text-gray-600 whitespace-nowrap">
                       {reasonSummary}
+                    </td>
+                    <td className="text-center border border-gray-300 font-semibold text-blue-700">
+                      {enrolledDays !== null ? enrolledDays : "-"}
                     </td>
                     <td className="text-center border border-gray-300 bg-cyan-50/40">
                       <input

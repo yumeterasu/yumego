@@ -19,6 +19,22 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
+// This file runs server-side, so there's no browser-local Date() to rely on
+// for "today" the way the Dashboard's own todayDateString() does -- same
+// Bangkok-shift idiom already used in src/lib/reportSheets.ts.
+function todayBangkok(): string {
+  const shifted = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/** Inclusive count of calendar days between start and end ("YYYY-MM-DD"),
+ *  every day counted regardless of weekday. Used for 登園日数. */
+function calendarDayCount(start: string, end: string): number {
+  const startMs = new Date(start + "T00:00:00").getTime();
+  const endMs = new Date(end + "T00:00:00").getTime();
+  return Math.round((endMs - startMs) / 86400000) + 1;
+}
+
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
   present: "出",
   absent: "欠",
@@ -123,7 +139,7 @@ export function addMonthlySheet(
   // Google Sheet -- narrow date columns only read cleanly split this way;
   // the non-date columns (#, 名前, 出, 欠, ...) are vertically merged across
   // both rows below so their labels still read as a single header cell.
-  const totalCols = numDays + 9;
+  const totalCols = numDays + 10;
   const headerRow1Values = [
     "#",
     "名前",
@@ -131,6 +147,7 @@ export function addMonthlySheet(
     "出",
     "欠",
     "欠席理由",
+    "登園日数",
     ...checkHeaders,
     "備考",
   ];
@@ -138,6 +155,7 @@ export function addMonthlySheet(
     "",
     "",
     ...dayNumbers.map((d) => WEEKDAY_LABELS[new Date(year, month - 1, d).getDay()]),
+    "",
     "",
     "",
     "",
@@ -168,7 +186,18 @@ export function addMonthlySheet(
 
   // #, 名前, 出, 欠, 欠席理由, チェック1-3, 備考 -- every non-date column --
   // span both header rows as one merged cell.
-  const nonDateCols = [1, 2, 3 + numDays, 4 + numDays, 5 + numDays, 6 + numDays, 7 + numDays, 8 + numDays, 9 + numDays];
+  const nonDateCols = [
+    1,
+    2,
+    3 + numDays,
+    4 + numDays,
+    5 + numDays,
+    6 + numDays,
+    7 + numDays,
+    8 + numDays,
+    9 + numDays,
+    10 + numDays,
+  ];
   for (const col of nonDateCols) {
     sheet.mergeCells(headerRow1.number, col, headerRow2.number, col);
   }
@@ -185,6 +214,24 @@ export function addMonthlySheet(
     for (const status of dayMap.values()) {
       if (countsAsPresent(status)) presentCount++;
       else absentCount++;
+    }
+
+    // 登園日数 -- see calendarDayCount/todayBangkok above. Mirrors the
+    // Dashboard's own on-screen computation exactly.
+    let effectiveStart = s.startDate;
+    if (!effectiveStart && dayMap.size > 0) {
+      const earliestDay = Math.min(...dayMap.keys());
+      effectiveStart = `${year}-${String(month).padStart(2, "0")}-${String(earliestDay).padStart(2, "0")}`;
+    }
+    let enrolledDays: number | null = null;
+    if (effectiveStart) {
+      const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+      const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(numDays).padStart(2, "0")}`;
+      const today = todayBangkok();
+      const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
+      let rangeEnd = today < monthEnd ? today : monthEnd;
+      if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
+      enrolledDays = rangeStart <= rangeEnd ? calendarDayCount(rangeStart, rangeEnd) : 0;
     }
 
     const reasonCounts = new Map<string, number>();
@@ -208,6 +255,7 @@ export function addMonthlySheet(
       presentCount || "",
       absentCount || "",
       reasonSummary,
+      enrolledDays !== null ? enrolledDays : "",
       check?.check1 ? "✓" : "",
       check?.check2 ? "✓" : "",
       check?.check3 ? "✓" : "",
@@ -244,6 +292,7 @@ export function addMonthlySheet(
     { width: 5 },
     { width: 5 },
     { width: 20 },
+    { width: 8 },
     { width: 10 },
     { width: 10 },
     { width: 10 },
