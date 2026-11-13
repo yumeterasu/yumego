@@ -27,12 +27,22 @@ function todayBangkok(): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-/** Inclusive count of calendar days between start and end ("YYYY-MM-DD"),
- *  every day counted regardless of weekday. Used for 登園日数. */
-function calendarDayCount(start: string, end: string): number {
-  const startMs = new Date(start + "T00:00:00").getTime();
-  const endMs = new Date(end + "T00:00:00").getTime();
-  return Math.round((endMs - startMs) / 86400000) + 1;
+/** Count of school days between start and end ("YYYY-MM-DD", inclusive) --
+ *  skips Saturdays, Sundays, and any date in closedDates (merged Master
+ *  holidays + this class's own calendar overrides). Used for 登園日数. */
+function countSchoolDays(start: string, end: string, closedDates: Set<string>): number {
+  let count = 0;
+  const cur = new Date(start + "T00:00:00");
+  const last = new Date(end + "T00:00:00");
+  while (cur <= last) {
+    const dow = cur.getDay();
+    const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
+      cur.getDate()
+    ).padStart(2, "0")}`;
+    if (dow !== 0 && dow !== 6 && !closedDates.has(dateStr)) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
 }
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = {
@@ -103,9 +113,14 @@ export function addMonthlySheet(
     // class+month now, not a permanent property of the student, so this
     // must be looked up for the specific month being exported.
     monthlyChecks?: Map<string, { check1: boolean; check2: boolean; check3: boolean }>;
+    // Merged Master holidays + this class's own calendar overrides, as
+    // "YYYY-MM-DD" strings -- see countSchoolDays, used for 登園日数. Not
+    // month-scoped by the caller (both sources are whole-list fetches), so
+    // the same Set can be reused across multiple addMonthlySheet calls.
+    closedDates: Set<string>;
   }
 ) {
-  const { sheetName, yearMonth, students, records, checkLabels, monthlyChecks } = opts;
+  const { sheetName, yearMonth, students, records, checkLabels, monthlyChecks, closedDates } = opts;
   const [year, month] = yearMonth.split("-").map(Number);
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
@@ -216,8 +231,9 @@ export function addMonthlySheet(
       else absentCount++;
     }
 
-    // 登園日数 -- see calendarDayCount/todayBangkok above. Mirrors the
-    // Dashboard's own on-screen computation exactly.
+    // 登園日数 -- see countSchoolDays/todayBangkok above. Mirrors the
+    // Dashboard's own on-screen computation exactly (weekends and
+    // closedDates excluded, not just a raw calendar-day span).
     let effectiveStart = s.startDate;
     if (!effectiveStart && dayMap.size > 0) {
       const earliestDay = Math.min(...dayMap.keys());
@@ -231,7 +247,7 @@ export function addMonthlySheet(
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
       let rangeEnd = today < monthEnd ? today : monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
-      enrolledDays = rangeStart <= rangeEnd ? calendarDayCount(rangeStart, rangeEnd) : 0;
+      enrolledDays = rangeStart <= rangeEnd ? countSchoolDays(rangeStart, rangeEnd, closedDates) : 0;
     }
 
     const reasonCounts = new Map<string, number>();

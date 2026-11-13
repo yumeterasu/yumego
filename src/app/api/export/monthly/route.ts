@@ -5,6 +5,8 @@ import {
   getAttendanceForMonth,
   getClassCheckLabels,
   getMonthlyChecks,
+  getMasterHolidays,
+  getClassCalendarOverrides,
 } from "@/lib/sheets";
 import { addMonthlySheet } from "@/lib/exportSheets";
 
@@ -21,13 +23,25 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [students, allRecords, checkLabels, checks] = await Promise.all([
-      getStudentsByClass(className),
-      getAttendanceForMonth(className, yearMonth),
-      getClassCheckLabels(className, yearMonth),
-      getMonthlyChecks(className, yearMonth),
-    ]);
+    const [students, allRecords, checkLabels, checks, masterHolidays, overrides] =
+      await Promise.all([
+        getStudentsByClass(className),
+        getAttendanceForMonth(className, yearMonth),
+        getClassCheckLabels(className, yearMonth),
+        getMonthlyChecks(className, yearMonth),
+        getMasterHolidays(),
+        getClassCalendarOverrides(className),
+      ]);
     const monthlyChecks = new Map(checks.map((c) => [c.studentId, c]));
+
+    // Merged Master holidays + this class's own calendar overrides, for
+    // 登園日数 (excludes weekends/holidays, not just a raw calendar span) --
+    // same merge the on-screen Dashboard grid already does for closedDates.
+    const closedDates = new Set(masterHolidays.map((h) => h.date));
+    for (const o of overrides) {
+      if (o.isOpen) closedDates.delete(o.date);
+      else closedDates.add(o.date);
+    }
 
     // A record dated before a student's own startDate, or after their
     // endDate, is excluded, same as the on-screen Dashboard grid. See
@@ -52,6 +66,7 @@ export async function GET(req: NextRequest) {
       records,
       checkLabels,
       monthlyChecks,
+      closedDates,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();

@@ -184,15 +184,6 @@ function eligibleWeekdayRange(
   return dates;
 }
 
-/** Inclusive count of calendar days between start and end ("YYYY-MM-DD"),
- *  every day counted regardless of weekday -- unlike weekdayRange/
- *  eligibleWeekdayRange above, which exclude weekends. Used for 登園日数. */
-function calendarDayCount(start: string, end: string): number {
-  const startMs = new Date(start + "T00:00:00").getTime();
-  const endMs = new Date(end + "T00:00:00").getTime();
-  return Math.round((endMs - startMs) / 86400000) + 1;
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1425,10 +1416,11 @@ export default function DashboardPage() {
                       .join(", ")
                   : "";
 
-                // 登園日数 -- see calendarDayCount. Falls back to the
-                // earliest recorded day this month when startDate isn't set
-                // yet (see calendarDayCount's comment for why weekends
-                // aren't excluded).
+                // 登園日数 -- school days only (weekdayRange already skips
+                // Sat/Sun; closedDates excludes holidays too, same merged
+                // Set the day-cells already use for showHolidayDefault
+                // below). Falls back to the earliest recorded day this
+                // month when startDate isn't set yet.
                 let effectiveStart = s.startDate;
                 if (!effectiveStart && dayMap.size > 0) {
                   const earliestDay = Math.min(...dayMap.keys());
@@ -1441,7 +1433,10 @@ export default function DashboardPage() {
                   const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
                   let rangeEnd = today < monthEnd ? today : monthEnd;
                   if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
-                  enrolledDays = rangeStart <= rangeEnd ? calendarDayCount(rangeStart, rangeEnd) : 0;
+                  enrolledDays =
+                    rangeStart <= rangeEnd
+                      ? weekdayRange(rangeStart, rangeEnd).filter((d) => !closedDates.has(d)).length
+                      : 0;
                 }
 
                 return (

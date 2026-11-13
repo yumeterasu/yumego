@@ -9,6 +9,8 @@ import {
   getAllSpecialistAttendanceForGrade,
   getAllSpecialistParticipationForGrade,
   getAllSpecialistUnitCountsForGrade,
+  getMasterHolidays,
+  getClassCalendarOverrides,
 } from "@/lib/sheets";
 import { classNameToBranchGrade } from "@/lib/classes";
 import { addMonthlySheet, addAnnualSheet, yearMonthToFiscalYearStart } from "@/lib/exportSheets";
@@ -53,6 +55,8 @@ export async function GET(req: NextRequest) {
       headcount,
       extraHeadcount,
       unitCounts,
+      masterHolidays,
+      overrides,
     ] = await Promise.all([
       getStudentsByClass(className),
       getAllAttendanceForClass(className),
@@ -77,9 +81,19 @@ export async function GET(req: NextRequest) {
       branchGrade
         ? getAllSpecialistUnitCountsForGrade(branchGrade.branch, branchGrade.grade)
         : Promise.resolve([]),
+      getMasterHolidays(),
+      getClassCalendarOverrides(className),
     ]);
 
     const categoryNameById = new Map(categories.map((c) => [c.categoryId, c.name]));
+
+    // Merged once, reused for every month's sheet below (same convention as
+    // /api/export/monthly) -- neither source is month-scoped anyway.
+    const closedDates = new Set(masterHolidays.map((h) => h.date));
+    for (const o of overrides) {
+      if (o.isOpen) closedDates.delete(o.date);
+      else closedDates.add(o.date);
+    }
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "Yumego";
@@ -138,6 +152,7 @@ export async function GET(req: NextRequest) {
         records: monthRecords,
         checkLabels: monthCheckLabels,
         monthlyChecks: new Map(monthChecks.map((c) => [c.studentId, c])),
+        closedDates,
       });
     }
 
