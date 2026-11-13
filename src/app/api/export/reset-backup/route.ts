@@ -132,6 +132,7 @@ export async function GET(req: NextRequest) {
         fiscalYearStart,
         students: activeStudents,
         records: yearRecords,
+        closedDates,
       });
     }
 

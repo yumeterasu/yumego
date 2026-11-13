@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { getStudentsByClass, getAttendanceForFiscalYear } from "@/lib/sheets";
+import {
+  getStudentsByClass,
+  getAttendanceForFiscalYear,
+  getMasterHolidays,
+  getClassCalendarOverrides,
+} from "@/lib/sheets";
 import { addAnnualSheet } from "@/lib/exportSheets";
 
 // GET /api/export/annual?class=...&fiscalYear=2026
@@ -17,10 +22,21 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [students, allRecords] = await Promise.all([
+    const [students, allRecords, masterHolidays, overrides] = await Promise.all([
       getStudentsByClass(className),
       getAttendanceForFiscalYear(className, fiscalYearStart),
+      getMasterHolidays(),
+      getClassCalendarOverrides(className),
     ]);
+
+    // Merged Master holidays + this class's own calendar overrides, for
+    // 登園日数 (see addAnnualSheet) -- same merge the Dashboard grid and
+    // /api/export/monthly already do.
+    const closedDates = new Set(masterHolidays.map((h) => h.date));
+    for (const o of overrides) {
+      if (o.isOpen) closedDates.delete(o.date);
+      else closedDates.add(o.date);
+    }
 
     // A record dated before a student's own startDate, or after their
     // endDate, is excluded, same as the on-screen Dashboard/年間まとめ.
@@ -43,6 +59,7 @@ export async function GET(req: NextRequest) {
       fiscalYearStart,
       students,
       records,
+      closedDates,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();

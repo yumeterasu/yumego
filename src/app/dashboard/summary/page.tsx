@@ -46,6 +46,34 @@ function defaultFiscalYearStart(): number {
   return m >= 4 ? y : y - 1;
 }
 
+function daysInMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function todayDateString() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
+/** Count of school days between start and end ("YYYY-MM-DD", inclusive) --
+ *  skips Saturdays, Sundays, and any date in closedDates. Used for 登園日数. */
+function countSchoolDays(start: string, end: string, closedDates: Set<string>): number {
+  let count = 0;
+  const cur = new Date(start + "T00:00:00");
+  const last = new Date(end + "T00:00:00");
+  while (cur <= last) {
+    const dow = cur.getDay();
+    const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
+      cur.getDate()
+    ).padStart(2, "0")}`;
+    if (dow !== 0 && dow !== 6 && !closedDates.has(dateStr)) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
 export default function SummaryPage() {
   const router = useRouter();
   const { selectedClass, loaded } = useSelectedClass();
@@ -55,6 +83,10 @@ export default function SummaryPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [remarks, setRemarks] = useState<Record<string, string>>({});
+  // Merged Master holidays + this class's own calendar overrides, for
+  // 登園日数 (see countSchoolDays) -- same merge the monthly Dashboard
+  // already builds for its own holiday handling.
+  const [closedDates, setClosedDates] = useState<Set<string>>(new Set());
   const [savingRemarkId, setSavingRemarkId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,11 +96,13 @@ export default function SummaryPage() {
     setLoading(true);
     setError(null);
     try {
-      const [studentsRes, summaryRes] = await Promise.all([
+      const [studentsRes, summaryRes, holidaysRes, overridesRes] = await Promise.all([
         apiFetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
         apiFetch(
           `/api/attendance/summary?class=${encodeURIComponent(selectedClass)}&fiscalYear=${fiscalYearStart}`
         ),
+        apiFetch("/api/calendar/master"),
+        apiFetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
       ]);
       if (!studentsRes.ok || !summaryRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
@@ -79,6 +113,22 @@ export default function SummaryPage() {
       setRemarks(
         Object.fromEntries(loadedStudents.map((s) => [s.studentId, s.remark ?? ""]))
       );
+
+      // Holidays are secondary (登園日数 degrades to counting weekends out
+      // but not holidays if this fails) -- never fail the whole page load
+      // over them.
+      const holidayDates: { date: string }[] = holidaysRes.ok
+        ? ((await holidaysRes.json()).holidays ?? [])
+        : [];
+      const classOverrides: { date: string; isOpen: boolean }[] = overridesRes.ok
+        ? ((await overridesRes.json()).overrides ?? [])
+        : [];
+      const closed = new Set(holidayDates.map((h) => h.date));
+      for (const o of classOverrides) {
+        if (o.isOpen) closed.delete(o.date);
+        else closed.add(o.date);
+      }
+      setClosedDates(closed);
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         setError("__SESSION_EXPIRED__");
@@ -149,8 +199,12 @@ export default function SummaryPage() {
   const counts = new Map<string, number[]>();
   for (const s of students) counts.set(s.studentId, new Array(12).fill(0));
 
+  // studentId -> monthIndex -> earliest recorded date that month (any
+  // status), for the same startDate-not-set fallback the monthly
+  // Dashboard uses.
+  const earliestRecordByStudentMonth = new Map<string, Map<number, string>>();
+
   for (const [key, status] of dedupedByStudentDate) {
-    if (!countsAsPresent(status)) continue;
     const [studentId, date] = key.split("|");
     const y = Number(date.slice(0, 4));
     const m = Number(date.slice(5, 7));
@@ -158,8 +212,48 @@ export default function SummaryPage() {
       (fm) => fm.monthNum === m && fiscalYearStart + fm.yearOffset === y
     );
     if (monthIndex === -1) continue;
-    const arr = counts.get(studentId);
-    if (arr) arr[monthIndex]++;
+
+    if (countsAsPresent(status)) {
+      const arr = counts.get(studentId);
+      if (arr) arr[monthIndex]++;
+    }
+
+    if (!earliestRecordByStudentMonth.has(studentId)) {
+      earliestRecordByStudentMonth.set(studentId, new Map());
+    }
+    const monthMap = earliestRecordByStudentMonth.get(studentId)!;
+    const existing = monthMap.get(monthIndex);
+    if (!existing || date < existing) monthMap.set(monthIndex, date);
+  }
+
+  // 登園日数 total -- same per-month clamp/fallback as the monthly
+  // Dashboard's single-month version, walked over all 12 fiscal months and
+  // summed, since there's no shortcut that avoids repeating the clamp
+  // logic once per month.
+  const today = todayDateString();
+  const enrolledTotalByStudent = new Map<string, number>();
+  for (const s of students) {
+    let total = 0;
+    for (let monthIndex = 0; monthIndex < FISCAL_MONTHS.length; monthIndex++) {
+      const { monthNum, yearOffset } = FISCAL_MONTHS[monthIndex];
+      const y = fiscalYearStart + yearOffset;
+      const monthStart = `${y}-${String(monthNum).padStart(2, "0")}-01`;
+      const monthEnd = `${y}-${String(monthNum).padStart(2, "0")}-${String(
+        daysInMonth(y, monthNum)
+      ).padStart(2, "0")}`;
+
+      let effectiveStart: string | undefined = s.startDate;
+      if (!effectiveStart) {
+        effectiveStart = earliestRecordByStudentMonth.get(s.studentId)?.get(monthIndex);
+      }
+      if (!effectiveStart) continue;
+
+      const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
+      let rangeEnd = today < monthEnd ? today : monthEnd;
+      if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
+      if (rangeStart <= rangeEnd) total += countSchoolDays(rangeStart, rangeEnd, closedDates);
+    }
+    enrolledTotalByStudent.set(s.studentId, total);
   }
 
   return (
@@ -295,6 +389,10 @@ export default function SummaryPage() {
                   出席日数
                   <span className="block text-[9px] font-normal">Present Days</span>
                 </th>
+                <th className="border border-gray-300 px-2 py-2 bg-blue-50 text-blue-800 w-20 whitespace-nowrap">
+                  登園日数
+                  <span className="block text-[9px] font-normal">Days enrolled</span>
+                </th>
                 <th className="border border-gray-300 px-2 py-2 bg-gray-50 text-gray-700 w-40 whitespace-nowrap">
                   備考
                   <span className="block text-[9px] font-normal text-gray-400">Notes</span>
@@ -305,6 +403,7 @@ export default function SummaryPage() {
               {students.map((s, i) => {
                 const monthCounts = counts.get(s.studentId) ?? new Array(12).fill(0);
                 const total = monthCounts.reduce((a, b) => a + b, 0);
+                const enrolledTotal = enrolledTotalByStudent.get(s.studentId) ?? 0;
 
                 return (
                   <tr key={s.studentId} className={i % 2 === 1 ? "bg-gray-50/50" : ""}>
@@ -323,6 +422,9 @@ export default function SummaryPage() {
                     ))}
                     <td className="text-center border border-gray-300 font-semibold text-green-700">
                       {total}
+                    </td>
+                    <td className="text-center border border-gray-300 font-semibold text-blue-700">
+                      {enrolledTotal}
                     </td>
                     <td className="border border-gray-300 p-0">
                       <input

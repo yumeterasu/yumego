@@ -349,9 +349,13 @@ export function addAnnualSheet(
     fiscalYearStart: number;
     students: Student[];
     records: AttendanceRow[];
+    // Merged Master holidays + this class's own calendar overrides, as
+    // "YYYY-MM-DD" strings -- see countSchoolDays, used for the 登園日数
+    // total (sum of each fiscal month's school-day-enrolled count).
+    closedDates: Set<string>;
   }
 ) {
-  const { sheetName, fiscalYearStart, students, records } = opts;
+  const { sheetName, fiscalYearStart, students, records, closedDates } = opts;
 
   const countsAsPresent = (status: AttendanceStatus) =>
     status === "present" || status === "late" || status === "early_leave";
@@ -359,16 +363,59 @@ export function addAnnualSheet(
   const counts = new Map<string, number[]>();
   for (const s of students) counts.set(s.studentId, new Array(12).fill(0));
 
+  // studentId -> monthIndex -> earliest recorded date that month (any
+  // status), for the same startDate-not-set fallback addMonthlySheet uses.
+  const earliestRecordByStudentMonth = new Map<string, Map<number, string>>();
+
   for (const r of records) {
-    if (!countsAsPresent(r.status)) continue;
     const y = Number(r.date.slice(0, 4));
     const m = Number(r.date.slice(5, 7));
     const monthIndex = FISCAL_MONTHS.findIndex(
       (fm) => fm.monthNum === m && fiscalYearStart + fm.yearOffset === y
     );
     if (monthIndex === -1) continue;
-    const arr = counts.get(r.studentId);
-    if (arr) arr[monthIndex]++;
+
+    if (countsAsPresent(r.status)) {
+      const arr = counts.get(r.studentId);
+      if (arr) arr[monthIndex]++;
+    }
+
+    if (!earliestRecordByStudentMonth.has(r.studentId)) {
+      earliestRecordByStudentMonth.set(r.studentId, new Map());
+    }
+    const monthMap = earliestRecordByStudentMonth.get(r.studentId)!;
+    const existing = monthMap.get(monthIndex);
+    if (!existing || r.date < existing) monthMap.set(monthIndex, r.date);
+  }
+
+  // 登園日数 total -- walks each fiscal month separately (same per-month
+  // clamping/fallback as addMonthlySheet's single-month version above) and
+  // sums the 12 results, since there's no shortcut that avoids repeating
+  // the clamp logic once per month.
+  const today = todayBangkok();
+  const enrolledTotalByStudent = new Map<string, number>();
+  for (const s of students) {
+    let total = 0;
+    for (let monthIndex = 0; monthIndex < FISCAL_MONTHS.length; monthIndex++) {
+      const { monthNum, yearOffset } = FISCAL_MONTHS[monthIndex];
+      const y = fiscalYearStart + yearOffset;
+      const monthStart = `${y}-${String(monthNum).padStart(2, "0")}-01`;
+      const monthEnd = `${y}-${String(monthNum).padStart(2, "0")}-${String(
+        daysInMonth(y, monthNum)
+      ).padStart(2, "0")}`;
+
+      let effectiveStart: string | undefined = s.startDate;
+      if (!effectiveStart) {
+        effectiveStart = earliestRecordByStudentMonth.get(s.studentId)?.get(monthIndex);
+      }
+      if (!effectiveStart) continue;
+
+      const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
+      let rangeEnd = today < monthEnd ? today : monthEnd;
+      if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
+      if (rangeStart <= rangeEnd) total += countSchoolDays(rangeStart, rangeEnd, closedDates);
+    }
+    enrolledTotalByStudent.set(s.studentId, total);
   }
 
   const sheet = workbook.addWorksheet(sheetName, {
@@ -379,6 +426,7 @@ export function addAnnualSheet(
     "名前",
     ...FISCAL_MONTHS.map((fm, idx) => `${fm.monthNum}月(${MONTH_EN[idx]})`),
     "出席日数",
+    "登園日数",
     "備考",
   ]);
   headerRowStyle(headerRow);
@@ -386,9 +434,16 @@ export function addAnnualSheet(
   students.forEach((s) => {
     const monthCounts = counts.get(s.studentId) ?? new Array(12).fill(0);
     const total = monthCounts.reduce((a, b) => a + b, 0);
+    const enrolledTotal = enrolledTotalByStudent.get(s.studentId) ?? 0;
     const nameCell = s.nameEnglish ? `${s.nameKanji}\n${s.nameEnglish}` : s.nameKanji;
 
-    const row = sheet.addRow([nameCell, ...monthCounts.map((c) => (c > 0 ? c : "")), total, s.remark ?? ""]);
+    const row = sheet.addRow([
+      nameCell,
+      ...monthCounts.map((c) => (c > 0 ? c : "")),
+      total,
+      enrolledTotal || "",
+      s.remark ?? "",
+    ]);
     row.getCell(1).alignment = { wrapText: true, vertical: "middle" };
     row.eachCell((cell, colNumber) => {
       if (colNumber >= 2 && colNumber <= 13) {
@@ -398,16 +453,20 @@ export function addAnnualSheet(
     const totalCell = row.getCell(14);
     totalCell.font = { bold: true, color: { argb: "FF16A34A" } };
     totalCell.alignment = { horizontal: "center", vertical: "middle" };
+    const enrolledCell = row.getCell(15);
+    enrolledCell.font = { bold: true, color: { argb: "FF1D4ED8" } };
+    enrolledCell.alignment = { horizontal: "center", vertical: "middle" };
   });
 
   sheet.columns = [
     { width: 20 },
     ...FISCAL_MONTHS.map(() => ({ width: 10 })), // margin for "12月(Dec)" etc. without wrapping
     { width: 10 },
+    { width: 10 },
     { width: 24 },
   ];
 
-  applyGridBorders(sheet, 3 + FISCAL_MONTHS.length);
+  applyGridBorders(sheet, 4 + FISCAL_MONTHS.length);
 
   return sheet;
 }
