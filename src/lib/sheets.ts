@@ -924,6 +924,36 @@ export async function getAttendanceForFiscalYear(
     }));
 }
 
+/** Earliest recorded attendance date (any status) per student within a
+ *  Japanese school year — a lightweight alternative to
+ *  getAttendanceForFiscalYear for callers that only need one date per
+ *  student (the 登園日数 startDate-not-set fallback). */
+export async function getEarliestAttendanceDatePerStudent(
+  className: string,
+  fiscalYearStartYear: number
+): Promise<Map<string, string>> {
+  const sheets = getSheetsClient();
+  const res = await safeValuesGet(sheets, {
+    spreadsheetId: SHEET_ID,
+    range: "Attendance!A2:F",
+  });
+  const rows = res.data.values ?? [];
+  const startDate = `${fiscalYearStartYear}-04-01`;
+  const endDate = `${fiscalYearStartYear + 1}-03-31`;
+
+  const earliest = new Map<string, string>();
+  for (const row of rows) {
+    const date = (row[0] ?? "").toString();
+    const rowClassName = (row[1] ?? "").toString();
+    const studentId = (row[2] ?? "").toString();
+    if (rowClassName !== className || !studentId) continue;
+    if (date < startDate || date > endDate) continue;
+    const existing = earliest.get(studentId);
+    if (!existing || date < existing) earliest.set(studentId, date);
+  }
+  return earliest;
+}
+
 /**
  * Every attendance row ever recorded for a class, no date bound at all —
  * used only for the end-of-term Reset backup export, right before the

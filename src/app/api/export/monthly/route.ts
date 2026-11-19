@@ -7,8 +7,9 @@ import {
   getMonthlyChecks,
   getMasterHolidays,
   getClassCalendarOverrides,
+  getEarliestAttendanceDatePerStudent,
 } from "@/lib/sheets";
-import { addMonthlySheet } from "@/lib/exportSheets";
+import { addMonthlySheet, yearMonthToFiscalYearStart } from "@/lib/exportSheets";
 
 // GET /api/export/monthly?class=...&month=2026-08
 export async function GET(req: NextRequest) {
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [students, allRecords, checkLabels, checks, masterHolidays, overrides] =
+    const [students, allRecords, checkLabels, checks, masterHolidays, overrides, earliestRecordByStudent] =
       await Promise.all([
         getStudentsByClass(className),
         getAttendanceForMonth(className, yearMonth),
@@ -31,6 +32,7 @@ export async function GET(req: NextRequest) {
         getMonthlyChecks(className, yearMonth),
         getMasterHolidays(),
         getClassCalendarOverrides(className),
+        getEarliestAttendanceDatePerStudent(className, yearMonthToFiscalYearStart(yearMonth)),
       ]);
     const monthlyChecks = new Map(checks.map((c) => [c.studentId, c]));
 
@@ -67,6 +69,7 @@ export async function GET(req: NextRequest) {
       checkLabels,
       monthlyChecks,
       closedDates,
+      earliestRecordByStudent,
     });
 
     const buffer = await workbook.xlsx.writeBuffer();

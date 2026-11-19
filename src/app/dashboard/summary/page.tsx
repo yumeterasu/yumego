@@ -201,10 +201,10 @@ export default function SummaryPage() {
   const counts = new Map<string, number[]>();
   for (const s of students) counts.set(s.studentId, new Array(12).fill(0));
 
-  // studentId -> monthIndex -> earliest recorded date that month (any
-  // status), for the same startDate-not-set fallback the monthly
-  // Dashboard uses.
-  const earliestRecordByStudentMonth = new Map<string, Map<number, string>>();
+  // studentId -> earliest recorded date in the whole fiscal year (any
+  // status), for the startDate-not-set fallback -- a stable date reused
+  // for every month, not re-detected per month.
+  const earliestRecordByStudent = new Map<string, string>();
 
   for (const [key, status] of dedupedByStudentDate) {
     const [studentId, date] = key.split("|");
@@ -220,12 +220,8 @@ export default function SummaryPage() {
       if (arr) arr[monthIndex]++;
     }
 
-    if (!earliestRecordByStudentMonth.has(studentId)) {
-      earliestRecordByStudentMonth.set(studentId, new Map());
-    }
-    const monthMap = earliestRecordByStudentMonth.get(studentId)!;
-    const existing = monthMap.get(monthIndex);
-    if (!existing || date < existing) monthMap.set(monthIndex, date);
+    const existing = earliestRecordByStudent.get(studentId);
+    if (!existing || date < existing) earliestRecordByStudent.set(studentId, date);
   }
 
   // 登園日数 total -- same per-month fallback as the monthly Dashboard's
@@ -234,6 +230,7 @@ export default function SummaryPage() {
   // weekend counts for a student who has an actual record on it).
   const enrolledTotalByStudent = new Map<string, number>();
   for (const s of students) {
+    const effectiveStart = s.startDate || earliestRecordByStudent.get(s.studentId);
     let total = 0;
     for (let monthIndex = 0; monthIndex < FISCAL_MONTHS.length; monthIndex++) {
       const { monthNum, yearOffset } = FISCAL_MONTHS[monthIndex];
@@ -243,10 +240,6 @@ export default function SummaryPage() {
         daysInMonth(y, monthNum)
       ).padStart(2, "0")}`;
 
-      let effectiveStart: string | undefined = s.startDate;
-      if (!effectiveStart) {
-        effectiveStart = earliestRecordByStudentMonth.get(s.studentId)?.get(monthIndex);
-      }
       if (!effectiveStart) continue;
 
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;

@@ -122,11 +122,23 @@ export async function GET(req: NextRequest) {
       new Set(monthsPresent.map((ym) => yearMonthToFiscalYearStart(ym)))
     ).sort((a, b) => a - b);
 
-    // Sheets: 年間まとめ, one per fiscal year actually present.
+    // Sheets: 年間まとめ, one per fiscal year actually present. Also builds
+    // each fiscal year's earliest-attendance-per-student map (登園日数's
+    // startDate-not-set fallback) once here, reused below by the monthly
+    // sheets loop instead of re-deriving it per month.
+    const earliestRecordByStudentByFiscalYear = new Map<number, Map<string, string>>();
     for (const fiscalYearStart of fiscalYearsPresent) {
       const startDate = `${fiscalYearStart}-04-01`;
       const endDate = `${fiscalYearStart + 1}-03-31`;
       const yearRecords = attendance.filter((r) => r.date >= startDate && r.date <= endDate);
+
+      const earliestRecordByStudent = new Map<string, string>();
+      for (const r of yearRecords) {
+        const existing = earliestRecordByStudent.get(r.studentId);
+        if (!existing || r.date < existing) earliestRecordByStudent.set(r.studentId, r.date);
+      }
+      earliestRecordByStudentByFiscalYear.set(fiscalYearStart, earliestRecordByStudent);
+
       addAnnualSheet(workbook, {
         sheetName: `${fiscalYearStart}年度まとめ`,
         fiscalYearStart,
@@ -146,6 +158,8 @@ export async function GET(req: NextRequest) {
         getClassCheckLabels(className, yearMonth),
         getMonthlyChecks(className, yearMonth),
       ]);
+      const earliestRecordByStudent =
+        earliestRecordByStudentByFiscalYear.get(yearMonthToFiscalYearStart(yearMonth)) ?? new Map();
       addMonthlySheet(workbook, {
         sheetName: yearMonth,
         yearMonth,
@@ -154,6 +168,7 @@ export async function GET(req: NextRequest) {
         checkLabels: monthCheckLabels,
         monthlyChecks: new Map(monthChecks.map((c) => [c.studentId, c])),
         closedDates,
+        earliestRecordByStudent,
       });
     }
 

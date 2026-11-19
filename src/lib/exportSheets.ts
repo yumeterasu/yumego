@@ -119,9 +119,22 @@ export function addMonthlySheet(
     // month-scoped by the caller (both sources are whole-list fetches), so
     // the same Set can be reused across multiple addMonthlySheet calls.
     closedDates: Set<string>;
+    // studentId -> earliest attendance record this fiscal year, for the
+    // 登園日数 startDate-not-set fallback -- a stable per-student date, not
+    // re-detected per month (see getEarliestAttendanceDatePerStudent).
+    earliestRecordByStudent: Map<string, string>;
   }
 ) {
-  const { sheetName, yearMonth, students, records, checkLabels, monthlyChecks, closedDates } = opts;
+  const {
+    sheetName,
+    yearMonth,
+    students,
+    records,
+    checkLabels,
+    monthlyChecks,
+    closedDates,
+    earliestRecordByStudent,
+  } = opts;
   const [year, month] = yearMonth.split("-").map(Number);
   const numDays = daysInMonth(year, month);
   const dayNumbers = Array.from({ length: numDays }, (_, i) => i + 1);
@@ -235,12 +248,10 @@ export function addMonthlySheet(
     // 登園日数 -- see countSchoolDays above. Mirrors the Dashboard's own
     // on-screen computation exactly (weekends and closedDates excluded,
     // except a weekend this student actually has a record on; counts the
-    // whole month, not just up to today).
-    let effectiveStart = s.startDate;
-    if (!effectiveStart && dayMap.size > 0) {
-      const earliestDay = Math.min(...dayMap.keys());
-      effectiveStart = `${year}-${String(month).padStart(2, "0")}-${String(earliestDay).padStart(2, "0")}`;
-    }
+    // whole month, not just up to today). Falls back to this student's
+    // earliest attendance record for the whole fiscal year when startDate
+    // isn't set yet -- a stable date, not re-detected per month.
+    const effectiveStart = s.startDate || earliestRecordByStudent.get(s.studentId);
     let enrolledDays: number | null = null;
     if (effectiveStart) {
       const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
@@ -367,9 +378,10 @@ export function addAnnualSheet(
   const counts = new Map<string, number[]>();
   for (const s of students) counts.set(s.studentId, new Array(12).fill(0));
 
-  // studentId -> monthIndex -> earliest recorded date that month (any
-  // status), for the same startDate-not-set fallback addMonthlySheet uses.
-  const earliestRecordByStudentMonth = new Map<string, Map<number, string>>();
+  // studentId -> earliest recorded date in the whole fiscal year (any
+  // status), for the startDate-not-set fallback -- a stable date reused
+  // for every month, not re-detected per month (see addMonthlySheet).
+  const earliestRecordByStudent = new Map<string, string>();
   // studentId -> every recorded date ("YYYY-MM-DD"), for the
   // weekend-with-a-record exception in countSchoolDays.
   const recordDatesByStudent = new Map<string, Set<string>>();
@@ -387,12 +399,8 @@ export function addAnnualSheet(
       if (arr) arr[monthIndex]++;
     }
 
-    if (!earliestRecordByStudentMonth.has(r.studentId)) {
-      earliestRecordByStudentMonth.set(r.studentId, new Map());
-    }
-    const monthMap = earliestRecordByStudentMonth.get(r.studentId)!;
-    const existing = monthMap.get(monthIndex);
-    if (!existing || r.date < existing) monthMap.set(monthIndex, r.date);
+    const existing = earliestRecordByStudent.get(r.studentId);
+    if (!existing || r.date < existing) earliestRecordByStudent.set(r.studentId, r.date);
 
     if (!recordDatesByStudent.has(r.studentId)) recordDatesByStudent.set(r.studentId, new Set());
     recordDatesByStudent.get(r.studentId)!.add(r.date);
@@ -405,6 +413,7 @@ export function addAnnualSheet(
   const enrolledTotalByStudent = new Map<string, number>();
   for (const s of students) {
     const studentRecordDates = recordDatesByStudent.get(s.studentId);
+    const effectiveStart = s.startDate || earliestRecordByStudent.get(s.studentId);
     let total = 0;
     for (let monthIndex = 0; monthIndex < FISCAL_MONTHS.length; monthIndex++) {
       const { monthNum, yearOffset } = FISCAL_MONTHS[monthIndex];
@@ -414,10 +423,6 @@ export function addAnnualSheet(
         daysInMonth(y, monthNum)
       ).padStart(2, "0")}`;
 
-      let effectiveStart: string | undefined = s.startDate;
-      if (!effectiveStart) {
-        effectiveStart = earliestRecordByStudentMonth.get(s.studentId)?.get(monthIndex);
-      }
       if (!effectiveStart) continue;
 
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;

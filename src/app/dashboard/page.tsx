@@ -156,6 +156,13 @@ function todayDateString() {
   return formatDate(new Date());
 }
 
+/** Which Japanese school year (Apr-Mar) a "YYYY-MM" month belongs to,
+ *  returned as the fiscal year's starting calendar year. */
+function yearMonthToFiscalYearStart(yearMonth: string): number {
+  const [y, m] = yearMonth.split("-").map(Number);
+  return m >= 4 ? y : y - 1;
+}
+
 /** Every weekday (Mon-Fri) between start and end, inclusive, YYYY-MM-DD. */
 function weekdayRange(start: string, end: string): string[] {
   const dates: string[] = [];
@@ -232,6 +239,12 @@ export default function DashboardPage() {
   // truly empty, but stays fully editable (tap it to override to 出, same
   // as any other cell).
   const [closedDates, setClosedDates] = useState<Set<string>>(new Set());
+  // studentId -> earliest attendance record this fiscal year, for the
+  // 登園日数 startDate-not-set fallback -- a stable per-student date, not
+  // re-detected per month (see yearMonthToFiscalYearStart above).
+  const [earliestRecordByStudent, setEarliestRecordByStudent] = useState<Map<string, string>>(
+    new Map()
+  );
   // School-wide quick-pick reasons for the 欠/出停 buttons in the edit
   // popup — cosmetic only; "その他" is always available regardless.
   const [reasonOptions, setReasonOptions] = useState<AbsenceReason[]>([]);
@@ -368,6 +381,7 @@ export default function DashboardPage() {
         holidaysRes,
         overridesRes,
         reasonsRes,
+        earliestRes,
       ] = await Promise.all([
         apiFetch(`/api/students?class=${encodeURIComponent(selectedClass)}`),
         apiFetch(
@@ -382,8 +396,16 @@ export default function DashboardPage() {
         apiFetch("/api/calendar/master"),
         apiFetch(`/api/calendar/class?class=${encodeURIComponent(selectedClass)}`),
         apiFetch("/api/absence-reasons"),
+        apiFetch(
+          `/api/attendance/earliest?class=${encodeURIComponent(selectedClass)}&fiscalYear=${yearMonthToFiscalYearStart(yearMonth)}`
+        ),
       ]);
       setReasonOptions(reasonsRes.ok ? ((await reasonsRes.json()).reasons ?? []) : []);
+      setEarliestRecordByStudent(
+        earliestRes.ok
+          ? new Map(Object.entries((await earliestRes.json()).earliest ?? {}))
+          : new Map()
+      );
       if (!studentsRes.ok || !attendanceRes.ok) throw new Error("failed");
       const studentsData = await studentsRes.json();
       const attendanceData = await attendanceRes.json();
@@ -1436,13 +1458,10 @@ export default function DashboardPage() {
                 // 登園日数 -- school days only (weekdayRange already skips
                 // Sat/Sun; closedDates excludes holidays too, same merged
                 // Set the day-cells already use for showHolidayDefault
-                // below). Falls back to the earliest recorded day this
-                // month when startDate isn't set yet.
-                let effectiveStart = s.startDate;
-                if (!effectiveStart && dayMap.size > 0) {
-                  const earliestDay = Math.min(...dayMap.keys());
-                  effectiveStart = `${year}-${pad2(month)}-${pad2(earliestDay)}`;
-                }
+                // below). Falls back to this student's earliest attendance
+                // record for the whole fiscal year when startDate isn't set
+                // yet -- a stable date, not re-detected per month.
+                const effectiveStart = s.startDate || earliestRecordByStudent.get(s.studentId);
                 let enrolledDays: number | null = null;
                 if (effectiveStart) {
                   const monthStart = `${year}-${pad2(month)}-01`;
