@@ -38,41 +38,6 @@ function cellKey(categoryId: string, grade: string, date?: string) {
   return date ? `${categoryId}|${grade}|${date}` : `${categoryId}|${grade}`;
 }
 
-function ToggleSquare({
-  checked,
-  disabled,
-  onClick,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={onClick}
-      className={`toggle-square w-3.5 h-3.5 rounded-sm border transition-colors ${
-        checked ? "bg-green-700 border-green-700" : "bg-white border-gray-400"
-      } ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
-    >
-      {checked && (
-        <svg viewBox="0 0 16 16" className="w-full h-full text-white" fill="none">
-          <path
-            d="M3.5 8.5l3 3 6-7"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </button>
-  );
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1210,10 +1175,12 @@ export default function SpecialistCoachPage() {
                                     }`}
                                   >
                                     <div className="flex flex-col items-center gap-0.5">
-                                      <ToggleSquare
+                                      <input
+                                        type="checkbox"
                                         checked={isSaiChecked}
                                         disabled={isBusy}
-                                        onClick={() => toggleSaiChecked(c.categoryId, date, countKey)}
+                                        onChange={() => toggleSaiChecked(c.categoryId, date, countKey)}
+                                        className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
                                       />
                                       {isSaiChecked && (
                                         <input
@@ -1258,10 +1225,12 @@ export default function SpecialistCoachPage() {
                                   }`}
                                 >
                                   <div className="flex flex-col items-center gap-0.5">
-                                    <ToggleSquare
+                                    <input
+                                      type="checkbox"
                                       checked={isChecked}
                                       disabled={isBusy}
-                                      onClick={() => toggleChecked(c.categoryId, g, date)}
+                                      onChange={() => toggleChecked(c.categoryId, g, date)}
+                                      className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
                                     />
                                     {isChecked && (
                                       <div className="flex items-center justify-center gap-px whitespace-nowrap">
