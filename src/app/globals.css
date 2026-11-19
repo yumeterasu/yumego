@@ -113,7 +113,7 @@ html {
     background: transparent !important;
     padding: 0 !important;
   }
-  .print-table-specialist input[type="checkbox"] {
+  .print-table-specialist .toggle-square {
     width: 8px !important;
     height: 8px !important;
   }

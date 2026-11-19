@@ -38,6 +38,41 @@ function cellKey(categoryId: string, grade: string, date?: string) {
   return date ? `${categoryId}|${grade}|${date}` : `${categoryId}|${grade}`;
 }
 
+function ToggleSquare({
+  checked,
+  disabled,
+  onClick,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onClick}
+      className={`toggle-square w-3.5 h-3.5 rounded-sm border transition-colors ${
+        checked ? "bg-green-700 border-green-700" : "bg-white border-gray-400"
+      } ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+    >
+      {checked && (
+        <svg viewBox="0 0 16 16" className="w-full h-full text-white" fill="none">
+          <path
+            d="M3.5 8.5l3 3 6-7"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -516,6 +551,25 @@ export default function SpecialistCoachPage() {
       });
     } else {
       setSaiChecked((prev) => new Set(prev).add(countKey));
+      // Persist the check immediately with 0 -- 最 has no roster total to
+      // default to like the other rows get (autoFillDefaultCount), so
+      // without an explicit write here the checkmark is pure local state
+      // until a count is typed and committed. Navigating to a different
+      // month before that silently lost it, since a reload only
+      // re-derives saiChecked from rows actually saved on the sheet.
+      // Best-effort, same as autoFillDefaultCount: leave the optimistic
+      // state showing even if this write fails.
+      setDraftCounts((prev) => ({ ...prev, [countKey]: "0" }));
+      try {
+        const res = await fetch("/api/specialist/participation", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branch, categoryId, grade: "最", date, count: 0 }),
+        });
+        if (res.ok) savedCountsRef.current[countKey] = 0;
+      } catch {
+        // best-effort -- leave the optimistic draft/checked state showing
+      }
     }
   }
 
@@ -1156,12 +1210,10 @@ export default function SpecialistCoachPage() {
                                     }`}
                                   >
                                     <div className="flex flex-col items-center gap-0.5">
-                                      <input
-                                        type="checkbox"
+                                      <ToggleSquare
                                         checked={isSaiChecked}
                                         disabled={isBusy}
-                                        onChange={() => toggleSaiChecked(c.categoryId, date, countKey)}
-                                        className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
+                                        onClick={() => toggleSaiChecked(c.categoryId, date, countKey)}
                                       />
                                       {isSaiChecked && (
                                         <input
@@ -1206,12 +1258,10 @@ export default function SpecialistCoachPage() {
                                   }`}
                                 >
                                   <div className="flex flex-col items-center gap-0.5">
-                                    <input
-                                      type="checkbox"
+                                    <ToggleSquare
                                       checked={isChecked}
                                       disabled={isBusy}
-                                      onChange={() => toggleChecked(c.categoryId, g, date)}
-                                      className="w-3.5 h-3.5 accent-green-600 cursor-pointer"
+                                      onClick={() => toggleChecked(c.categoryId, g, date)}
                                     />
                                     {isChecked && (
                                       <div className="flex items-center justify-center gap-px whitespace-nowrap">
