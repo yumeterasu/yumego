@@ -19,14 +19,6 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
-// This file runs server-side, so there's no browser-local Date() to rely on
-// for "today" the way the Dashboard's own todayDateString() does -- same
-// Bangkok-shift idiom already used in src/lib/reportSheets.ts.
-function todayBangkok(): string {
-  const shifted = new Date(Date.now() + 7 * 60 * 60 * 1000);
-  return shifted.toISOString().slice(0, 10);
-}
-
 /** Count of school days between start and end ("YYYY-MM-DD", inclusive) --
  *  skips Saturdays, Sundays, and any date in closedDates (merged Master
  *  holidays + this class's own calendar overrides). Used for 登園日数. */
@@ -231,9 +223,10 @@ export function addMonthlySheet(
       else absentCount++;
     }
 
-    // 登園日数 -- see countSchoolDays/todayBangkok above. Mirrors the
-    // Dashboard's own on-screen computation exactly (weekends and
-    // closedDates excluded, not just a raw calendar-day span).
+    // 登園日数 -- see countSchoolDays above. Mirrors the Dashboard's own
+    // on-screen computation exactly (weekends and closedDates excluded,
+    // not just a raw calendar-day span; counts the whole month, not just
+    // up to today).
     let effectiveStart = s.startDate;
     if (!effectiveStart && dayMap.size > 0) {
       const earliestDay = Math.min(...dayMap.keys());
@@ -243,9 +236,8 @@ export function addMonthlySheet(
     if (effectiveStart) {
       const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
       const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(numDays).padStart(2, "0")}`;
-      const today = todayBangkok();
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
-      let rangeEnd = today < monthEnd ? today : monthEnd;
+      let rangeEnd = monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
       enrolledDays = rangeStart <= rangeEnd ? countSchoolDays(rangeStart, rangeEnd, closedDates) : 0;
     }
@@ -392,7 +384,6 @@ export function addAnnualSheet(
   // clamping/fallback as addMonthlySheet's single-month version above) and
   // sums the 12 results, since there's no shortcut that avoids repeating
   // the clamp logic once per month.
-  const today = todayBangkok();
   const enrolledTotalByStudent = new Map<string, number>();
   for (const s of students) {
     let total = 0;
@@ -411,7 +402,7 @@ export function addAnnualSheet(
       if (!effectiveStart) continue;
 
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
-      let rangeEnd = today < monthEnd ? today : monthEnd;
+      let rangeEnd = monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
       if (rangeStart <= rangeEnd) total += countSchoolDays(rangeStart, rangeEnd, closedDates);
     }

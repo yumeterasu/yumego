@@ -1085,6 +1085,7 @@ export default function SpecialistCoachPage() {
                                             <input
                                               type="number"
                                               min={0}
+                                              step="0.1"
                                               value={unitEditDrafts[c.categoryId][k]}
                                               onChange={(e) =>
                                                 setUnitEditDrafts((prev) => ({
@@ -1249,6 +1250,7 @@ export default function SpecialistCoachPage() {
                                         <input
                                           type="number"
                                           min={0}
+                                          step="0.1"
                                           value={draftUnitCounts[countKey] ?? ""}
                                           disabled={isBusy}
                                           placeholder="0"
@@ -1357,6 +1359,7 @@ export default function SpecialistCoachPage() {
                 <input
                   type="number"
                   min={0}
+                  step="0.1"
                   value={newCategoryDefaults[k]}
                   onChange={(e) =>
                     setNewCategoryDefaults((prev) => ({ ...prev, [k]: e.target.value }))

@@ -50,13 +50,6 @@ function daysInMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
-function todayDateString() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate()
-  ).padStart(2, "0")}`;
-}
-
 /** Count of school days between start and end ("YYYY-MM-DD", inclusive) --
  *  skips Saturdays, Sundays, and any date in closedDates. Used for 登園日数. */
 function countSchoolDays(start: string, end: string, closedDates: Set<string>): number {
@@ -226,11 +219,9 @@ export default function SummaryPage() {
     if (!existing || date < existing) monthMap.set(monthIndex, date);
   }
 
-  // 登園日数 total -- same per-month clamp/fallback as the monthly
-  // Dashboard's single-month version, walked over all 12 fiscal months and
-  // summed, since there's no shortcut that avoids repeating the clamp
-  // logic once per month.
-  const today = todayDateString();
+  // 登園日数 total -- same per-month fallback as the monthly Dashboard's
+  // single-month version, walked over all 12 fiscal months and summed
+  // (counts each month's full school-day total, not just up to today).
   const enrolledTotalByStudent = new Map<string, number>();
   for (const s of students) {
     let total = 0;
@@ -249,7 +240,7 @@ export default function SummaryPage() {
       if (!effectiveStart) continue;
 
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
-      let rangeEnd = today < monthEnd ? today : monthEnd;
+      let rangeEnd = monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
       if (rangeStart <= rangeEnd) total += countSchoolDays(rangeStart, rangeEnd, closedDates);
     }

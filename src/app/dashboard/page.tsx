@@ -1431,7 +1431,7 @@ export default function DashboardPage() {
                   const monthStart = `${year}-${pad2(month)}-01`;
                   const monthEnd = `${year}-${pad2(month)}-${pad2(numDays)}`;
                   const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
-                  let rangeEnd = today < monthEnd ? today : monthEnd;
+                  let rangeEnd = monthEnd;
                   if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
                   enrolledDays =
                     rangeStart <= rangeEnd
