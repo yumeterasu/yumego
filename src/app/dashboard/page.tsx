@@ -419,7 +419,9 @@ export default function DashboardPage() {
       if (err instanceof SessionExpiredError) {
         setError("__SESSION_EXPIRED__");
       } else {
-        setError("データの取得に失敗しました / Failed to load data");
+        setError(
+          "データの取得に失敗しました。少し待ってからもう一度お試しください / Failed to load data — please wait a moment and try again"
+        );
       }
     } finally {
       setLoading(false);
@@ -489,7 +491,9 @@ export default function DashboardPage() {
             "オフラインです。前回保存した生徒一覧を表示しています / Offline — showing the last saved student list"
           );
         } else {
-          setAttendanceError("生徒一覧の取得に失敗しました / Failed to load students");
+          setAttendanceError(
+            "生徒一覧の取得に失敗しました。少し待ってからもう一度お試しください / Failed to load students — please wait a moment and try again"
+          );
         }
       }
     } finally {
@@ -1288,7 +1292,7 @@ export default function DashboardPage() {
 
       {loading ? (
         <SkeletonBlock />
-      ) : students.length === 0 ? (
+      ) : error ? null : students.length === 0 ? (
         <p className="text-gray-500 text-sm text-center">
           このクラスにはまだ生徒が登録されていません
           <span className="block text-xs">No students registered in this class yet</span>
