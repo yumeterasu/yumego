@@ -20,9 +20,17 @@ function daysInMonth(year: number, month: number) {
 }
 
 /** Count of school days between start and end ("YYYY-MM-DD", inclusive) --
- *  skips Saturdays, Sundays, and any date in closedDates (merged Master
- *  holidays + this class's own calendar overrides). Used for 登園日数. */
-function countSchoolDays(start: string, end: string, closedDates: Set<string>): number {
+ *  skips any date in closedDates (merged Master holidays + this class's own
+ *  calendar overrides). Saturdays/Sundays only count when hasRecord(date)
+ *  says this student has an actual attendance record that day (e.g. a
+ *  one-off Saturday event) -- otherwise weekends are skipped. Used for
+ *  登園日数. */
+function countSchoolDays(
+  start: string,
+  end: string,
+  closedDates: Set<string>,
+  hasRecord?: (dateStr: string) => boolean
+): number {
   let count = 0;
   const cur = new Date(start + "T00:00:00");
   const last = new Date(end + "T00:00:00");
@@ -31,7 +39,8 @@ function countSchoolDays(start: string, end: string, closedDates: Set<string>): 
     const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
       cur.getDate()
     ).padStart(2, "0")}`;
-    if (dow !== 0 && dow !== 6 && !closedDates.has(dateStr)) count++;
+    const isWeekend = dow === 0 || dow === 6;
+    if (!closedDates.has(dateStr) && (!isWeekend || hasRecord?.(dateStr))) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
@@ -225,8 +234,8 @@ export function addMonthlySheet(
 
     // 登園日数 -- see countSchoolDays above. Mirrors the Dashboard's own
     // on-screen computation exactly (weekends and closedDates excluded,
-    // not just a raw calendar-day span; counts the whole month, not just
-    // up to today).
+    // except a weekend this student actually has a record on; counts the
+    // whole month, not just up to today).
     let effectiveStart = s.startDate;
     if (!effectiveStart && dayMap.size > 0) {
       const earliestDay = Math.min(...dayMap.keys());
@@ -239,7 +248,10 @@ export function addMonthlySheet(
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
       let rangeEnd = monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
-      enrolledDays = rangeStart <= rangeEnd ? countSchoolDays(rangeStart, rangeEnd, closedDates) : 0;
+      enrolledDays =
+        rangeStart <= rangeEnd
+          ? countSchoolDays(rangeStart, rangeEnd, closedDates, (d) => dayMap.has(Number(d.slice(8, 10))))
+          : 0;
     }
 
     const reasonCounts = new Map<string, number>();
@@ -358,6 +370,9 @@ export function addAnnualSheet(
   // studentId -> monthIndex -> earliest recorded date that month (any
   // status), for the same startDate-not-set fallback addMonthlySheet uses.
   const earliestRecordByStudentMonth = new Map<string, Map<number, string>>();
+  // studentId -> every recorded date ("YYYY-MM-DD"), for the
+  // weekend-with-a-record exception in countSchoolDays.
+  const recordDatesByStudent = new Map<string, Set<string>>();
 
   for (const r of records) {
     const y = Number(r.date.slice(0, 4));
@@ -378,6 +393,9 @@ export function addAnnualSheet(
     const monthMap = earliestRecordByStudentMonth.get(r.studentId)!;
     const existing = monthMap.get(monthIndex);
     if (!existing || r.date < existing) monthMap.set(monthIndex, r.date);
+
+    if (!recordDatesByStudent.has(r.studentId)) recordDatesByStudent.set(r.studentId, new Set());
+    recordDatesByStudent.get(r.studentId)!.add(r.date);
   }
 
   // 登園日数 total -- walks each fiscal month separately (same per-month
@@ -386,6 +404,7 @@ export function addAnnualSheet(
   // the clamp logic once per month.
   const enrolledTotalByStudent = new Map<string, number>();
   for (const s of students) {
+    const studentRecordDates = recordDatesByStudent.get(s.studentId);
     let total = 0;
     for (let monthIndex = 0; monthIndex < FISCAL_MONTHS.length; monthIndex++) {
       const { monthNum, yearOffset } = FISCAL_MONTHS[monthIndex];
@@ -404,7 +423,9 @@ export function addAnnualSheet(
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
       let rangeEnd = monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
-      if (rangeStart <= rangeEnd) total += countSchoolDays(rangeStart, rangeEnd, closedDates);
+      if (rangeStart <= rangeEnd) {
+        total += countSchoolDays(rangeStart, rangeEnd, closedDates, (d) => studentRecordDates?.has(d) ?? false);
+      }
     }
     enrolledTotalByStudent.set(s.studentId, total);
   }

@@ -51,8 +51,16 @@ function daysInMonth(year: number, month: number) {
 }
 
 /** Count of school days between start and end ("YYYY-MM-DD", inclusive) --
- *  skips Saturdays, Sundays, and any date in closedDates. Used for 登園日数. */
-function countSchoolDays(start: string, end: string, closedDates: Set<string>): number {
+ *  skips any date in closedDates. Saturdays/Sundays only count when
+ *  hasRecord(date) says this student has an actual attendance record that
+ *  day (e.g. a one-off Saturday event) -- otherwise weekends are skipped.
+ *  Used for 登園日数. */
+function countSchoolDays(
+  start: string,
+  end: string,
+  closedDates: Set<string>,
+  hasRecord?: (dateStr: string) => boolean
+): number {
   let count = 0;
   const cur = new Date(start + "T00:00:00");
   const last = new Date(end + "T00:00:00");
@@ -61,7 +69,8 @@ function countSchoolDays(start: string, end: string, closedDates: Set<string>): 
     const dateStr = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(
       cur.getDate()
     ).padStart(2, "0")}`;
-    if (dow !== 0 && dow !== 6 && !closedDates.has(dateStr)) count++;
+    const isWeekend = dow === 0 || dow === 6;
+    if (!closedDates.has(dateStr) && (!isWeekend || hasRecord?.(dateStr))) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
@@ -221,7 +230,8 @@ export default function SummaryPage() {
 
   // 登園日数 total -- same per-month fallback as the monthly Dashboard's
   // single-month version, walked over all 12 fiscal months and summed
-  // (counts each month's full school-day total, not just up to today).
+  // (counts each month's full school-day total, not just up to today; a
+  // weekend counts for a student who has an actual record on it).
   const enrolledTotalByStudent = new Map<string, number>();
   for (const s of students) {
     let total = 0;
@@ -242,7 +252,14 @@ export default function SummaryPage() {
       const rangeStart = effectiveStart > monthStart ? effectiveStart : monthStart;
       let rangeEnd = monthEnd;
       if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
-      if (rangeStart <= rangeEnd) total += countSchoolDays(rangeStart, rangeEnd, closedDates);
+      if (rangeStart <= rangeEnd) {
+        total += countSchoolDays(
+          rangeStart,
+          rangeEnd,
+          closedDates,
+          (d) => dedupedByStudentDate.has(`${s.studentId}|${d}`)
+        );
+      }
     }
     enrolledTotalByStudent.set(s.studentId, total);
   }

@@ -169,6 +169,19 @@ function weekdayRange(start: string, end: string): string[] {
   return dates;
 }
 
+/** Every Saturday/Sunday between start and end, inclusive, YYYY-MM-DD. */
+function weekendRange(start: string, end: string): string[] {
+  const dates: string[] = [];
+  const cur = new Date(start + "T00:00:00");
+  const last = new Date(end + "T00:00:00");
+  while (cur <= last) {
+    const dow = cur.getDay();
+    if (dow === 0 || dow === 6) dates.push(formatDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
 /** weekdayRange, further excluding any date before the given student's own
  *  startDate or after their endDate ("" = no restriction on that end) --
  *  see Student.startDate/endDate. */
@@ -1439,7 +1452,10 @@ export default function DashboardPage() {
                   if (s.endDate && s.endDate < rangeEnd) rangeEnd = s.endDate;
                   enrolledDays =
                     rangeStart <= rangeEnd
-                      ? weekdayRange(rangeStart, rangeEnd).filter((d) => !closedDates.has(d)).length
+                      ? weekdayRange(rangeStart, rangeEnd).filter((d) => !closedDates.has(d)).length +
+                        weekendRange(rangeStart, rangeEnd).filter(
+                          (d) => !closedDates.has(d) && dayMap.has(Number(d.slice(8, 10)))
+                        ).length
                       : 0;
                 }
 
